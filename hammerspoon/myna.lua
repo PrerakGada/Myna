@@ -102,8 +102,88 @@ local function tick()
   end)
 end
 
--- Filled in by Task 14 (bindAll, actions) and Task 15 (openRecorder).
-function M.bindAll() end
+-- Filled in by Task 15 (openRecorder).
+local DEFAULT_BINDINGS = {
+  speak_selection_full = { mods = { "cmd", "shift" }, key = "s" },
+  speak_selection_summary = { mods = { "cmd", "shift" }, key = "a" },
+  read_chrome_article = { mods = { "cmd", "shift" }, key = "r" },
+  pause_resume = { mods = { "cmd", "shift" }, key = "space" },
+  stop = { mods = { "cmd", "shift" }, key = "." },
+}
+
+local function loadBindings()
+  local f = io.open(KEYBINDINGS_PATH, "r")
+  if not f then return DEFAULT_BINDINGS end
+  local content = f:read("*a"); f:close()
+  local ok, parsed = pcall(hs.json.decode, content)
+  if ok and parsed then return parsed end
+  return DEFAULT_BINDINGS
+end
+
+local function selectionText()
+  hs.eventtap.keyStroke({ "cmd" }, "c")
+  hs.timer.usleep(120000) -- 120ms for the copy to land
+  return hs.pasteboard.getContents()
+end
+
+local function speakSelection(mode)
+  local text = selectionText()
+  if not text or text == "" then
+    hs.alert.show("Myna: no text selected")
+    return
+  end
+  post("/speak", hs.json.encode({ text = text, mode = mode, source = "selection" }))
+end
+
+local function chromeURL()
+  local ok, url = hs.osascript.applescript(
+    'tell application "Google Chrome" to return URL of active tab of front window'
+  )
+  if ok then return url end
+  return nil
+end
+
+local function readChromeArticle()
+  local url = chromeURL()
+  if not url then
+    hs.alert.show("Myna: no Chrome tab")
+    return
+  end
+  hs.http.asyncPost(BASE .. "/speak",
+    hs.json.encode({ url = url, mode = "full", source = "chrome" }),
+    { ["Content-Type"] = "application/json" },
+    function(code, bodyStr)
+      local ok, parsed = pcall(hs.json.decode, bodyStr or "")
+      if ok and parsed and parsed.reason == "extract_failed" then
+        hs.alert.show("Myna: extraction failed — reading selection")
+        speakSelection("full")
+      end
+    end)
+end
+
+local ACTIONS = {
+  speak_selection_full = function() speakSelection("full") end,
+  speak_selection_summary = function() speakSelection("summary") end,
+  read_chrome_article = readChromeArticle,
+  pause_resume = function()
+    if status.state == "paused" then post("/resume") else post("/pause") end
+  end,
+  stop = function() post("/stop") end,
+}
+
+function M.bindAll()
+  for _, hk in ipairs(hotkeys) do hk:delete() end
+  hotkeys = {}
+  local bindings = loadBindings()
+  for action, fn in pairs(ACTIONS) do
+    local b = bindings[action]
+    if b and b.key then
+      local hk = hs.hotkey.bind(b.mods, b.key, fn)
+      table.insert(hotkeys, hk)
+    end
+  end
+end
+
 function M.openRecorder() end
 
 function M.start()
