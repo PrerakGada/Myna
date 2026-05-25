@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private(set) var hotkeys: HotkeyManager!
     private(set) var updates: UpdateController!
     private(set) var menuController: MenuBarController!
+    private var didBootstrap = false
     private let log = Log(.app)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -85,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             player: player,
             updates: updates
         )
+        self.didBootstrap = true
     }
 
     /// True when the host binary is running an XCTest bundle. We use
@@ -96,12 +98,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // bootstrap() is skipped under XCTest, so the IUO singletons are still
+        // nil at terminate time and force-unwrapping would crash the test
+        // host on bundle unload. Per AUDIT_REPORT.md Lane A 🟡 #4.
+        guard didBootstrap else { return }
         menuController.stop()
         hotkeys.disableAll()
         player.stop()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        // Under XCTest bootstrap is skipped so urlHandler is nil; AppKit may
+        // still fire open-URLs at the test host during launch.
+        guard didBootstrap else { return }
         urlHandler.handle(urls)
     }
 }

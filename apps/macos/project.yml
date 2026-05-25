@@ -42,6 +42,12 @@ targets:
     info:
       path: Resources/Info.plist
       properties:
+        # CFBundleShortVersionString must flow from MARKETING_VERSION (0.1.0)
+        # so Sparkle can detect "newer version available" — XcodeGen otherwise
+        # writes literal "1.0" and Sparkle never offers updates.
+        # Per AUDIT_REPORT.md Lane A 🟡 #2.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSUIElement: YES   # menu-bar only, no Dock icon
         LSMinimumSystemVersion: "13.0"
         NSHumanReadableCopyright: "© 2026 Rashid Azar. MIT licensed."
