@@ -308,6 +308,7 @@ function M.openRecorder()
 end
 
 function M.start()
+  pcall(function() require("hs.ipc") end)  -- enables `hs -c "hs.reload()"`
   if menubar then menubar:delete() end
   menubar = hs.menubar.new()
   applyIcon()
