@@ -13,7 +13,6 @@ __pycache__/
 .github/agents/
 _bmad/
 _bmad-output/
-site/
 logs/
 
 # Xcode build artifacts (apps/macos has its own .gitignore too)
