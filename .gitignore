@@ -26,3 +26,21 @@ apps/macos/build/
 # Local notes
 TODO.local.md
 NOTES.local.md
+
+# Sparkle EdDSA private key — must NEVER be committed.
+# Stash in 1Password and as GitHub Actions secret SPARKLE_EDDSA_PRIVATE_KEY.
+dist/sparkle_private_key.NEVER_COMMIT.txt
+*sparkle_private*
+*.NEVER_COMMIT.txt
+
+# Build outputs
+dist/build/
+dist/export/
+dist/out/
+*.dmg
+*.xcarchive
+
+# Apple Developer cert (never commit)
+*.p12
+*.cer
+*.provisionprofile

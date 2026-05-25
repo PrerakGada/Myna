@@ -46,6 +46,6 @@
 	<key>SUFeedURL</key>
 	<string>https://github.com/CHANGEME/myna/releases/download/appcast/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_SPARKLE_EDDSA_PUBLIC_KEY</string>
+	<string>i+MLgN/F6W8JB9ToiLVRCdFvPkLhv1R21BdqrkIF8K0=</string>
 </dict>
 </plist>
