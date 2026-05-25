@@ -65,8 +65,8 @@ You went to bed with a 322-line Hammerspoon script. You wake up with:
 ### Audits (L0 — independent of implementers)
 - [x] Lane C code review — APPROVED with follow-ups; 2 🔴 fixture-conformance issues fixed in commit `5b8f7f6`
 - [x] Lane B code review — initially BLOCKED (leaked Sparkle key + broken openssl); both 🔴 fixed in commit `3fbd4b0`
-- [ ] **Lane A code review** — running as of this draft; final report coming
-- [ ] **Security review** (integrated branch) — running as of this draft; final report coming
+- [x] Lane A code review — APPROVED with follow-ups; two real-bug 🟡 (CFBundleShortVersionString flow + nil-safe terminate) fixed in commit `2bc4583`
+- [x] Security review (integrated branch) — APPROVED with follow-ups; no 🔴 critical; two real 🟡 (pasteboard `defer` + AppleScript timeout) fixed in commit after `18c9de7`
 
 ---
 
@@ -184,13 +184,24 @@ These aren't blockers for v0.1 but worth fixing in v0.2:
 - 🟡 `release.yml` appcast fetch uses `|| echo "no existing appcast"` which swallows real errors (auth glitch) and rewrites the appcast from scratch. Distinguish 404 from other failures.
 - 🟢 minor nits about brew style, version_from_tag fallback masking empty MARKETING_VERSION, etc.
 
-### From Lane A (deferred work and design notes)
+### From Lane A audit (Swift app) — **two real bugs already fixed**, rest deferred
+- ✅ **FIXED** 🟡 `CFBundleShortVersionString` was hardcoded `"1.0"` instead of flowing `$(MARKETING_VERSION)` (`0.1.0`). Would have broken Sparkle's "newer version available" detection — every release would have reported "1.0" and Sparkle would never offer an update. Now reads `0.1.0` in the built `.app` (verified with `PlistBuddy`).
+- ✅ **FIXED** 🟡 `AppDelegate.applicationWillTerminate` force-unwrapped IUO singletons that are nil under XCTest; crashed the test host on bundle unload. Now gated on a `didBootstrap` flag.
+- 🟡 `fatalError` reachable in `AudioPlayer.swift:341` on temp-file write failure during mid-chunk seek. Should return early with a logged error instead. Deferred (rare path, gracefully degrades).
+- 🟡 `DaemonError.transport(String)` drifts from spec's `transport(Error)`. Cosmetic; update the spec OR the type. Deferred.
+- 🟡 `VoicesResponse.engine: String?` was added in the Swift type but isn't in `API_CONTRACT.md § 4`. Update the spec to match. Deferred.
 - `AudioPlayer.position` uses wall-clock (`CACurrentMediaTime`) not sample-accurate `AVAudioTime`. Fine for UI; revisit if we add AV sync.
 - `SettingsViewModel` uses `ObservableObject + @Published` instead of `@Observable` (Sonoma+). Migration is one targeted edit when you bump the min macOS.
 - Settings → "Restart Daemon" hard-codes the plist path `~/Library/LaunchAgents/dev.myna.daemon.plist`. Lane B may rename this — keep them in sync.
 
-### From security review (pending)
-- *To be filled in when audit-security completes.*
+### From Security review — **two real fixes applied**, one manual step for you
+- **🟠 SUFeedURL contains `CHANGEME`** in `apps/macos/project.yml:53` / `Info.plist:47` / `dist/appcast.sh:49,199`. You replace this with your GitHub username before tagging v0.1.0 (covered by the `sed` command in § "What needs your hands tomorrow" step 6).
+- ✅ **FIXED** 🟡 `SelectionService.captureSelectedText` would skip the pasteboard restore on `Task` cancellation during the 120ms sleep. Hoisted into a `defer` block — restores on every exit path now.
+- ✅ **FIXED** 🟡 `ChromeService` AppleScript had no timeout — a wedged Chrome could hang the menu bar indefinitely. Now carries `with timeout of 5 seconds … end timeout`.
+- 🟡 `/v2/synthesize` and v1 `_speak` don't re-validate URL scheme before calling `extract` (defense-in-depth — trafilatura only fetches http(s) anyway). Deferred.
+- 🟢 Four Lows: key-file mode, URL-in-log redaction (none currently logged but worth a comment), nested-helper entitlements, v1-era README phrasing about Hammerspoon. All cosmetic.
+
+**Overall security verdict (auditor's words):** *"The integrated `native-app-rebuild` branch is in good security shape. No 🔴 Critical findings. URL-scheme parsing dropped or safely clamped all 11 adversarial inputs (verified by a new XCTest). Pasteboard handling is correct. Entitlements are minimal and hardened-runtime-friendly. Daemon binds 127.0.0.1 only with no `eval`/`exec`/`shell=True`. Signing pipeline uses the right flags. No telemetry SDKs. Sparkle public key is real and consistent across project.yml and Info.plist; private key gitignored and verified absent from the tree."*
 
 ---
 
@@ -199,11 +210,11 @@ These aren't blockers for v0.1 but worth fixing in v0.2:
 | Metric | Value |
 |---|---|
 | Branch | `native-app-rebuild` |
-| Commits ahead of `main` | 15+ |
+| Commits ahead of `main` | 19 |
 | Files added | 60+ (see `git diff --stat main..native-app-rebuild`) |
 | Swift source files | 22 |
 | Swift test files | 11 |
-| Swift tests | **90 passing** |
+| Swift tests | **91 passing** (90 Lane A + 1 security-audit URL-scheme regression) |
 | Daemon test files | 13 (8 v1 + 6 v2 + 1 audit-regression) |
 | Daemon tests | **94 passing** (33 v1 + 49 v2 + 12 regression) |
 | Lint status | SwiftLint 0 violations · swift-format 0 warnings |
