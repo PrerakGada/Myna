@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.myna.engine</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__HOME__/.venvs/mlx-audio/bin/python</string>
+    <string>-m</string><string>mlx_audio.server</string>
+    <string>--host</string><string>127.0.0.1</string>
+    <string>--port</string><string>8765</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/myna-engine.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/myna-engine.log</string>
+</dict>
+</plist>
