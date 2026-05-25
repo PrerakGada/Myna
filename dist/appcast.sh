@@ -12,6 +12,10 @@
 #                                  (default https://github.com/<owner>/myna/releases/download/v$VERSION)
 #   MIN_SYSTEM_VERSION           — default 13.0
 #   RELEASE_NOTES_URL            — optional; link to release notes
+#   SIGN_UPDATE_BIN              — optional override for Sparkle's `sign_update`
+#   OPENSSL_BIN                  — optional override for openssl. The script
+#                                  refuses to use LibreSSL because LibreSSL ≤ 3.x
+#                                  cannot sign raw Ed25519 messages via pkeyutl.
 #
 # Outputs:
 #   - Updates / creates $APPCAST_PATH with a new <item> for $VERSION
@@ -21,9 +25,11 @@
 #   dist/appcast.sh [--dry-run] [--help]
 #
 # Notes:
-#   The official tool is Sparkle's `sign_update` binary. We invoke it when
-#   present; otherwise we fall back to signing with /usr/bin/openssl which
-#   produces the same raw Ed25519 signature Sparkle expects.
+#   The official tool is Sparkle's `sign_update` binary; we prefer it when
+#   present (the release workflow installs it via the Sparkle release tarball).
+#   The OpenSSL fallback requires a real OpenSSL 1.1.1+ that supports Ed25519
+#   (Homebrew's openssl@3 works; macOS system /usr/bin/openssl is LibreSSL
+#   and does NOT). We auto-detect.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -44,12 +50,60 @@ DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL:-https://github.com/CHANGEME/myna/release
 
 log "appcast.sh — version=$VERSION dmg=$DMG_PATH appcast=$APPCAST_PATH"
 
+# ---- locate sign_update (preferred) and openssl (fallback) ----
+
+# 1) sign_update from Sparkle. Either env override, or first found on PATH /
+#    in common install locations (brew cellar of Sparkle.app, sparkle tarball
+#    extracted to ./sparkle/bin/, the Xcode SPM checkout).
+SIGN_UPDATE_BIN="${SIGN_UPDATE_BIN:-}"
+if [ -z "$SIGN_UPDATE_BIN" ]; then
+  for cand in \
+    "$(command -v sign_update 2>/dev/null || true)" \
+    "$ROOT/sparkle/bin/sign_update" \
+    "/Applications/Sparkle.app/Contents/MacOS/sign_update" \
+    "$HOME/Library/Developer/Xcode/DerivedData"/*/SourcePackages/checkouts/Sparkle/bin/sign_update
+  do
+    if [ -n "$cand" ] && [ -x "$cand" ]; then
+      SIGN_UPDATE_BIN="$cand"
+      break
+    fi
+  done
+fi
+
+# 2) openssl. Reject LibreSSL up-front. We prefer brew openssl@3 when present.
+OPENSSL_BIN="${OPENSSL_BIN:-}"
+if [ -z "$OPENSSL_BIN" ]; then
+  for cand in \
+    "/opt/homebrew/opt/openssl@3/bin/openssl" \
+    "/usr/local/opt/openssl@3/bin/openssl" \
+    "$(command -v openssl 2>/dev/null || true)"
+  do
+    if [ -n "$cand" ] && [ -x "$cand" ]; then
+      ver="$("$cand" version 2>/dev/null || true)"
+      case "$ver" in
+        OpenSSL*) OPENSSL_BIN="$cand"; break ;;
+      esac
+    fi
+  done
+fi
+
+if [ -n "$SIGN_UPDATE_BIN" ]; then
+  log "using sign_update: $SIGN_UPDATE_BIN"
+elif [ -n "$OPENSSL_BIN" ]; then
+  log "using openssl fallback: $OPENSSL_BIN ($("$OPENSSL_BIN" version))"
+else
+  if [ "${DRY_RUN:-0}" != "1" ]; then
+    die "no signing tool found. Install Sparkle (provides sign_update) or 'brew install openssl@3'."
+  fi
+  log "no signer found; --dry-run continues with placeholder signature"
+fi
+
 if [ "${DRY_RUN:-0}" != "1" ]; then
   require_env SPARKLE_EDDSA_PRIVATE_KEY
   [ -f "$DMG_PATH" ] || die "no DMG at $DMG_PATH"
 fi
 
-# 1) Compute size + signature.
+# ---- compute size + signature ----
 file_size=0
 ed_sig=""
 
@@ -58,22 +112,30 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   ed_sig="DRY_RUN_SIGNATURE_PLACEHOLDER_BASE64=="
 else
   file_size=$(stat -f '%z' "$DMG_PATH" 2>/dev/null || stat -c '%s' "$DMG_PATH")
-  if command -v sign_update >/dev/null 2>&1; then
-    # Sparkle's binary: prints both `sparkle:edSignature` and `length`.
-    raw=$(sign_update -f <(printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY") "$DMG_PATH" 2>/dev/null || true)
-    ed_sig=$(printf '%s\n' "$raw" | sed -nE 's/.*sparkle:edSignature="([^"]+)".*/\1/p')
+
+  if [ -n "$SIGN_UPDATE_BIN" ]; then
+    # Sparkle's `sign_update -f <keyfile> <file>` prints the XML attributes.
+    tmp_key=$(mktemp)
+    # shellcheck disable=SC2064
+    trap "rm -f '$tmp_key'" EXIT
+    printf '%s' "$SPARKLE_EDDSA_PRIVATE_KEY" > "$tmp_key"
+    raw="$("$SIGN_UPDATE_BIN" -f "$tmp_key" "$DMG_PATH" 2>/dev/null || true)"
+    rm -f "$tmp_key"
+    trap - EXIT
+    ed_sig="$(printf '%s\n' "$raw" | sed -nE 's/.*sparkle:edSignature="([^"]+)".*/\1/p')"
   fi
-  if [ -z "$ed_sig" ]; then
-    # Fallback: openssl sign with raw Ed25519 key.
-    # Sparkle accepts the raw 64-byte signature, base64-encoded.
+
+  if [ -z "$ed_sig" ] && [ -n "$OPENSSL_BIN" ]; then
+    # Fallback: build a PKCS#8 PEM from the raw 32-byte seed and sign with
+    # `pkeyutl -rawin`. Requires real OpenSSL 1.1.1+; we rejected LibreSSL above.
     tmp_pem=$(mktemp)
-    trap 'rm -f "$tmp_pem"' EXIT
-    # Wrap 32-byte raw key in PKCS#8 DER, then convert to PEM. The PKCS#8
-    # prefix for Ed25519 is: 30 2e 02 01 00 30 05 06 03 2b 65 70 04 22 04 20
-    python3 - <<PY > "$tmp_pem"
-import base64, sys
-raw = base64.b64decode("$SPARKLE_EDDSA_PRIVATE_KEY")
-assert len(raw) == 32, f"expected 32 bytes, got {len(raw)}"
+    # shellcheck disable=SC2064
+    trap "rm -f '$tmp_pem'" EXIT
+    python3 - <<'PY' > "$tmp_pem"
+import base64, os, sys
+raw = base64.b64decode(os.environ["SPARKLE_EDDSA_PRIVATE_KEY"])
+if len(raw) != 32:
+    sys.exit(f"SPARKLE_EDDSA_PRIVATE_KEY must decode to 32 bytes, got {len(raw)}")
 prefix = bytes.fromhex("302e020100300506032b657004220420")
 der = prefix + raw
 b64 = base64.b64encode(der).decode()
@@ -83,15 +145,18 @@ for i in range(0, len(b64), 64):
 print("-----END PRIVATE KEY-----")
 PY
     sig_bin=$(mktemp)
-    /usr/bin/openssl pkeyutl -sign -inkey "$tmp_pem" -rawin -in "$DMG_PATH" -out "$sig_bin"
-    ed_sig=$(/usr/bin/openssl base64 -A -in "$sig_bin")
-    rm -f "$sig_bin"
+    "$OPENSSL_BIN" pkeyutl -sign -inkey "$tmp_pem" -rawin -in "$DMG_PATH" -out "$sig_bin"
+    ed_sig=$("$OPENSSL_BIN" base64 -A -in "$sig_bin")
+    rm -f "$sig_bin" "$tmp_pem"
+    trap - EXIT
   fi
+
+  [ -n "$ed_sig" ] || die "signing produced an empty signature — check sign_update / openssl availability"
 fi
 
 log "size=$file_size sig=${ed_sig:0:16}..."
 
-# 2) Build the <item> XML.
+# ---- build the <item> XML and write/append to appcast ----
 filename="$(basename "$DMG_PATH")"
 pub_date="$(date -u '+%a, %d %b %Y %H:%M:%S +0000')"
 notes_attr=""
@@ -100,7 +165,6 @@ if [ -n "$RELEASE_NOTES_URL" ]; then
       <sparkle:releaseNotesLink>$RELEASE_NOTES_URL</sparkle:releaseNotesLink>"
 fi
 
-# Use a Python heredoc to write the file safely (escapes XML).
 ITEM_XML=$(cat <<XML
     <item>
       <title>Myna $VERSION</title>
@@ -117,7 +181,6 @@ ITEM_XML=$(cat <<XML
 XML
 )
 
-# 3) Append to (or create) appcast.xml.
 if [ "${DRY_RUN:-0}" = "1" ]; then
   log "would write item to $APPCAST_PATH:"
   printf '%s\n' "$ITEM_XML" >&2
@@ -141,15 +204,19 @@ $ITEM_XML
 </rss>
 XML
 else
-  # Insert the new item right after <channel ...> (so newest is first).
+  # Pass values via env vars rather than heredoc string interpolation so a
+  # version tag like `v0.1.0"""` cannot break out of the Python literal.
+  # Per AUDIT_REPORT.md Lane B 🟡 #2.
   tmp=$(mktemp)
-  python3 - "$APPCAST_PATH" "$tmp" <<PY
-import sys, re
+  ITEM_XML="$ITEM_XML" VERSION="$VERSION" \
+  python3 - "$APPCAST_PATH" "$tmp" <<'PY'
+import os, re, sys
 src = open(sys.argv[1]).read()
-item = """$ITEM_XML"""
+item = os.environ["ITEM_XML"]
+ver = os.environ["VERSION"]
 # Drop any existing item for the same version, then prepend.
 src = re.sub(
-    r'\s*<item>.*?<sparkle:shortVersionString>' + re.escape("$VERSION") +
+    r'\s*<item>.*?<sparkle:shortVersionString>' + re.escape(ver) +
     r'</sparkle:shortVersionString>.*?</item>\s*',
     '\n',
     src,
@@ -159,8 +226,7 @@ m = re.search(r'(<channel[^>]*>)', src)
 if not m:
     sys.exit("could not find <channel> in existing appcast")
 i = m.end()
-out = src[:i] + "\n" + item + src[i:]
-open(sys.argv[2], "w").write(out)
+open(sys.argv[2], "w").write(src[:i] + "\n" + item + src[i:])
 PY
   mv "$tmp" "$APPCAST_PATH"
 fi

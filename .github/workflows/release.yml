@@ -297,12 +297,29 @@ jobs:
             --dir dist/out \
             --repo "$GITHUB_REPOSITORY" \
           || echo "no existing appcast — will create a fresh one"
+      - name: Install Sparkle sign_update + ensure real OpenSSL
+        # macOS runners ship LibreSSL as /usr/bin/openssl, which cannot do raw
+        # Ed25519 signing via `pkeyutl -rawin`. Per AUDIT_REPORT.md Lane B 🔴 #2,
+        # appcast signing would silently fail without either Sparkle's
+        # sign_update binary OR Homebrew's openssl@3. Install both for belt-and-
+        # braces; dist/appcast.sh prefers sign_update when present.
+        run: |
+          # Pinned to a known-good Sparkle release; bump as Sparkle updates.
+          SPARKLE_VER="2.6.4"
+          curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VER}/Sparkle-${SPARKLE_VER}.tar.xz" \
+            -o /tmp/sparkle.tar.xz
+          mkdir -p sparkle
+          tar -xJf /tmp/sparkle.tar.xz -C sparkle
+          ls sparkle/bin/sign_update
+          brew install openssl@3 || brew upgrade openssl@3 || true
       - name: Sign + append appcast item
         env:
           SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
           VERSION: ${{ needs.preflight.outputs.version }}
           DOWNLOAD_BASE_URL: ${{ format('https://github.com/{0}/releases/download/v{1}', github.repository, needs.preflight.outputs.version) }}
           RELEASE_NOTES_URL: ${{ format('https://github.com/{0}/releases/tag/v{1}', github.repository, needs.preflight.outputs.version) }}
+          SIGN_UPDATE_BIN: ${{ github.workspace }}/sparkle/bin/sign_update
+          OPENSSL_BIN: /opt/homebrew/opt/openssl@3/bin/openssl
         run: bash dist/appcast.sh
       - name: Upload appcast.xml
         uses: actions/upload-artifact@v4

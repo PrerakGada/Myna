@@ -23,7 +23,10 @@ export DEVELOPER_ID_APPLICATION="Developer ID Application: Test User (TESTTEAM00
 export APPLE_ID="test@example.com"
 export APPLE_TEAM_ID="TESTTEAM00"
 export APPLE_ID_APP_PASSWORD="test-app-specific-password"
-export SPARKLE_EDDSA_PRIVATE_KEY="VB1oLQU4trMsELZLWQXBQQ0NcZYHF/HpBs+4t0K6N3U="
+# Throwaway test-only key — generated fresh, never used to sign anything real.
+# Does NOT correspond to the production SUPublicEDKey in apps/macos/project.yml.
+# Rotating this value has no impact on shipped Sparkle updates.
+export SPARKLE_EDDSA_PRIVATE_KEY="+5WRaYIoNW6NJ8yxQ68/OrCcfvbKXsoE38kOkgTKGSE="
 export VERSION="0.0.0-smoke"
 
 pass=0
