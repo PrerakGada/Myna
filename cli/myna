@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+PORT="${MYNA_PORT:-8766}"
+MODE="full"
+SPEED=""
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --summary) MODE="summary"; shift ;;
+    --speed) SPEED="$2"; shift 2 ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+if [[ ${#ARGS[@]} -gt 0 ]]; then
+  TEXT="${ARGS[*]}"
+else
+  TEXT="$(cat)"
+fi
+BODY=$(TEXT="$TEXT" MODE="$MODE" SPEED="$SPEED" python3 -c '
+import json, os
+d = {"text": os.environ["TEXT"], "mode": os.environ["MODE"], "source": "cli"}
+if os.environ.get("SPEED"):
+    d["speed"] = float(os.environ["SPEED"])
+print(json.dumps(d))')
+curl -s -X POST "http://127.0.0.1:${PORT}/speak" \
+  -H "Content-Type: application/json" -d "$BODY" >/dev/null
