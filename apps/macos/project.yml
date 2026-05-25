@@ -51,7 +51,7 @@ targets:
           - CFBundleURLName: dev.myna.urlscheme
             CFBundleURLSchemes: [myna]
         SUFeedURL: "https://github.com/CHANGEME/myna/releases/download/appcast/appcast.xml"
-        SUPublicEDKey: "REPLACE_WITH_SPARKLE_EDDSA_PUBLIC_KEY"
+        SUPublicEDKey: "i+MLgN/F6W8JB9ToiLVRCdFvPkLhv1R21BdqrkIF8K0="
         SUEnableAutomaticChecks: YES
         SUEnableInstallerLauncherService: YES
     entitlements:
