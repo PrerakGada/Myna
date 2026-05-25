@@ -71,3 +71,20 @@ public final class UpdateController: ObservableObject {
     /// `checkForUpdates()` and `canCheckForUpdates`.
     public var updater: SPUUpdater { controller.updater }
 }
+
+/// SwiftUI menu item that calls `UpdateController.checkForUpdates()` and
+/// disables itself when Sparkle reports it can't currently check (e.g. an
+/// update is already in progress, or the network is offline). Lane A's
+/// `MenuBarView` references this as `CheckForUpdatesMenuItem(controller.updates)`.
+public struct CheckForUpdatesMenuItem: View {
+    @ObservedObject private var controller: UpdateController
+
+    public init(_ controller: UpdateController) {
+        self.controller = controller
+    }
+
+    public var body: some View {
+        Button("Check for Updates…") { controller.checkForUpdates() }
+            .disabled(!controller.canCheckForUpdates)
+    }
+}
