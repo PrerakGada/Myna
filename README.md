@@ -52,11 +52,13 @@ menu bar and hotkeys survive reboots.
 
 | Action | Default |
 |---|---|
-| Speak selection (full) | ⌘⇧S |
-| Speak selection (summary) | ⌘⇧A |
-| Read Chrome article | ⌘⇧R |
-| Pause / Resume | ⌘⇧Space |
-| Stop | ⌘⇧. |
+| Speak selection (full) | ⌘⌥⇧S |
+| Speak selection (summary) | ⌘⌥⇧A |
+| Read Chrome article | ⌘⌥⇧R |
+| Pause / Resume | ⌘⌥⇧Space |
+| Stop | ⌘⌥⇧. |
+
+Defaults use ⌘⌥⇧ (Command-Option-Shift) to avoid clashing with app shortcuts. The menu-bar icon is a Myna bird; Hammerspoon's Dock icon is hidden so Myna runs as a background menu-bar app.
 
 Rebind any of them: menu bar → **Customize Shortcuts…** → pick an action →
 press the new chord.

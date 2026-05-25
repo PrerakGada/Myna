@@ -8,9 +8,40 @@ local menubar = nil
 local status = { state = "down", registry_count = 0, registry = {} }
 local hotkeys = {}
 
-local ICONS = {
-  idle = "▶", playing = "🔊", paused = "⏸", down = "⚠️",
-}
+-- State shown as a small suffix next to the bird icon.
+local STATE_MARK = { idle = "", playing = " ▸", paused = " ‖", down = " !" }
+-- Emoji fallback used only if the drawn icon fails to render.
+local FALLBACK = { idle = "🐦", playing = "🔊", paused = "⏸", down = "⚠️" }
+
+-- Draw a monochrome Myna bird silhouette as a template image (adapts to
+-- light/dark menu bars). Returns an hs.image or nil on failure.
+local function birdIcon()
+  local c = hs.canvas.new({ x = 0, y = 0, w = 22, h = 22 })
+  local black = { red = 0, green = 0, blue = 0, alpha = 1 }
+  -- tail (left), body, head (right), beak
+  c[#c + 1] = { type = "segments", closed = true, action = "fill", fillColor = black,
+    coordinates = { { x = 6, y = 10 }, { x = 0, y = 12.5 }, { x = 6, y = 15.5 } } }
+  c[#c + 1] = { type = "oval", frame = { x = 3, y = 8, w = 12, h = 9 },
+    action = "fill", fillColor = black }
+  c[#c + 1] = { type = "circle", center = { x = 15, y = 8 }, radius = 4,
+    action = "fill", fillColor = black }
+  c[#c + 1] = { type = "segments", closed = true, action = "fill", fillColor = black,
+    coordinates = { { x = 18, y = 6 }, { x = 22, y = 8 }, { x = 18, y = 10 } } }
+  local img = c:imageFromCanvas()
+  c:delete()
+  if img then img:template(true) end
+  return img
+end
+
+local function applyIcon()
+  local ok, img = pcall(birdIcon)
+  if ok and img then
+    menubar:setIcon(img)
+    M.hasIcon = true
+  else
+    M.hasIcon = false
+  end
+end
 
 local function post(path, body)
   hs.http.asyncPost(BASE .. path, body or "", {
@@ -78,6 +109,8 @@ local function buildMenu()
   table.insert(items, { title = "Open Logs", fn = function()
       hs.execute("open ~/Library/Logs/myna-daemon.log")
     end })
+  table.insert(items, { title = "Reload Myna", fn = function() hs.reload() end })
+  table.insert(items, { title = "Hammerspoon Console", fn = function() hs.openConsole() end })
   return items
 end
 
@@ -95,7 +128,11 @@ local function tick()
     end
     refreshRegistry(function()
       if menubar then
-        menubar:setTitle(ICONS[status.state] or "▶")
+        if M.hasIcon then
+          menubar:setTitle(STATE_MARK[status.state] or "")
+        else
+          menubar:setTitle(FALLBACK[status.state] or "🐦")
+        end
         menubar:setMenu(buildMenu())
       end
     end)
@@ -104,11 +141,11 @@ end
 
 -- bindAll and openRecorder are defined above; menu bar + status polling below.
 local DEFAULT_BINDINGS = {
-  speak_selection_full = { mods = { "cmd", "shift" }, key = "s" },
-  speak_selection_summary = { mods = { "cmd", "shift" }, key = "a" },
-  read_chrome_article = { mods = { "cmd", "shift" }, key = "r" },
-  pause_resume = { mods = { "cmd", "shift" }, key = "space" },
-  stop = { mods = { "cmd", "shift" }, key = "." },
+  speak_selection_full = { mods = { "cmd", "alt", "shift" }, key = "s" },
+  speak_selection_summary = { mods = { "cmd", "alt", "shift" }, key = "a" },
+  read_chrome_article = { mods = { "cmd", "alt", "shift" }, key = "r" },
+  pause_resume = { mods = { "cmd", "alt", "shift" }, key = "space" },
+  stop = { mods = { "cmd", "alt", "shift" }, key = "." },
 }
 
 local function loadBindings()
@@ -273,7 +310,9 @@ end
 function M.start()
   if menubar then menubar:delete() end
   menubar = hs.menubar.new()
-  menubar:setTitle("▶")
+  applyIcon()
+  menubar:setTitle(M.hasIcon and "" or "🐦")
+  pcall(function() hs.dockIcon(false) end)  -- hide Hammerspoon's Dock presence
   M.bindAll()
   M.statusTimer = hs.timer.doEvery(1.5, tick)
   tick()

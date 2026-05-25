@@ -19,11 +19,11 @@ echo "==> Writing default config (only if absent)"
 mkdir -p "$HOME/.config/myna"
 [ -f "$HOME/.config/myna/keybindings.json" ] || cat > "$HOME/.config/myna/keybindings.json" <<'EOF'
 {
-  "speak_selection_full":    { "mods": ["cmd","shift"], "key": "s" },
-  "speak_selection_summary": { "mods": ["cmd","shift"], "key": "a" },
-  "read_chrome_article":     { "mods": ["cmd","shift"], "key": "r" },
-  "pause_resume":            { "mods": ["cmd","shift"], "key": "space" },
-  "stop":                    { "mods": ["cmd","shift"], "key": "." }
+  "speak_selection_full":    { "mods": ["cmd","alt","shift"], "key": "s" },
+  "speak_selection_summary": { "mods": ["cmd","alt","shift"], "key": "a" },
+  "read_chrome_article":     { "mods": ["cmd","alt","shift"], "key": "r" },
+  "pause_resume":            { "mods": ["cmd","alt","shift"], "key": "space" },
+  "stop":                    { "mods": ["cmd","alt","shift"], "key": "." }
 }
 EOF
 
