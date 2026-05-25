@@ -5,3 +5,24 @@ __pycache__/
 *.wav
 .DS_Store
 *.egg-info/
+
+# Local AI scaffolding / experiments — not part of Myna proper
+.agent/
+.agents/
+.claude/
+.github/agents/
+_bmad/
+_bmad-output/
+site/
+logs/
+
+# Xcode build artifacts (apps/macos has its own .gitignore too)
+apps/macos/Myna.xcodeproj/
+apps/macos/.build/
+apps/macos/DerivedData/
+apps/macos/build/
+*.xcuserdata*
+
+# Local notes
+TODO.local.md
+NOTES.local.md

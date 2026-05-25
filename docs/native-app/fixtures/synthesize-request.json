@@ -1,0 +1,8 @@
+{
+  "text": "Hello there. This is a test of the Myna v2 synthesize endpoint.",
+  "voice": "af_heart",
+  "speed": 1.0,
+  "mode": "full",
+  "chunk_chars": 1500,
+  "session_id": "1f3b2c50-8b4f-4d2c-9c5e-2f5a6f1b3d2c"
+}

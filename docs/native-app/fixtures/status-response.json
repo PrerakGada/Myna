@@ -1,0 +1,36 @@
+{
+  "state": "idle",
+  "engine": {
+    "url": "http://127.0.0.1:8765",
+    "status": "up",
+    "model": "prince-canuma/Kokoro-82M",
+    "last_check_age_s": 1.4
+  },
+  "daemon": {
+    "version": "0.2.0",
+    "uptime_s": 12345.6,
+    "pid": 4444
+  },
+  "config": {
+    "voice": "af_heart",
+    "speed": 1.0,
+    "lang_code": "a",
+    "chunk_chars": 1500,
+    "summary_model": "qwen3.5:4b"
+  },
+  "registry": {
+    "count": 1,
+    "items": [
+      {
+        "id": "abcd1234",
+        "label": "ECS",
+        "age_s": 12,
+        "preview": "Here is the first sixty characters of an announced message."
+      }
+    ]
+  },
+  "v1_player": {
+    "state": "idle",
+    "now_playing": null
+  }
+}

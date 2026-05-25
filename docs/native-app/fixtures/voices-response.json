@@ -1,0 +1,8 @@
+{
+  "voices": [
+    { "id": "af_heart",   "label": "Heart (female)",   "lang": "en", "default": true  },
+    { "id": "af_bella",   "label": "Bella (female)",   "lang": "en", "default": false },
+    { "id": "am_michael", "label": "Michael (male)",   "lang": "en", "default": false },
+    { "id": "am_adam",    "label": "Adam (male)",      "lang": "en", "default": false }
+  ]
+}

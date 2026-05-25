@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main, native-app-rebuild]
+  pull_request:
+    branches: [main, native-app-rebuild]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  swift-build:
+    name: Swift build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.0.app || true
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: apps/macos
+        run: xcodegen generate
+      - name: Build
+        working-directory: apps/macos
+        run: |
+          xcodebuild -scheme Myna -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            build
+
+  swift-test:
+    name: Swift tests
+    runs-on: macos-15
+    needs: swift-build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: apps/macos
+        run: xcodegen generate
+      - name: Test
+        working-directory: apps/macos
+        run: |
+          xcodebuild test -scheme Myna \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+  swift-lint:
+    name: Swift lint
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install linters
+        run: brew install swiftlint swift-format
+      - name: SwiftLint
+        working-directory: apps/macos
+        run: swiftlint --strict
+      - name: swift-format
+        working-directory: apps/macos
+        run: swift-format lint --recursive --strict Sources Tests
+
+  daemon-test:
+    name: Daemon tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install daemon
+        run: pip install -e daemon[dev]
+      - name: pytest
+        run: pytest daemon/tests -q
+
+  dist-scripts:
+    name: dist/ smoke tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke-test scripts
+        run: |
+          if [ -f dist/tests/test_scripts.sh ]; then
+            bash dist/tests/test_scripts.sh
+          else
+            echo "dist/tests/test_scripts.sh not yet created (Lane B)"
+          fi

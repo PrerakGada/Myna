@@ -1,0 +1,9 @@
+# XcodeGen-generated; project.yml is the source of truth
+*.xcodeproj/
+.build/
+DerivedData/
+.swiftpm/
+Package.resolved
+*.xcuserdata*
+*.xcworkspace
+.DS_Store

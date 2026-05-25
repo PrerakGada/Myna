@@ -1,0 +1,106 @@
+name: Myna
+options:
+  bundleIdPrefix: dev.myna
+  deploymentTarget:
+    macOS: "13.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+  xcodeVersion: "16.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_STRICT_CONCURRENCY: complete
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    CLANG_ANALYZER_NONNULL: YES
+
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: 2.0.0
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.6.0
+
+targets:
+  Myna:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+        excludes:
+          - "**/.DS_Store"
+    resources:
+      - path: Resources/Assets.xcassets
+    info:
+      path: Resources/Info.plist
+      properties:
+        LSUIElement: YES   # menu-bar only, no Dock icon
+        LSMinimumSystemVersion: "13.0"
+        NSHumanReadableCopyright: "© 2026 Rashid Azar. MIT licensed."
+        NSPrincipalClass: NSApplication
+        NSAppleEventsUsageDescription: "Myna reads the URL of your front Chrome tab when you press the read-article shortcut."
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.myna.urlscheme
+            CFBundleURLSchemes: [myna]
+        SUFeedURL: "https://github.com/CHANGEME/myna/releases/download/appcast/appcast.xml"
+        SUPublicEDKey: "REPLACE_WITH_SPARKLE_EDDSA_PUBLIC_KEY"
+        SUEnableAutomaticChecks: YES
+        SUEnableInstallerLauncherService: YES
+    entitlements:
+      path: Resources/Myna.entitlements
+      properties:
+        com.apple.security.automation.apple-events: YES
+        com.apple.security.cs.allow-jit: NO
+        com.apple.security.cs.allow-unsigned-executable-memory: NO
+        com.apple.security.cs.disable-library-validation: NO
+        com.apple.security.cs.disable-executable-page-protection: NO
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.myna.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        COMBINE_HIDPI_IMAGES: YES
+    dependencies:
+      - package: KeyboardShortcuts
+      - package: Sparkle
+
+  MynaTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+        excludes:
+          - "**/.DS_Store"
+    dependencies:
+      - target: Myna
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Myna.app/Contents/MacOS/Myna"
+
+schemes:
+  Myna:
+    build:
+      targets:
+        Myna: all
+        MynaTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - MynaTests
+      gatherCoverageData: YES
+    profile:
+      config: Release
+    archive:
+      config: Release
