@@ -62,6 +62,7 @@ PY
 
 echo "==> Installing & loading LaunchAgents"
 mkdir -p "$HOME/Library/LaunchAgents"
+mkdir -p "$HOME/.cache/myna"   # the agents' WorkingDirectory (mlx-audio writes a relative logs/ dir)
 for n in engine daemon; do
   sed "s|__HOME__|$HOME|g" "$REPO/launchagents/dev.myna.$n.plist.template" \
     > "$HOME/Library/LaunchAgents/dev.myna.$n.plist"

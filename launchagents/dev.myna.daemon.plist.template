@@ -9,6 +9,7 @@
     <string>__HOME__/.venvs/myna/bin/python</string>
     <string>-m</string><string>myna</string>
   </array>
+  <key>WorkingDirectory</key><string>__HOME__/.cache/myna</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>__HOME__/Library/Logs/myna-daemon.log</string>
