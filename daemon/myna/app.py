@@ -331,7 +331,11 @@ def create_app(config: dict | None = None) -> FastAPI:
             )
         total = len(chunks)
         voice = req.voice or cfg["voice"]
-        speed = req.speed
+        # Clamp speed to the same [0.5, 2.0] range the v1 /speed endpoint
+        # enforces. Without this, a malicious or buggy client could send
+        # speed=99 and cause Kokoro to spend a long time producing audio
+        # nobody can usefully consume. Per AUDIT_REPORT.md Lane C 🟡 #1.
+        speed = max(0.5, min(2.0, req.speed))
         session_id = req.session_id or uuid.uuid4().hex
 
         # Synthesize the first chunk eagerly so engine errors surface as a real
@@ -451,8 +455,13 @@ def create_app(config: dict | None = None) -> FastAPI:
             ),
         )
 
-    @app.get("/v2/voices")
+    @app.get("/v2/voices", response_model=V2Voices, response_model_exclude_none=True)
     def v2_voices() -> V2Voices:
+        # exclude_none=True so the happy path returns {"voices": [...]} matching
+        # docs/native-app/fixtures/voices-response.json exactly. The "engine":
+        # "down" field is only emitted when actually set, matching the contract
+        # in API_CONTRACT.md § 2 which splits success vs down shapes.
+        # Per AUDIT_REPORT.md Lane C 🔴 #1.
         if not _check_engine_cached():
             return V2Voices(voices=[], engine="down")
         now = time.time()
@@ -466,8 +475,16 @@ def create_app(config: dict | None = None) -> FastAPI:
         app.state.voices_cache_at = now
         return V2Voices(voices=voices)
 
-    @app.post("/v2/extract")
+    @app.post(
+        "/v2/extract",
+        response_model=V2ExtractResp,
+        response_model_exclude_none=True,
+    )
     def v2_extract(req: V2ExtractReq) -> V2ExtractResp:
+        # exclude_none=True so success bodies contain only {ok, text[, title,
+        # byline]} and failure bodies contain only {ok, reason} — matching
+        # API_CONTRACT.md § 2 which cleanly separates the two shapes.
+        # Per AUDIT_REPORT.md Lane C 🔴 #2.
         url = (req.url or "").strip()
         if not (url.startswith("http://") or url.startswith("https://")):
             raise HTTPException(
@@ -493,8 +510,14 @@ def create_app(config: dict | None = None) -> FastAPI:
             return V2ExtractResp(ok=False, reason="extract_failed")
         return V2ExtractResp(ok=True, text=result)
 
-    @app.post("/v2/summarize")
+    @app.post(
+        "/v2/summarize",
+        response_model=V2SummarizeResp,
+        response_model_exclude_none=True,
+    )
     def v2_summarize(req: V2SummarizeReq) -> V2SummarizeResp:
+        # Apply the same exclude_none discipline so success only carries
+        # {ok, summary} and failure only carries {ok, reason}.
         text = (req.text or "").strip()
         if not text:
             raise HTTPException(
