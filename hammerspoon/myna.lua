@@ -102,7 +102,7 @@ local function tick()
   end)
 end
 
--- Filled in by Task 15 (openRecorder).
+-- bindAll and openRecorder are defined above; menu bar + status polling below.
 local DEFAULT_BINDINGS = {
   speak_selection_full = { mods = { "cmd", "shift" }, key = "s" },
   speak_selection_summary = { mods = { "cmd", "shift" }, key = "a" },
@@ -195,7 +195,13 @@ local ACTION_LABELS = {
 local function saveBinding(action, mods, key)
   local bindings = loadBindings()
   bindings[action] = { mods = mods, key = key }
+  hs.fs.mkdir(os.getenv("HOME") .. "/.config")
+  hs.fs.mkdir(os.getenv("HOME") .. "/.config/myna")
   local f = io.open(KEYBINDINGS_PATH, "w")
+  if not f then
+    hs.alert.show("Myna: cannot write keybindings file")
+    return
+  end
   f:write(hs.json.encode(bindings, true))
   f:close()
   M.bindAll()
