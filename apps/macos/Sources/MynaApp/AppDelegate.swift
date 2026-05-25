@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     /// TCC change to take effect in this process.
     private func promptForAccessibilityIfNeeded() {
         let key = "AXTrustedCheckOptionPrompt" as CFString
-        let opts = [key: kCFBooleanTrue!] as CFDictionary
+        let opts = [key: true] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(opts)
         FileHandle.standardError.write(Data("[Myna] AXIsProcessTrusted=\(trusted)\n".utf8))
     }
