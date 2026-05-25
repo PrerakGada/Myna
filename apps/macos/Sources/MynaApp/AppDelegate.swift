@@ -12,6 +12,7 @@
 //   8. UpdateController (Sparkle)
 //   9. MenuBarController (begins /v2/status polling)
 import AppKit
+import ApplicationServices
 import Combine
 import Foundation
 
@@ -61,6 +62,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         FileHandle.standardError.write(Data("[Myna] bootstrapping…\n".utf8))
         bootstrap()
         FileHandle.standardError.write(Data("[Myna] bootstrap returned; registering hotkeys\n".utf8))
+
+        // Trigger the Accessibility prompt if we don't already have it.
+        // Without Accessibility, CGEvent.post silently no-ops when
+        // SelectionService simulates Cmd+C — the hotkey fires, the
+        // pasteboard never fills, and nothing plays. The first launch
+        // MUST surface the system prompt so the user can grant it; macOS
+        // doesn't show the dialog automatically the way it does for
+        // microphone / camera / contacts.
+        promptForAccessibilityIfNeeded()
         hotkeys.register(handlers: [
             .speakSelectionFull: { [weak self] in self?.dispatcher.speakSelection(mode: .full) },
             .speakSelectionSummary: { [weak self] in self?.dispatcher.speakSelection(mode: .summary) },
@@ -114,6 +124,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     /// users saw "Myna initialising…" forever.
     private var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    /// Show the Accessibility-required system prompt if Myna isn't trusted
+    /// yet. `AXIsProcessTrustedWithOptions` with the prompt option set
+    /// either:
+    ///   - returns true silently (already trusted), or
+    ///   - returns false and shows the macOS "Myna would like to control
+    ///     your computer" alert that deep-links to System Settings.
+    /// After the user grants it, they need to relaunch Myna for the
+    /// TCC change to take effect in this process.
+    private func promptForAccessibilityIfNeeded() {
+        let key = "AXTrustedCheckOptionPrompt" as CFString
+        let opts = [key: kCFBooleanTrue!] as CFDictionary
+        let trusted = AXIsProcessTrustedWithOptions(opts)
+        FileHandle.standardError.write(Data("[Myna] AXIsProcessTrusted=\(trusted)\n".utf8))
     }
 
     func applicationWillTerminate(_ notification: Notification) {
