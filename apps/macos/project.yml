@@ -80,6 +80,10 @@ targets:
       - path: Tests
         excludes:
           - "**/.DS_Store"
+    resources:
+      - path: ../../docs/native-app/fixtures
+        type: folder
+        destinationFilters: [macOS]
     dependencies:
       - target: Myna
     settings:
