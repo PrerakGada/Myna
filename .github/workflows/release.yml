@@ -1,0 +1,419 @@
+# .github/workflows/release.yml
+#
+# Triggered on `git push --tags` for any `v*` tag. Produces a signed,
+# notarized, stapled DMG, attaches it to a GitHub Release, refreshes the
+# Sparkle appcast, and bumps the Homebrew cask in the tap/ directory.
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# Required GitHub Actions secrets (set under Repo → Settings → Secrets):
+#
+#   APPLE_DEVELOPER_ID_P12            base64 of the Developer ID p12 export
+#                                      `base64 -i DeveloperID.p12 | pbcopy`
+#   APPLE_DEVELOPER_ID_P12_PASSWORD   password used when exporting the p12
+#   APPLE_DEVELOPER_ID_NAME           e.g. "Developer ID Application: Rashid Azar (TEAMID)"
+#   APPLE_ID                          your Apple ID email
+#   APPLE_ID_APP_PASSWORD             app-specific password (appleid.apple.com)
+#   APPLE_TEAM_ID                     10-char team ID
+#   KEYCHAIN_PASSWORD                 random string used to create temp keychain
+#   SPARKLE_EDDSA_PRIVATE_KEY         base64 of Sparkle's `generate_keys` priv key
+#   TAP_DEPLOY_KEY                    SSH deploy key with write access to the
+#                                      homebrew-myna tap repository
+# ──────────────────────────────────────────────────────────────────────────────
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.1.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # `gh release create` writes to releases
+
+env:
+  XCODE_VERSION: "16.0"
+
+jobs:
+  preflight:
+    name: Preflight — secrets present
+    runs-on: macos-15
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve version from tag
+        id: v
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag"        >> "$GITHUB_OUTPUT"
+          echo "Releasing $tag (version $version)"
+      - name: Check required secrets
+        env:
+          APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_DEVELOPER_ID_NAME: ${{ secrets.APPLE_DEVELOPER_ID_NAME }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_APP_PASSWORD: ${{ secrets.APPLE_ID_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          missing=()
+          for v in APPLE_DEVELOPER_ID_P12 APPLE_DEVELOPER_ID_P12_PASSWORD \
+                   APPLE_DEVELOPER_ID_NAME APPLE_ID APPLE_ID_APP_PASSWORD \
+                   APPLE_TEAM_ID KEYCHAIN_PASSWORD SPARKLE_EDDSA_PRIVATE_KEY; do
+            eval "val=\${$v:-}"
+            if [ -z "$val" ]; then
+              missing+=("$v")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            printf '::error::Missing required secrets: %s\n' "${missing[*]}"
+            printf 'See .github/workflows/release.yml header for setup.\n'
+            exit 1
+          fi
+          echo "All required secrets present."
+
+  build-universal:
+    name: Build universal binary
+    runs-on: macos-15
+    needs: preflight
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app || true
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Build
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: bash dist/build.sh
+      - name: Upload .app
+        uses: actions/upload-artifact@v4
+        with:
+          name: myna-app-unsigned
+          path: dist/export/Myna.app
+          retention-days: 7
+          if-no-files-found: error
+
+  sign:
+    name: Sign .app with Developer ID
+    runs-on: macos-15
+    needs: [preflight, build-universal]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download .app
+        uses: actions/download-artifact@v4
+        with:
+          name: myna-app-unsigned
+          path: dist/export/Myna.app
+      - name: Import Developer ID into temp keychain
+        env:
+          APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/myna-build.keychain-db"
+          P12="$RUNNER_TEMP/developer-id.p12"
+          echo "$APPLE_DEVELOPER_ID_P12" | base64 --decode > "$P12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" \
+            -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Make our keychain searchable.
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | sed -e 's/"//g' | tr -d ' ')
+          rm -f "$P12"
+          echo "KEYCHAIN_PATH=$KEYCHAIN" >> "$GITHUB_ENV"
+      - name: Codesign
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.APPLE_DEVELOPER_ID_NAME }}
+        run: bash dist/sign.sh
+      - name: Upload signed .app
+        uses: actions/upload-artifact@v4
+        with:
+          name: myna-app-signed
+          path: dist/export/Myna.app
+          retention-days: 7
+          if-no-files-found: error
+
+  notarize:
+    name: Notarize .app
+    runs-on: macos-15
+    needs: [preflight, sign]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download signed .app
+        uses: actions/download-artifact@v4
+        with:
+          name: myna-app-signed
+          path: dist/export/Myna.app
+      - name: Notarize + staple
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID_APP_PASSWORD: ${{ secrets.APPLE_ID_APP_PASSWORD }}
+          TARGET: dist/export/Myna.app
+          TARGET_SET: "1"  # force notarize.sh to use TARGET as-is
+        run: bash dist/notarize.sh
+      - name: Upload stapled .app
+        uses: actions/upload-artifact@v4
+        with:
+          name: myna-app-stapled
+          path: dist/export/Myna.app
+          retention-days: 7
+          if-no-files-found: error
+
+  dmg:
+    name: Build DMG
+    runs-on: macos-15
+    needs: [preflight, notarize]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download stapled .app
+        uses: actions/download-artifact@v4
+        with:
+          name: myna-app-stapled
+          path: dist/export/Myna.app
+      - name: Install create-dmg
+        run: brew install create-dmg
+      - name: Build DMG
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: bash dist/dmg.sh
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: myna-dmg-unsigned
+          path: dist/out/Myna-${{ needs.preflight.outputs.version }}.dmg
+          retention-days: 7
+          if-no-files-found: error
+
+  sign-dmg:
+    name: Sign + notarize DMG
+    runs-on: macos-15
+    needs: [preflight, dmg]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: myna-dmg-unsigned
+          path: dist/out
+      - name: Import Developer ID into temp keychain
+        env:
+          APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/myna-build.keychain-db"
+          P12="$RUNNER_TEMP/developer-id.p12"
+          echo "$APPLE_DEVELOPER_ID_P12" | base64 --decode > "$P12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" \
+            -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | sed -e 's/"//g' | tr -d ' ')
+          rm -f "$P12"
+      - name: Sign DMG
+        env:
+          DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID_NAME }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          DMG="dist/out/Myna-$VERSION.dmg"
+          [ -f "$DMG" ] || { echo "::error::no DMG at $DMG"; exit 1; }
+          codesign --force --sign "$DEVELOPER_ID" --timestamp "$DMG"
+          codesign --verify --verbose=2 "$DMG"
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID_APP_PASSWORD: ${{ secrets.APPLE_ID_APP_PASSWORD }}
+          TARGET: dist/out/Myna-${{ needs.preflight.outputs.version }}.dmg
+          TARGET_SET: "1"
+        run: bash dist/notarize.sh
+      - name: Upload signed DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: myna-dmg
+          path: dist/out/Myna-${{ needs.preflight.outputs.version }}.dmg
+          retention-days: 30
+          if-no-files-found: error
+
+  appcast:
+    name: Sparkle appcast
+    runs-on: macos-15
+    needs: [preflight, sign-dmg]
+    outputs:
+      sha256: ${{ steps.hash.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download signed DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: myna-dmg
+          path: dist/out
+      - name: Compute sha256 for tap
+        id: hash
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          DMG="dist/out/Myna-$VERSION.dmg"
+          [ -f "$DMG" ] || { echo "::error::no DMG at $DMG"; exit 1; }
+          sha=$(shasum -a 256 "$DMG" | awk '{print $1}')
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          echo "size=$(stat -f%z "$DMG")" >> "$GITHUB_OUTPUT"
+      - name: Fetch existing appcast (if any)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist/out
+          # The appcast lives as an asset on the special `appcast` release.
+          # First release: this 404s — that's fine, appcast.sh creates a fresh one.
+          gh release download appcast \
+            --pattern appcast.xml \
+            --dir dist/out \
+            --repo "$GITHUB_REPOSITORY" \
+          || echo "no existing appcast — will create a fresh one"
+      - name: Sign + append appcast item
+        env:
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          DOWNLOAD_BASE_URL: ${{ format('https://github.com/{0}/releases/download/v{1}', github.repository, needs.preflight.outputs.version) }}
+          RELEASE_NOTES_URL: ${{ format('https://github.com/{0}/releases/tag/v{1}', github.repository, needs.preflight.outputs.version) }}
+        run: bash dist/appcast.sh
+      - name: Upload appcast.xml
+        uses: actions/upload-artifact@v4
+        with:
+          name: appcast
+          path: dist/out/appcast.xml
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    runs-on: macos-15
+    needs: [preflight, sign-dmg, appcast]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download signed DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: myna-dmg
+          path: dist/out
+      - name: Download appcast.xml
+        uses: actions/download-artifact@v4
+        with:
+          name: appcast
+          path: dist/out
+      - name: Create release with DMG attached
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          DMG="dist/out/Myna-$VERSION.dmg"
+          TAG="v$VERSION"
+          # Idempotent: if the release already exists (re-run), update it.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$DMG" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$DMG" \
+              --title "Myna $VERSION" \
+              --notes "See appcast for Sparkle metadata. Install via Homebrew: \`brew install --cask myna\`" \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+      - name: Publish appcast.xml on dedicated `appcast` release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # We use a single, permanent release tagged "appcast" whose only
+          # asset is appcast.xml. Sparkle's SUFeedURL points to this asset's
+          # download URL. Updating is "delete + re-upload" via gh release upload --clobber.
+          if ! gh release view appcast --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create appcast \
+              --title "Sparkle appcast" \
+              --notes "Auto-managed by release.yml. Do not edit." \
+              --repo "$GITHUB_REPOSITORY" \
+              --target main
+          fi
+          gh release upload appcast dist/out/appcast.xml --clobber --repo "$GITHUB_REPOSITORY"
+
+  tap-bump:
+    name: Bump Homebrew cask
+    runs-on: macos-15
+    needs: [preflight, appcast, release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: source
+      - name: Resolve tap repo
+        id: tap
+        run: |
+          # The tap repo follows Homebrew convention: homebrew-<name>.
+          # Owner inferred from the source repo (works for forks too).
+          owner="${GITHUB_REPOSITORY%%/*}"
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "repo=$owner/homebrew-myna" >> "$GITHUB_OUTPUT"
+      - name: Check out tap (deploy key)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.tap.outputs.repo }}
+          path: tap-repo
+          ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
+          # If the secret is missing the action fails clearly; preflight already
+          # ensures it's present.
+      - name: Update cask
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          SHA: ${{ needs.appcast.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          CASK="tap-repo/Casks/myna.rb"
+          if [ ! -f "$CASK" ]; then
+            mkdir -p tap-repo/Casks
+            cp source/tap/Casks/myna.rb "$CASK"
+          fi
+          # Replace `version "..."`
+          /usr/bin/sed -i.bak -E "s/^( *version )\"[^\"]+\"/\1\"$VERSION\"/" "$CASK"
+          # Replace `sha256 "..."` (or `sha256 :no_check`)
+          /usr/bin/sed -i.bak -E "s/^( *sha256 )(:no_check|\"[^\"]+\")/\1\"$SHA\"/" "$CASK"
+          rm -f "$CASK.bak"
+          echo "--- updated cask ---"
+          cat "$CASK"
+      - name: Commit + push tap
+        run: |
+          set -euo pipefail
+          cd tap-repo
+          git config user.email "release-bot@myna.dev"
+          git config user.name  "Myna Release Bot"
+          if git diff --quiet; then
+            echo "no cask changes; nothing to push"
+            exit 0
+          fi
+          git add Casks/myna.rb
+          git commit -m "myna ${{ needs.preflight.outputs.version }}"
+          git push origin HEAD

@@ -1,0 +1,110 @@
+# .github/workflows/appcast.yml
+#
+# Rebuilds the full Sparkle appcast.xml from the latest N GitHub Releases
+# (instead of incrementally as release.yml does). Useful when:
+#   - the appcast asset was lost or corrupted
+#   - you want to retroactively change minimum-system-version metadata
+#   - you've manually edited a release and want the appcast to match
+#
+# Triggered MANUALLY (workflow_dispatch). The per-release flow in release.yml
+# does NOT call this — it appends incrementally.
+#
+# Required secrets (same as release.yml's appcast job):
+#   SPARKLE_EDDSA_PRIVATE_KEY
+name: Refresh appcast
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "Number of most-recent releases to include"
+        required: false
+        default: "20"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    name: Rebuild appcast from releases
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate secret
+        env:
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_EDDSA_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_EDDSA_PRIVATE_KEY secret is required"
+            exit 1
+          fi
+
+      - name: List recent releases
+        id: list
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COUNT: ${{ github.event.inputs.count }}
+        run: |
+          # Releases whose tag matches v* and whose only asset is a Myna-*.dmg.
+          gh release list \
+            --repo "$GITHUB_REPOSITORY" \
+            --limit "$COUNT" \
+            --json tagName,isDraft,isPrerelease,createdAt \
+            --jq '.[] | select(.isDraft == false) | select(.tagName | startswith("v")) | .tagName' \
+            > releases.txt
+          echo "found $(wc -l < releases.txt) releases"
+          cat releases.txt
+
+      - name: Rebuild appcast.xml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/out
+          # Start fresh — appcast.sh will create the file on first iteration.
+          rm -f dist/out/appcast.xml
+          # Iterate oldest-first so newest ends up at the top after each prepend.
+          tac releases.txt > releases.rev.txt 2>/dev/null \
+            || tail -r releases.txt > releases.rev.txt
+          while read -r tag; do
+            [ -z "$tag" ] && continue
+            version="${tag#v}"
+            mkdir -p dist/out
+            echo "==> $tag"
+            gh release download "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "Myna-$version.dmg" \
+              --dir dist/out \
+              --clobber
+            DMG_PATH="dist/out/Myna-$version.dmg" \
+            VERSION="$version" \
+            DOWNLOAD_BASE_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag" \
+            RELEASE_NOTES_URL="https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag" \
+              bash dist/appcast.sh
+            # Free disk: we keep the appcast, drop the DMG.
+            rm -f "$DMG_PATH"
+          done < releases.rev.txt
+          ls -la dist/out/
+
+      - name: Upload to the `appcast` release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view appcast --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create appcast \
+              --title "Sparkle appcast" \
+              --notes "Auto-managed by appcast.yml workflow." \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+          gh release upload appcast dist/out/appcast.xml \
+            --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Upload artifact (for inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: appcast
+          path: dist/out/appcast.xml
+          retention-days: 30
