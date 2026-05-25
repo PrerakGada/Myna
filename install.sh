@@ -53,6 +53,7 @@ already = any(
 )
 if not already:
     stop.append({"hooks": [{"type": "command", "command": cmd}]})
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2))
     print("   added Stop hook")
 else:
