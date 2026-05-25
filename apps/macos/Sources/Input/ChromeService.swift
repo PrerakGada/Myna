@@ -31,9 +31,15 @@ public final class ChromeService: @unchecked Sendable {
 
     /// Return the URL of the front Chrome tab if Chrome is running and
     /// the URL is a valid http(s) one. Otherwise nil.
+    ///
+    /// The AppleScript carries a 5-second timeout so a wedged Chrome
+    /// (mid-crash, beachball, stuck script) can't hang the menu bar.
+    /// Per AUDIT_REPORT.md Security 🟡 #1.
     public func frontTabURL() -> String? {
         let source = """
-            tell application "Google Chrome" to return URL of active tab of front window
+            with timeout of 5 seconds
+              tell application "Google Chrome" to return URL of active tab of front window
+            end timeout
             """
         guard let raw = runner.runReturningString(source) else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)

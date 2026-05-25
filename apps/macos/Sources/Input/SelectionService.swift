@@ -114,16 +114,16 @@ public final class SelectionService: @unchecked Sendable {
     public func captureSelectedText() async -> String? {
         let snapshot = pasteboard.saveSnapshot()
         pasteboard.clearContents()
+        // Restore the user's prior pasteboard contents on EVERY exit path —
+        // including Task cancellation during the 120ms copy-wait sleep, which
+        // would otherwise leave the user with an empty clipboard.
+        // Per AUDIT_REPORT.md Security 🟡 #3 / Lane A 🟡 #5.
+        defer { pasteboard.restore(snapshot) }
+
         let posted = keyPoster.postCmdC()
-        guard posted else {
-            // Failed to post — restore the pasteboard exactly as we found
-            // it and bail.
-            pasteboard.restore(snapshot)
-            return nil
-        }
+        guard posted else { return nil }
         try? await Task.sleep(nanoseconds: copyWaitNanos)
         let captured = pasteboard.pasteboardString
-        pasteboard.restore(snapshot)
         // Trim and treat empty as "no selection".
         guard let value = captured?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
             return nil
