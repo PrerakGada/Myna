@@ -184,7 +184,85 @@ function M.bindAll()
   end
 end
 
-function M.openRecorder() end
+local ACTION_LABELS = {
+  { id = "speak_selection_full", text = "Speak selection (full)" },
+  { id = "speak_selection_summary", text = "Speak selection (summary)" },
+  { id = "read_chrome_article", text = "Read Chrome article" },
+  { id = "pause_resume", text = "Pause / Resume" },
+  { id = "stop", text = "Stop" },
+}
+
+local function saveBinding(action, mods, key)
+  local bindings = loadBindings()
+  bindings[action] = { mods = mods, key = key }
+  local f = io.open(KEYBINDINGS_PATH, "w")
+  f:write(hs.json.encode(bindings, true))
+  f:close()
+  M.bindAll()
+end
+
+local captureTap = nil
+
+local function sameChord(b, mods, key)
+  if not b or b.key ~= key then return false end
+  local set = {}
+  for _, m in ipairs(b.mods or {}) do set[m] = true end
+  if #(b.mods or {}) ~= #mods then return false end
+  for _, m in ipairs(mods) do
+    if not set[m] then return false end
+  end
+  return true
+end
+
+local function conflictingAction(action, mods, key)
+  for other, b in pairs(loadBindings()) do
+    if other ~= action and sameChord(b, mods, key) then return other end
+  end
+  return nil
+end
+
+local function captureNextChord(action)
+  hs.alert.show("Press the new shortcut for: " .. action)
+  captureTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(e)
+    local flags = e:getFlags()
+    local mods = {}
+    for _, m in ipairs({ "cmd", "alt", "shift", "ctrl" }) do
+      if flags[m] then table.insert(mods, m) end
+    end
+    local key = hs.keycodes.map[e:getKeyCode()]
+    captureTap:stop()
+    captureTap = nil
+    if not key then
+      hs.alert.show("Myna: could not read that key")
+      return true
+    end
+    local chord = table.concat(mods, "+") .. "+" .. key
+    local clash = conflictingAction(action, mods, key)
+    if clash then
+      hs.alert.show("⚠️ " .. chord .. " already used by '" .. clash ..
+        "'. Reassigning to '" .. action .. "'.")
+    end
+    saveBinding(action, mods, key)
+    hs.alert.show(string.format("Bound %s to %s", action, chord))
+    return true
+  end)
+  captureTap:start()
+end
+
+function M.openRecorder()
+  local chooser = hs.chooser.new(function(choice)
+    if choice then captureNextChord(choice.id) end
+  end)
+  local choices = {}
+  local bindings = loadBindings()
+  for _, a in ipairs(ACTION_LABELS) do
+    local b = bindings[a.id] or {}
+    local cur = b.key and (table.concat(b.mods or {}, "+") .. "+" .. b.key) or "unset"
+    table.insert(choices, { text = a.text, subText = "current: " .. cur, id = a.id })
+  end
+  chooser:choices(choices)
+  chooser:show()
+end
 
 function M.start()
   if menubar then menubar:delete() end
