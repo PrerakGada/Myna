@@ -71,7 +71,11 @@ def create_app(config: dict | None = None) -> FastAPI:
             return {"ok": False, "reason": "empty"}
         if req.mode == "summary":
             text = app.state.summarize(
-                text, model=cfg["summary_model"], base_url=cfg["ollama_url"]
+                text,
+                model=cfg["summary_model"],
+                base_url=cfg["ollama_url"],
+                think=cfg["summary_think"],
+                timeout=cfg["summary_timeout"],
             )
         voice = req.voice or cfg["voice"]
         speed = req.speed or app.state.speed

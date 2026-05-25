@@ -12,6 +12,8 @@ DEFAULTS = {
     "lang_code": "a",
     "model": "prince-canuma/Kokoro-82M",
     "summary_model": "qwen3.5:4b",
+    "summary_think": False,
+    "summary_timeout": 60.0,
     "speed": 1.0,
     "chunk_chars": 1500,
     "daemon_port": 8766,
