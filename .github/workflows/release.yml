@@ -47,6 +47,7 @@ jobs:
     runs-on: macos-15
     outputs:
       version: ${{ steps.v.outputs.version }}
+      has_tap_key: ${{ steps.tap.outputs.has_tap_key }}
     steps:
       - uses: actions/checkout@v4
       - name: Resolve version from tag
@@ -82,7 +83,23 @@ jobs:
             printf 'See .github/workflows/release.yml header for setup.\n'
             exit 1
           fi
-          echo "All required secrets present."
+          echo "All required required-secrets present."
+      - name: Detect optional TAP_DEPLOY_KEY
+        # TAP_DEPLOY_KEY is optional — only needed if you've set up a
+        # homebrew-myna tap repo. Without it we skip the tap-bump job
+        # cleanly so the rest of the release (build → sign → notarize
+        # → DMG → GH Release → Sparkle appcast) still ships.
+        id: tap
+        env:
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+        run: |
+          if [ -n "${TAP_DEPLOY_KEY:-}" ]; then
+            echo "has_tap_key=true"  >> "$GITHUB_OUTPUT"
+            echo "TAP_DEPLOY_KEY present — tap-bump job will run."
+          else
+            echo "has_tap_key=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::TAP_DEPLOY_KEY not set — skipping Homebrew tap bump. Set the secret + create the homebrew-myna tap repo to enable."
+          fi
 
   build-universal:
     name: Build universal binary
@@ -383,6 +400,7 @@ jobs:
     name: Bump Homebrew cask
     runs-on: macos-15
     needs: [preflight, appcast, release]
+    if: needs.preflight.outputs.has_tap_key == 'true'
     steps:
       - uses: actions/checkout@v4
         with:
