@@ -46,8 +46,12 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
         return URLSession(configuration: cfg)
     }
 
+    // swiftlint:disable static_over_final_class
+    // These are overrides of URLProtocol's `class` methods — `class`
+    // cannot be replaced with `static` for overrides.
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    // swiftlint:enable static_over_final_class
 
     override func startLoading() {
         MockURLProtocol.lock.lock()

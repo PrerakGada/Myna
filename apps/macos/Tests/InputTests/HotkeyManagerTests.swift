@@ -17,20 +17,25 @@ final class HotkeyManagerTests: XCTestCase {
         //   read_chrome_article:     cmd+alt+shift+r
         //   pause_resume:            cmd+alt+shift+space
         //   stop:                    cmd+alt+shift+.
-        let expected: [(KeyboardShortcuts.Name, KeyboardShortcuts.Key, NSEvent.ModifierFlags)] = [
-            (.speakSelectionFull, .s, [.command, .option, .shift]),
-            (.speakSelectionSummary, .a, [.command, .option, .shift]),
-            (.readChromeArticle, .r, [.command, .option, .shift]),
-            (.pauseResume, .space, [.command, .option, .shift]),
-            (.stop, .period, [.command, .option, .shift]),
+        struct Expected {
+            let name: KeyboardShortcuts.Name
+            let key: KeyboardShortcuts.Key
+            let mods: NSEvent.ModifierFlags
+        }
+        let expected: [Expected] = [
+            Expected(name: .speakSelectionFull, key: .s, mods: [.command, .option, .shift]),
+            Expected(name: .speakSelectionSummary, key: .a, mods: [.command, .option, .shift]),
+            Expected(name: .readChromeArticle, key: .r, mods: [.command, .option, .shift]),
+            Expected(name: .pauseResume, key: .space, mods: [.command, .option, .shift]),
+            Expected(name: .stop, key: .period, mods: [.command, .option, .shift]),
         ]
-        for (name, key, mods) in expected {
-            guard let shortcut = KeyboardShortcuts.getShortcut(for: name) else {
-                XCTFail("no default for \(name.rawValue)")
+        for entry in expected {
+            guard let shortcut = KeyboardShortcuts.getShortcut(for: entry.name) else {
+                XCTFail("no default for \(entry.name.rawValue)")
                 continue
             }
-            XCTAssertEqual(shortcut.key, key, "key for \(name.rawValue)")
-            XCTAssertEqual(shortcut.modifiers, mods, "modifiers for \(name.rawValue)")
+            XCTAssertEqual(shortcut.key, entry.key, "key for \(entry.name.rawValue)")
+            XCTAssertEqual(shortcut.modifiers, entry.mods, "modifiers for \(entry.name.rawValue)")
         }
     }
 
@@ -43,11 +48,11 @@ final class HotkeyManagerTests: XCTestCase {
         let manager = HotkeyManager()
         let invocations = SendableBox<[HotkeyAction]>([])
         manager.register(handlers: [
-            .speakSelectionFull: { invocations.value = invocations.value + [.speakSelectionFull] },
-            .stop: { invocations.value = invocations.value + [.stop] },
+            .speakSelectionFull: { invocations.value += [.speakSelectionFull] },
+            .stop: { invocations.value += [.stop] },
         ])
-        XCTAssertTrue(manager._invokeForTesting(.speakSelectionFull))
-        XCTAssertTrue(manager._invokeForTesting(.stop))
+        XCTAssertTrue(manager.invokeForTesting(.speakSelectionFull))
+        XCTAssertTrue(manager.invokeForTesting(.stop))
         XCTAssertEqual(invocations.value, [.speakSelectionFull, .stop])
     }
 
@@ -57,10 +62,10 @@ final class HotkeyManagerTests: XCTestCase {
         manager.register(handlers: [
             .speakSelectionFull: { invocations.value += 1 }
         ])
-        XCTAssertTrue(manager._isRegistered)
+        XCTAssertTrue(manager.isRegisteredForTesting)
         manager.disableAll()
-        XCTAssertFalse(manager._isRegistered)
-        XCTAssertFalse(manager._invokeForTesting(.speakSelectionFull))
+        XCTAssertFalse(manager.isRegisteredForTesting)
+        XCTAssertFalse(manager.invokeForTesting(.speakSelectionFull))
         XCTAssertEqual(invocations.value, 0)
     }
 

@@ -348,16 +348,16 @@ public enum DaemonError: Error, Sendable, Equatable {
             (.extractFailed, .extractFailed),
             (.notFound, .notFound):
             return true
-        case (.engineError(let a), .engineError(let b)):
-            return a == b
+        case (.engineError(let lhsMsg), .engineError(let rhsMsg)):
+            return lhsMsg == rhsMsg
         case (.http(let codeA, let bodyA), .http(let codeB, let bodyB)):
             return codeA == codeB && bodyA == bodyB
-        case (.decode(let a), .decode(let b)):
-            return a == b
-        case (.transport(let a), .transport(let b)):
-            return a == b
-        case (.invalidURL(let a), .invalidURL(let b)):
-            return a == b
+        case (.decode(let lhsMsg), .decode(let rhsMsg)):
+            return lhsMsg == rhsMsg
+        case (.transport(let lhsMsg), .transport(let rhsMsg)):
+            return lhsMsg == rhsMsg
+        case (.invalidURL(let lhsURL), .invalidURL(let rhsURL)):
+            return lhsURL == rhsURL
         default:
             return false
         }

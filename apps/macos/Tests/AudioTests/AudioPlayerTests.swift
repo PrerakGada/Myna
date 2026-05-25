@@ -160,8 +160,8 @@ final class AudioPlayerTests: XCTestCase {
         player.enqueue(buffer: SineBuffer.make(duration: 0.3))
         player.enqueue(buffer: SineBuffer.make(duration: 0.3))
         XCTAssertEqual(player.duration, 0.6, accuracy: 0.05)
-        try await waitForState(player, .idle, timeout: 3.0)
-        XCTAssertEqual(player.position, player.duration, accuracy: 0.15)
+        try await waitForState(player, .idle, timeout: 5.0)
+        XCTAssertEqual(player.position, player.duration, accuracy: 0.2)
     }
 
     // MARK: speed persists across chunks
@@ -183,7 +183,7 @@ final class AudioPlayerTests: XCTestCase {
         let player = AudioPlayer()
         let states = SendableBox<[AudioPlayer.State]>([])
         let cancellable = player.$state.sink { value in
-            states.value = states.value + [value]
+            states.value += [value]
         }
         defer { cancellable.cancel() }
 

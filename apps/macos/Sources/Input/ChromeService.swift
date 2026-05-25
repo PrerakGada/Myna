@@ -22,7 +22,7 @@ public struct NSAppleScriptRunner: AppleScriptRunnerProtocol {
     }
 }
 
-public final class ChromeService {
+public final class ChromeService: @unchecked Sendable {
     private let runner: AppleScriptRunnerProtocol
 
     public init(runner: AppleScriptRunnerProtocol = NSAppleScriptRunner()) {
@@ -43,10 +43,10 @@ public final class ChromeService {
 
     public static func isValidHTTPURL(_ url: String) -> Bool {
         guard !url.isEmpty,
-              let parsed = URL(string: url),
-              let scheme = parsed.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              parsed.host?.isEmpty == false
+            let parsed = URL(string: url),
+            let scheme = parsed.scheme?.lowercased(),
+            scheme == "http" || scheme == "https",
+            parsed.host?.isEmpty == false
         else {
             return false
         }

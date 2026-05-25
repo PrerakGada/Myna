@@ -7,9 +7,9 @@ import XCTest
 
 @MainActor
 final class URLSchemeHandlerTests: XCTestCase {
-    private func makeURL(_ s: String) -> URL {
+    private func makeURL(_ raw: String) -> URL {
         // swiftlint:disable:next force_unwrapping
-        URL(string: s)!
+        URL(string: raw)!
     }
 
     // MARK: routes
@@ -106,7 +106,7 @@ final class URLSchemeHandlerTests: XCTestCase {
         let recorder = RecordingDispatcher()
         let logged = SendableBox<[String]>([])
         let handler = URLSchemeHandler(dispatcher: recorder) { msg in
-            logged.value = logged.value + [msg]
+            logged.value += [msg]
         }
         handler.handle(makeURL("myna://nonsense"))
         XCTAssertTrue(recorder.calls.isEmpty)

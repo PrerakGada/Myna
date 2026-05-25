@@ -118,19 +118,7 @@ public actor DaemonClient {
         _ request: SynthesizeRequest,
         continuation: AsyncThrowingStream<SynthesizedChunk, Error>.Continuation
     ) async throws {
-        // Local validation.
-        let hasText = !(request.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-        let hasURL = !(request.url?.isEmpty ?? true)
-        if !hasText && !hasURL {
-            throw DaemonError.empty
-        }
-        if hasText && hasURL {
-            throw DaemonError.bothTextAndURL
-        }
-        if hasURL, let url = request.url {
-            try Self.validateHTTPURL(url)
-        }
-
+        try Self.validateSynthesizeRequest(request)
         var req = try makeRequest(path: "/v2/synthesize", method: "POST", body: request)
         req.timeoutInterval = Self.synthesizeTimeout
         req.setValue("multipart/mixed", forHTTPHeaderField: "Accept")
@@ -139,43 +127,61 @@ public actor DaemonClient {
         guard let http = response as? HTTPURLResponse else {
             throw DaemonError.transport("non-http response")
         }
-
         if http.statusCode != 200 {
-            // Pull the (small) error body.
             let body = try await collect(bytes: bytes)
             throw mapHTTPError(status: http.statusCode, body: body)
         }
 
         let boundary = parseBoundary(from: http.value(forHTTPHeaderField: "Content-Type")) ?? "mynachunk"
         let parser = MultipartChunkParser(boundary: boundary)
+        try await consumeStream(bytes, into: parser, yielding: continuation)
+    }
 
+    /// Validate text/url/scheme constraints up front so we don't make a
+    /// pointless round trip.
+    private static func validateSynthesizeRequest(_ request: SynthesizeRequest) throws {
+        let hasText = !(request.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        let hasURL = !(request.url?.isEmpty ?? true)
+        if !hasText && !hasURL { throw DaemonError.empty }
+        if hasText && hasURL { throw DaemonError.bothTextAndURL }
+        if hasURL, let url = request.url {
+            try Self.validateHTTPURL(url)
+        }
+    }
+
+    /// Drains the response stream into the parser and yields fully-formed
+    /// chunks. URL transport errors are mapped to DaemonError.
+    private func consumeStream(
+        _ bytes: URLSession.AsyncBytes,
+        into parser: MultipartChunkParser,
+        yielding continuation: AsyncThrowingStream<SynthesizedChunk, Error>.Continuation
+    ) async throws {
         var pending = Data()
         do {
             for try await byte in bytes {
                 pending.append(byte)
-                // Drain periodically to keep memory bounded; cheaper to
-                // drain on a buffer threshold than every byte.
-                if pending.count >= 4096 {
+                if pending.count >= 4_096 {
                     parser.append(pending)
                     pending.removeAll(keepingCapacity: true)
-                    for part in try parser.drain() {
-                        if case .audio(let chunk) = part {
-                            continuation.yield(chunk)
-                        }
-                    }
+                    yieldAudioParts(try parser.drain(), to: continuation)
                     if parser.isFinished { return }
                 }
             }
-            if !pending.isEmpty {
-                parser.append(pending)
-            }
-            for part in try parser.drain() {
-                if case .audio(let chunk) = part {
-                    continuation.yield(chunk)
-                }
-            }
+            if !pending.isEmpty { parser.append(pending) }
+            yieldAudioParts(try parser.drain(), to: continuation)
         } catch let urlError as URLError {
             throw DaemonError.transport(urlError.localizedDescription)
+        }
+    }
+
+    private func yieldAudioParts(
+        _ parts: [MultipartPart],
+        to continuation: AsyncThrowingStream<SynthesizedChunk, Error>.Continuation
+    ) {
+        for part in parts {
+            if case .audio(let chunk) = part {
+                continuation.yield(chunk)
+            }
         }
     }
 

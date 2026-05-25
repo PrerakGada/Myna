@@ -24,4 +24,11 @@ final class SendableBox<Value>: @unchecked Sendable {
             storedValue = newValue
         }
     }
+
+    /// Atomically apply a mutating transform.
+    func mutate(_ transform: (inout Value) -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        transform(&storedValue)
+    }
 }

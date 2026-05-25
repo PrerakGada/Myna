@@ -239,7 +239,7 @@ public final class AudioPlayer: ObservableObject {
         pausedAtOffset = 0
         position = 0
         duration = queue.totalDuration
-        for (idx, _) in queue.chunks.enumerated() {
+        for idx in queue.chunks.indices {
             scheduleChunk(index: idx, fromOffset: 0, completionToken: sessionToken)
         }
         do {
@@ -285,8 +285,24 @@ public final class AudioPlayer: ObservableObject {
             scheduleCompletion(forChunk: index, token: token)
             return
         }
-        // scheduleSegment lets us start mid-buffer (we want this for
-        // seek). scheduleBuffer doesn't support an offset.
+        // Fast path: offset == 0 means just play the whole buffer,
+        // which scheduleBuffer can do with no disk I/O.
+        if startFrame == 0 {
+            playerNode.scheduleBuffer(
+                buffer,
+                at: nil,
+                options: [],
+                completionCallbackType: .dataPlayedBack
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.handleChunkCompletion(index: index, token: token)
+                }
+            }
+            return
+        }
+        // Slow path (seek into the middle of a buffer): scheduleSegment
+        // requires an AVAudioFile, so we materialise the buffer to a
+        // temp .caf once and cache the file handle.
         let timeAnchor: AVAudioTime? = nil
         playerNode.scheduleSegment(
             mapBufferToFile(buffer),

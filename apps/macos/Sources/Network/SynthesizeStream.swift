@@ -82,10 +82,11 @@ public final class MultipartChunkParser {
         // Closing is "--mynachunk--"; we already matched "--mynachunk".
         // Peek at the next two bytes to see if they're "--".
         let afterBoundary = boundaryStart.upperBound
-        if afterBoundary + 1 < buffer.count
+        let hasClosingDash =
+            afterBoundary + 1 < buffer.count
             && buffer[afterBoundary] == 0x2D  // '-'
             && buffer[afterBoundary + 1] == 0x2D
-        {
+        if hasClosingDash {
             // Drop everything up to and including the closing boundary.
             // Returning nil here signals end-of-stream cleanly (trailer
             // part is emitted before we get here, so this is the truly
@@ -99,10 +100,11 @@ public final class MultipartChunkParser {
         // boundary (or "\r\n" then headers + CRLFCRLF + body).
         // Skip past boundary + optional CRLF.
         var headerStart = afterBoundary
-        if headerStart + 1 < buffer.count
+        let hasCRLFAfterBoundary =
+            headerStart + 1 < buffer.count
             && buffer[headerStart] == 0x0D
             && buffer[headerStart + 1] == 0x0A
-        {
+        if hasCRLFAfterBoundary {
             headerStart += 2
         }
 
@@ -124,10 +126,11 @@ public final class MultipartChunkParser {
         // that precedes the next boundary. The wire format puts a CRLF
         // immediately before "--boundary".
         var bodyEnd = nextBoundary.lowerBound
-        if bodyEnd >= 2
+        let hasCRLFBeforeBoundary =
+            bodyEnd >= 2
             && buffer[bodyEnd - 2] == 0x0D
             && buffer[bodyEnd - 1] == 0x0A
-        {
+        if hasCRLFBeforeBoundary {
             bodyEnd -= 2
         }
 
@@ -148,7 +151,8 @@ public final class MultipartChunkParser {
             return .trailer(json: body)
         }
         guard contentType.hasPrefix("audio/wav") else {
-            throw DaemonError.decode("multipart part missing audio/wav or application/json content-type; got '\(contentType)'")
+            throw DaemonError.decode(
+                "multipart part missing audio/wav or application/json content-type; got '\(contentType)'")
         }
         let index = Int(headers["x-chunk-index"] ?? "") ?? 0
         let estimate = Int(headers["x-chunk-total-estimate"] ?? "") ?? 0
@@ -180,7 +184,7 @@ public final class MultipartChunkParser {
 
     /// Find first occurrence of needle in haystack starting at `from`.
     private func range(of needle: Data, in haystack: Data, from start: Int = 0) -> Range<Int>? {
-        guard needle.count > 0, haystack.count >= start + needle.count else { return nil }
+        guard !needle.isEmpty, haystack.count >= start + needle.count else { return nil }
         let end = haystack.count - needle.count
         if end < start { return nil }
         // swiftlint:disable:next force_unwrapping

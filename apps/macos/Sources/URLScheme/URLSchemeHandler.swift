@@ -81,9 +81,9 @@ public final class URLSchemeHandler {
         case .readChrome: dispatcher.readChrome()
         case .togglePause: dispatcher.togglePause()
         case .stop: dispatcher.stop()
-        case .seekDelta(let d): dispatcher.seek(delta: d)
-        case .setSpeed(let v): dispatcher.setSpeed(v)
-        case .bumpSpeed(let d): dispatcher.bumpSpeed(d)
+        case .seekDelta(let delta): dispatcher.seek(delta: delta)
+        case .setSpeed(let value): dispatcher.setSpeed(value)
+        case .bumpSpeed(let delta): dispatcher.bumpSpeed(delta)
         }
     }
 

@@ -27,7 +27,7 @@ public protocol KeyPostingProtocol: Sendable {
     func postCmdC() -> Bool
 }
 
-public final class NSPasteboardAdapter: PasteboardProtocol {
+public final class NSPasteboardAdapter: PasteboardProtocol, @unchecked Sendable {
     private let underlying: NSPasteboard
 
     public init(_ pasteboard: NSPasteboard = .general) {
@@ -77,7 +77,7 @@ public struct CGEventKeyPoster: KeyPostingProtocol {
         // because we send with the command flag.
         let source = CGEventSource(stateID: .combinedSessionState)
         guard let downEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: true),
-              let upEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: false)
+            let upEvent = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: false)
         else {
             return false
         }
@@ -90,7 +90,7 @@ public struct CGEventKeyPoster: KeyPostingProtocol {
 }
 
 /// Captures the currently-selected text from the frontmost application.
-public final class SelectionService {
+public final class SelectionService: @unchecked Sendable {
     private let pasteboard: PasteboardProtocol
     private let keyPoster: KeyPostingProtocol
     /// How long to wait between posting Cmd+C and reading the pasteboard.

@@ -70,8 +70,9 @@ public struct LogViewerView: View {
 
     private func reload() {
         guard FileManager.default.fileExists(atPath: logURL.path),
-              let data = try? Data(contentsOf: logURL),
-              let text = String(data: data, encoding: .utf8) else {
+            let data = try? Data(contentsOf: logURL),
+            let text = String(data: data, encoding: .utf8)
+        else {
             lines = []
             return
         }

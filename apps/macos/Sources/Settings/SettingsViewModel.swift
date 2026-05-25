@@ -128,8 +128,8 @@ public final class SettingsViewModel: ObservableObject {
     /// Returns nil if valid; otherwise an error description.
     public func validateDaemonURL(_ candidate: String) -> String? {
         guard let parsed = URL(string: candidate),
-              let scheme = parsed.scheme?.lowercased(),
-              scheme == "http" || scheme == "https"
+            let scheme = parsed.scheme?.lowercased(),
+            scheme == "http" || scheme == "https"
         else {
             return "must be a valid http(s) URL"
         }

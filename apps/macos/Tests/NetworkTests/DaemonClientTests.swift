@@ -183,8 +183,10 @@ final class DaemonClientTests: XCTestCase {
     }
 
     func test_extract_failure_returns_extract_failed() async {
+        let body = Data(#"{"ok":false,"reason":"extract_failed"}"#.utf8)
         MockURLProtocol.enqueue { req in
-            (.make(url: req.url!, status: 200), Data(#"{"ok":false,"reason":"extract_failed"}"#.utf8))  // swiftlint:disable:this force_unwrapping
+            // swiftlint:disable:next force_unwrapping
+            (.make(url: req.url!, status: 200), body)
         }
         let client = makeClient()
         do {
@@ -200,8 +202,10 @@ final class DaemonClientTests: XCTestCase {
     // MARK: summarize
 
     func test_summarize_returns_summary() async throws {
+        let body = Data(#"{"ok":true,"summary":"SHORT"}"#.utf8)
         MockURLProtocol.enqueue { req in
-            (.make(url: req.url!, status: 200), Data(#"{"ok":true,"summary":"SHORT"}"#.utf8))  // swiftlint:disable:this force_unwrapping
+            // swiftlint:disable:next force_unwrapping
+            (.make(url: req.url!, status: 200), body)
         }
         let client = makeClient()
         let resp = try await client.summarize(text: "long text")
@@ -217,7 +221,8 @@ final class DaemonClientTests: XCTestCase {
             // URLProtocol can't see streamed bodies directly; we rely on
             // httpBody being set (our client encodes via Data not stream).
             sentBox.value = req.httpBody ?? (req.httpBodyStream.flatMap { DaemonClientTests.readStream($0) })
-            return (.make(url: req.url!, status: 200), Data(#"{"ok":true,"id":"abc12345"}"#.utf8))  // swiftlint:disable:this force_unwrapping
+            // swiftlint:disable:next force_unwrapping
+            return (.make(url: req.url!, status: 200), Data(#"{"ok":true,"id":"abc12345"}"#.utf8))
         }
         let client = makeClient()
         let resp = try await client.announce(sessionId: "sess1", label: "ECS", text: "hello")
@@ -233,12 +238,13 @@ final class DaemonClientTests: XCTestCase {
     // MARK: registry
 
     func test_registry_decodes_items() async throws {
-        let body = Data(#"""
-        {"items":[
-          {"id":"aa","label":"A","age_s":1,"preview":"p1"},
-          {"id":"bb","label":"B","age_s":2,"preview":"p2"}
-        ]}
-        """#.utf8)
+        let body = Data(
+            #"""
+            {"items":[
+              {"id":"aa","label":"A","age_s":1,"preview":"p1"},
+              {"id":"bb","label":"B","age_s":2,"preview":"p2"}
+            ]}
+            """#.utf8)
         MockURLProtocol.enqueue { req in
             XCTAssertEqual(req.url?.path, "/registry")
             return (.make(url: req.url!, status: 200), body)  // swiftlint:disable:this force_unwrapping
@@ -252,11 +258,13 @@ final class DaemonClientTests: XCTestCase {
     // MARK: play
 
     func test_play_item_pops_registry() async throws {
+        let body = Data(#"{"ok":true}"#.utf8)
         MockURLProtocol.enqueue { req in
             XCTAssertEqual(req.url?.path, "/play/abc12345")
             XCTAssertEqual(req.url?.query, "mode=full")
             XCTAssertEqual(req.httpMethod, "POST")
-            return (.make(url: req.url!, status: 200), Data(#"{"ok":true}"#.utf8))  // swiftlint:disable:this force_unwrapping
+            // swiftlint:disable:next force_unwrapping
+            return (.make(url: req.url!, status: 200), body)
         }
         let client = makeClient()
         let resp = try await client.playItem(id: "abc12345", mode: .full)

@@ -43,7 +43,6 @@ public final class LogFileMirror: @unchecked Sendable {
 
     /// Default directory: ~/Library/Logs/Myna/.
     public static var defaultDirectory: URL {
-        // swiftlint:disable:next force_unwrapping
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/Myna", isDirectory: true)
     }
@@ -90,10 +89,9 @@ public final class LogFileMirror: @unchecked Sendable {
             FileManager.default.createFile(atPath: url.path, contents: nil)
         }
         // Append; rotate before append if would exceed maxBytes.
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? Int,
-           size + payload.count > Self.maxBytes
-        {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let currentSize = (attrs?[.size] as? Int) ?? 0
+        if currentSize + payload.count > Self.maxBytes {
             rotate()
         }
         if let handle = try? FileHandle(forWritingTo: url) {

@@ -23,7 +23,8 @@ enum FixtureLoader {
         let here = URL(fileURLWithPath: String(describing: file))
         var dir = here.deletingLastPathComponent()
         for _ in 0..<8 {
-            let candidate = dir
+            let candidate =
+                dir
                 .appendingPathComponent("docs/native-app/fixtures")
                 .appendingPathComponent(name)
             if FileManager.default.fileExists(atPath: candidate.path) {

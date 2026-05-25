@@ -101,7 +101,7 @@ public final class HotkeyManager {
     /// Test-only: invoke the locally-stored handler as if the user had
     /// pressed the corresponding shortcut. Production code never calls
     /// this; the system event loop drives real invocations.
-    public func _invokeForTesting(_ action: HotkeyAction) -> Bool {
+    public func invokeForTesting(_ action: HotkeyAction) -> Bool {
         guard let handler = handlers[action] else { return false }
         handler()
         return true
@@ -109,5 +109,5 @@ public final class HotkeyManager {
 
     /// Test-only: true iff `register(handlers:)` has been called and not
     /// subsequently disabled.
-    public var _isRegistered: Bool { registered }
+    public var isRegisteredForTesting: Bool { registered }
 }
