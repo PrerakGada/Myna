@@ -23,6 +23,10 @@ public enum SettingsKey: String, CaseIterable, Sendable {
     case enginePort = "dev.myna.app.enginePort"
     case logLevel = "dev.myna.app.logLevel"
     case useNotifications = "dev.myna.app.useNotifications"
+    // v0.2 behavior toggles (S07 thinking earcon, S08 toast chime + focus mode)
+    case thinkingEarconEnabled = "dev.myna.app.thinkingEarconEnabled"
+    case toastChimeEnabled = "dev.myna.app.toastChimeEnabled"
+    case ccToastsEnabled = "dev.myna.app.ccToastsEnabled"
 }
 
 /// Built-in defaults — must mirror the daemon's config defaults so the
@@ -37,6 +41,11 @@ public enum SettingsDefaults {
     public static let enginePort: Int = 8_765
     public static let logLevel: String = LogLevel.info.rawValue
     public static let useNotifications: Bool = false
+    // v0.2 behavior defaults: thinking earcon OFF (opt-in per S07 spec),
+    // toast chime ON (gentle 60ms tick, on by default per Sally), toasts ON.
+    public static let thinkingEarconEnabled: Bool = false
+    public static let toastChimeEnabled: Bool = true
+    public static let ccToastsEnabled: Bool = true
 }
 
 /// Thin wrapper over UserDefaults so tests can inject an ephemeral
@@ -105,6 +114,15 @@ public final class SettingsViewModel: ObservableObject {
     @Published public var enginePort: Int { didSet { store.set(.enginePort, enginePort) } }
     @Published public var logLevel: String { didSet { store.set(.logLevel, logLevel) } }
     @Published public var useNotifications: Bool { didSet { store.set(.useNotifications, useNotifications) } }
+    @Published public var thinkingEarconEnabled: Bool {
+        didSet { store.set(.thinkingEarconEnabled, thinkingEarconEnabled) }
+    }
+    @Published public var toastChimeEnabled: Bool {
+        didSet { store.set(.toastChimeEnabled, toastChimeEnabled) }
+    }
+    @Published public var ccToastsEnabled: Bool {
+        didSet { store.set(.ccToastsEnabled, ccToastsEnabled) }
+    }
 
     /// Most recent validation error for the daemon URL field. Settings
     /// UI displays this inline. Nil = currently valid.
@@ -121,6 +139,9 @@ public final class SettingsViewModel: ObservableObject {
         self.enginePort = store.int(.enginePort) ?? SettingsDefaults.enginePort
         self.logLevel = store.string(.logLevel) ?? SettingsDefaults.logLevel
         self.useNotifications = store.bool(.useNotifications) ?? SettingsDefaults.useNotifications
+        self.thinkingEarconEnabled = store.bool(.thinkingEarconEnabled) ?? SettingsDefaults.thinkingEarconEnabled
+        self.toastChimeEnabled = store.bool(.toastChimeEnabled) ?? SettingsDefaults.toastChimeEnabled
+        self.ccToastsEnabled = store.bool(.ccToastsEnabled) ?? SettingsDefaults.ccToastsEnabled
     }
 
     /// Validate that the given URL string is localhost-only (we never
@@ -180,6 +201,9 @@ public final class SettingsViewModel: ObservableObject {
         enginePort = SettingsDefaults.enginePort
         logLevel = SettingsDefaults.logLevel
         useNotifications = SettingsDefaults.useNotifications
+        thinkingEarconEnabled = SettingsDefaults.thinkingEarconEnabled
+        toastChimeEnabled = SettingsDefaults.toastChimeEnabled
+        ccToastsEnabled = SettingsDefaults.ccToastsEnabled
         daemonURLError = nil
     }
 

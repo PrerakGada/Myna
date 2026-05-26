@@ -13,6 +13,8 @@ public enum LogCategory: String, CaseIterable, Sendable {
     case input
     case urlscheme
     case settings
+    case updates
+    case menubar
 }
 
 public enum LogLevel: String, Sendable, CaseIterable, Comparable {
