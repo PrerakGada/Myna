@@ -18,7 +18,12 @@ struct MynaApp: App {
         } label: {
             RootMenuBarLabel(appDelegate: appDelegate)
         }
-        .menuBarExtraStyle(.menu)
+        // .window hosts the popover as a free SwiftUI surface (no NSMenu
+        // chrome). v0.2.1 redesign: lets us render the custom dark
+        // popover and lets DisclosureGroup-style sections survive the
+        // 250ms poll-driven re-renders (which would collapse NSMenu
+        // submenus in the v0.2.0 .menu style).
+        .menuBarExtraStyle(.window)
 
         Settings {
             RootSettingsView(appDelegate: appDelegate)
@@ -61,10 +66,19 @@ private struct RootMenuBarView: View {
         if appDelegate.didBootstrap, let controller = appDelegate.menuController {
             MenuBarView(controller: controller)
         } else {
-            Text("Myna initialising…").padding()
-            Divider()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q")
+            // .window-style fallback: a small dark card with the same
+            // chrome as the real popover. macOS will host this in an
+            // NSWindow once MenuBarExtra opens.
+            VStack(spacing: 10) {
+                Text("Myna initialising…")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.85))
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+                    .keyboardShortcut("q")
+            }
+            .padding(20)
+            .frame(width: 240)
+            .background(Color(red: 0.039, green: 0.039, blue: 0.047))
         }
     }
 }

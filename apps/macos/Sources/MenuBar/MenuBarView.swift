@@ -1,25 +1,39 @@
-// MenuBarView.swift — the SwiftUI menu displayed when the user clicks
-// the bird in the menu bar. v0.2 redesigns this per Sally's spec
-// (03-ux-direction.md § 1):
+// MenuBarView.swift — v0.2.1 custom popover replacing the v0.2.0 NSMenu.
 //
-//   Top:    Now Reading header (collapses to "No audio playing" when idle)
-//   Mid:    Transport block with current hotkey labels (hidden when idle)
-//   Then:   Voice ▸, Speed ▸, Recent ▸, Claude Code ▸ (if non-empty)
-//   Foot:   Settings…, What's New…, Restart Daemon, Quit
+// The popover is hosted by MenuBarExtra using `.menuBarExtraStyle(.window)`
+// (set in MynaApp.swift). In `.window` style SwiftUI hands us a plain
+// NSWindow surface — no NSMenu chrome — so we own the entire look:
+// dark surface, hero card, disclosure-style sections (which don't
+// collapse on poll rebuilds the way NSMenu submenus did), and a custom
+// footer.
 //
-// State comes from MenuBarController.popoverModel() — a pure
-// transformation of the controller's @Published state. Tests assert
-// against the model, not against rendered SwiftUI.
+// Polling note: MenuBarController is an ObservableObject with @Published
+// properties. We bind via @ObservedObject; SwiftUI's diff handles
+// partial updates and our local @State (e.g. `voicesExpanded`) survives
+// every refresh tick. This is the architectural fix for the v0.2.0
+// "submenus collapse on each poll" bug.
+//
+// All actions still route through MenuBarController so existing hotkey
+// handlers and AppDispatcher hooks work unchanged. The data model
+// (PopoverModel + PopoverModelBuilder) is preserved verbatim — only the
+// rendering changes.
 import SwiftUI
 
 public struct MenuBarView: View {
     @ObservedObject var controller: MenuBarController
     @ObservedObject var player: AudioPlayer
 
-    /// Voices loaded lazily for the Voice submenu. Kept here (not in
-    /// the controller) because Voice is purely cosmetic — switching
-    /// voices doesn't change anything until the next utterance.
+    /// Voices loaded lazily — same lazy-pattern as v0.2.0. Held at the
+    /// top-level view so the network round-trip happens once per popover
+    /// session, not per section render.
     @State private var voices: [Voice] = []
+
+    // Section open/closed state. SwiftUI persists this across poll-driven
+    // re-renders, which is the whole point of the v0.2.1 redesign.
+    @State private var voicesExpanded = false
+    @State private var speedExpanded = false
+    @State private var ccExpanded = true
+    @State private var recentsExpanded = false
 
     public init(controller: MenuBarController) {
         self.controller = controller
@@ -28,202 +42,199 @@ public struct MenuBarView: View {
 
     public var body: some View {
         let model = controller.popoverModel()
-        nowReadingSection(model: model)
-        if !model.status.isIdle && !isError(model.status) {
+        VStack(alignment: .leading, spacing: PopoverDesign.sectionSpacing) {
+            PopoverHeader(iconState: controller.iconState)
+            heroSection(model: model)
+            voiceSection
+            speedSection
+            if model.showClaudeCodeSubmenu {
+                claudeCodeSection(items: model.ccItems)
+            }
+            if !model.recents.isEmpty {
+                recentsSection(items: model.recents)
+            }
             Divider()
-            transportSection(model: model)
+                .overlay(Color.white.opacity(0.08))
+                .padding(.horizontal, -PopoverDesign.popoverHorizontalPadding)
+            FooterBar(
+                updates: controller.updates,
+                onSettings: controller.openSettings,
+                onWhatsNew: { WhatsNewLauncher.shared.show() },
+                onRestartDaemon: controller.restartDaemon,
+                onOpenLogs: controller.openLogs
+            )
         }
-        if isError(model.status) {
-            Divider()
-            errorSection(model.status)
-        }
-        Divider()
-        voiceMenu
-        speedMenu
-        Divider()
-        recentsMenu(items: model.recents)
-        if model.showClaudeCodeSubmenu {
-            claudeCodeMenu(items: model.ccItems)
-        }
-        Divider()
-        settingsFooter
-        Divider()
-        Button("Quit Myna") { NSApplication.shared.terminate(nil) }
-            .keyboardShortcut("q")
-    }
-
-    // MARK: - sections
-
-    @ViewBuilder
-    private func nowReadingSection(model: PopoverModel) -> some View {
-        switch model.status {
-        case .idle:
-            Text("No audio playing")
-                .foregroundStyle(.secondary)
-                .font(.caption)
-        case .playing(let nr), .paused(let nr):
-            VStack(alignment: .leading, spacing: 1) {
-                Text(
-                    model.status.nowReading == nil ? "Now reading" : (isPaused(model.status) ? "Paused" : "Now reading")
-                )
-                .font(.caption.bold())
-                .foregroundStyle(.secondary)
-                Text(nr.truncatedTitle)
-                    .font(.caption)
-                Text(nr.formattedMetadata)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        case .error(let msg):
-            Text(msg).font(.caption).foregroundStyle(.red)
-        }
-    }
-
-    @ViewBuilder
-    private func transportSection(model: PopoverModel) -> some View {
-        ForEach(model.transport) { row in
-            transportButton(row)
-        }
-    }
-
-    private func transportButton(_ row: PopoverModel.TransportRow) -> some View {
-        Button {
-            switch row.id {
-            case .pause: controller.togglePause()
-            case .stop: controller.stopPlayback()
-            case .skipForward: controller.seek(delta: 15)
-            case .skipBack: controller.seek(delta: -15)
-            }
-        } label: {
-            HStack {
-                Text(row.title)
-                if let label = row.hotkeyLabel {
-                    Spacer()
-                    Text(label).foregroundStyle(.secondary)
-                }
-            }
-        }
-        .disabled(!row.isEnabled)
-    }
-
-    @ViewBuilder
-    private func errorSection(_ status: PopoverModel.Status) -> some View {
-        if case .error(let msg) = status {
-            Text(msg).font(.caption).foregroundStyle(.red)
-        }
-    }
-
-    @ViewBuilder
-    private var voiceMenu: some View {
-        Menu("Voice") {
-            if voices.isEmpty {
-                Button("Refresh voice list") {
-                    Task { await loadVoices() }
-                }
-            } else {
-                ForEach(voices) { voice in
-                    Button {
-                        controller.settings?.voice = voice.id
-                    } label: {
-                        HStack {
-                            Text(voice.label)
-                            if controller.settings?.voice == voice.id {
-                                Spacer()
-                                Text("✓")
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        .padding(.horizontal, PopoverDesign.popoverHorizontalPadding)
+        .padding(.vertical, PopoverDesign.popoverVerticalPadding)
+        .frame(width: PopoverDesign.popoverWidth, alignment: .leading)
+        .background(PopoverDesign.surface)
         .task { await loadVoices() }
     }
 
+    // MARK: - hero (Now Playing / Idle / Error)
+
     @ViewBuilder
-    private var speedMenu: some View {
-        Menu("Speed") {
-            // AVAudioUnitTimePitch's `.rate` parameter hard-caps at 2.0× — values
-            // above silently clamp. See TimePitchUnit.maxRate.
-            ForEach([0.75, 1.0, 1.2, 1.5, 1.75, 2.0], id: \.self) { value in
-                Button {
-                    controller.setSpeed(value)
-                } label: {
-                    HStack {
-                        Text(String(format: "%.2fx", value))
-                        if abs(controller.player.speed - value) < 0.01 {
-                            Spacer()
-                            Text("✓")
-                        }
-                    }
-                }
+    private func heroSection(model: PopoverModel) -> some View {
+        switch model.status {
+        case .idle:
+            IdleHero(speakHotkey: HotkeyLabel.display(for: .speakSelectionFull))
+        case .playing(let nr):
+            NowPlayingCard(
+                nowReading: nr,
+                isPaused: false,
+                pauseHotkey: HotkeyLabel.display(for: .pauseResume),
+                stopHotkey: HotkeyLabel.display(for: .stop),
+                onTogglePause: controller.togglePause,
+                onStop: controller.stopPlayback,
+                onSkipBack: { controller.seek(delta: -15) },
+                onSkipForward: { controller.seek(delta: 15) }
+            )
+        case .paused(let nr):
+            NowPlayingCard(
+                nowReading: nr,
+                isPaused: true,
+                pauseHotkey: HotkeyLabel.display(for: .pauseResume),
+                stopHotkey: HotkeyLabel.display(for: .stop),
+                onTogglePause: controller.togglePause,
+                onStop: controller.stopPlayback,
+                onSkipBack: { controller.seek(delta: -15) },
+                onSkipForward: { controller.seek(delta: 15) }
+            )
+        case .error(let msg):
+            ErrorHero(message: msg)
+        }
+    }
+
+    // MARK: - VOICE
+
+    @ViewBuilder
+    private var voiceSection: some View {
+        let currentLabel = currentVoiceLabel()
+        VStack(spacing: 6) {
+            SectionHeader(
+                title: "Voice",
+                trailing: currentLabel,
+                trailingColor: PopoverDesign.bodyColor,
+                isExpanded: $voicesExpanded
+            )
+            if voicesExpanded {
+                voiceGrid
             }
         }
     }
 
     @ViewBuilder
-    private func recentsMenu(items: [RecentItem]) -> some View {
-        Menu("Recent") {
-            if items.isEmpty {
-                Text("No recent reads")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(items) { item in
-                    Button(item.displayLine()) {
-                        controller.replayRecent(item)
-                    }
+    private var voiceGrid: some View {
+        if voices.isEmpty {
+            HoverableRow(
+                cornerRadius: 6,
+                horizontalPadding: 8,
+                verticalPadding: 8,
+                action: { Task { await loadVoices() } },
+                content: {
+                    Text("Refresh voice list")
+                        .font(PopoverDesign.bodyFont)
+                        .foregroundStyle(PopoverDesign.bodyColor)
                 }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func claudeCodeMenu(items: [RegistryV2Item]) -> some View {
-        Menu("Claude Code (\(items.count))") {
-            ForEach(items) { item in
-                Menu(item.preview()) {
-                    Button("Play") {
-                        controller.play(item: item)
-                    }
-                    Button("Discard") {
-                        controller.discard(item: item)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var settingsFooter: some View {
-        if #available(macOS 14.0, *) {
-            SettingsLink { Text("Settings…") }
+            )
         } else {
-            Button("Settings…") { controller.openSettings() }
+            let columns = [
+                GridItem(.flexible(), spacing: 6),
+                GridItem(.flexible(), spacing: 6),
+                GridItem(.flexible(), spacing: 6),
+            ]
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(voices) { voice in
+                    VoiceTile(
+                        voice: voice,
+                        isSelected: controller.settings?.voice == voice.id,
+                        onSelect: { controller.settings?.voice = voice.id }
+                    )
+                }
+            }
+            .padding(.horizontal, 2)
         }
-        Button("What's New…") {
-            WhatsNewLauncher.shared.show()
-        }
-        Button("Restart Daemon") {
-            controller.restartDaemon()
-        }
-        Button("Open Logs") { controller.openLogs() }
-        CheckForUpdatesMenuItem(controller.updates)
     }
+
+    private func currentVoiceLabel() -> String {
+        guard let id = controller.settings?.voice else { return "—" }
+        if let match = voices.first(where: { $0.id == id }) {
+            return match.label
+        }
+        return id
+    }
+
+    // MARK: - SPEED
+
+    @ViewBuilder
+    private var speedSection: some View {
+        let value = player.speed
+        VStack(spacing: 6) {
+            SectionHeader(
+                title: "Speed",
+                trailing: String(format: "%.2g×", value),
+                trailingColor: PopoverDesign.bodyColor,
+                isExpanded: $speedExpanded
+            )
+            if speedExpanded {
+                SpeedChips(current: value) { controller.setSpeed($0) }
+                    .padding(.horizontal, 2)
+            }
+        }
+    }
+
+    // MARK: - CLAUDE CODE
+
+    @ViewBuilder
+    private func claudeCodeSection(items: [RegistryV2Item]) -> some View {
+        VStack(spacing: 6) {
+            SectionHeader(
+                title: "Claude Code",
+                trailing: "\(items.count)",
+                trailingColor: PopoverDesign.bodyColor,
+                isExpanded: $ccExpanded
+            )
+            if ccExpanded {
+                VStack(spacing: 6) {
+                    ForEach(items) { item in
+                        CCToastCard(
+                            item: item,
+                            onPlay: { controller.play(item: item) },
+                            onDiscard: { controller.discard(item: item) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - RECENT
+
+    @ViewBuilder
+    private func recentsSection(items: [RecentItem]) -> some View {
+        VStack(spacing: 4) {
+            SectionHeader(
+                title: "Recent",
+                trailing: "\(items.count)",
+                isExpanded: $recentsExpanded
+            )
+            if recentsExpanded {
+                VStack(spacing: 2) {
+                    ForEach(items) { item in
+                        RecentRow(item: item) { controller.replayRecent(item) }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - voice loading
 
     private func loadVoices() async {
         do {
             voices = try await controller.client.voices()
         } catch {
-            // Quietly leave empty — user can hit "Refresh" again.
+            // Quietly leave empty — user can hit "Refresh voice list".
         }
-    }
-
-    private func isError(_ status: PopoverModel.Status) -> Bool {
-        if case .error = status { return true }
-        return false
-    }
-
-    private func isPaused(_ status: PopoverModel.Status) -> Bool {
-        if case .paused = status { return true }
-        return false
     }
 }
