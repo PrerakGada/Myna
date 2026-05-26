@@ -46,8 +46,11 @@ public struct LogViewerView: View {
         .frame(minWidth: 600, minHeight: 360)
         .onAppear {
             reload()
+            // Timer closures aren't MainActor-isolated. Hop back to main so we
+            // can call reload() safely. Xcode 16's Swift 6 strict-concurrency
+            // mode catches this; Xcode 26 was silently lenient locally.
             refreshTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
-                reload()
+                Task { @MainActor in reload() }
             }
         }
         .onDisappear {
