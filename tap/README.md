@@ -57,6 +57,12 @@ brew services stop myna-daemon || true
 the cask's release tag. Bump it manually in this repo when daemon code changes
 meaningfully (then re-tag a release).
 
+## Platform support
+
+macOS Apple Silicon only. Windows interest is tracked at
+[PrerakGada/myna#1](https://github.com/PrerakGada/myna/issues/1) — 👍 the
+issue if you'd use it. We commit to a Windows build at 100 reactions.
+
 ## Mirroring this directory into the real tap repo
 
 The first time you set up the tap, manually copy these files to your

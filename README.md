@@ -1,9 +1,18 @@
 # Myna
 
+[![platform: macOS Apple Silicon](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-black)](#requirements)
+[![Windows: 👍 vote](https://img.shields.io/badge/Windows-%F0%9F%91%8D%20vote%20here-0075ca)](https://github.com/PrerakGada/myna/issues/1)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 Always-on, fully local text-to-speech companion for macOS (Apple Silicon).
 Reads selections, web articles, and Claude Code output aloud through
 Kokoro (mlx-audio) — zero API cost, controlled from the menu bar and
 recordable global hotkeys.
+
+> **Myna runs on macOS (Apple Silicon) today.** On Windows?
+> [👍 the vote issue](https://github.com/PrerakGada/myna/issues/1) — we
+> commit to a Windows build when the issue crosses **100 reactions**. See
+> the [Roadmap](#roadmap) for the full decision rule.
 
 ## What it does
 
@@ -27,9 +36,10 @@ Hammerspoon menu bar  <- /status -'
   plus the Claude announce/pick registry.
 - **Surface** — Hammerspoon menu bar + recordable hotkeys; `myna` CLI; CC Stop hook.
 
-## Prerequisites
+## Requirements
 
-- Apple Silicon Mac, macOS.
+- **macOS 13+ on Apple Silicon** (M1 / M2 / M3 / M4). Intel Macs and
+  Windows are not supported today — see the [Roadmap](#roadmap).
 - The existing mlx-audio venv at `~/.venvs/mlx-audio` with Kokoro cached
   (see `docs/superpowers/specs/2026-05-24-myna-design.md`).
 - Python 3.13 at `~/.local/bin/python3.13`.
@@ -88,3 +98,29 @@ The daemon, adapters, control surface, and installer are built and tested
 machine: running `install.sh`, installing/reloading Hammerspoon, granting
 Accessibility, enabling launch-at-login, and confirming each integration
 speaks. Not yet published to GitHub.
+
+## Roadmap
+
+Myna is built in public, by one person, in spare hours. We ship what users
+vote for.
+
+| Platform | Status | How to influence |
+|---|---|---|
+| **macOS Apple Silicon** | ✅ Shipped — v0.1.0 | [File issues](https://github.com/PrerakGada/myna/issues/new) |
+| **Windows** | 🗳️ Gauging interest | [👍 vote on #1](https://github.com/PrerakGada/myna/issues/1) — we build at **100 reactions** |
+| **Intel Mac** | 🤔 Not planned | Open an issue if you'd use it |
+| **Linux** | 🤔 Not planned | Open an issue if you'd use it |
+
+**The Windows decision rule** (full text on
+[issue #1](https://github.com/PrerakGada/myna/issues/1)):
+
+- **< 30 reactions at 90 days** → close the issue, Windows is parked.
+- **30 – 99 reactions at 90 days** → extend 60 days, re-evaluate at day 150.
+- **≥ 100 reactions** → commit to scoping a Windows build.
+
+A monthly heartbeat post on the issue reports the current count and
+whatever shipped on macOS that month. Source-of-truth for the issue body:
+[`docs/roadmap/windows-vote-issue.md`](docs/roadmap/windows-vote-issue.md).
+
+Until the threshold is crossed, all engineering hours go into deepening
+the macOS experience — voices, workflows, Claude Code integration.

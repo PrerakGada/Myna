@@ -70,6 +70,18 @@ export default function Page() {
                   </li>
                 ))}
               </ul>
+
+              <p className="mt-5 sm:mt-6 font-mono text-[0.72rem] tracking-[0.04em] text-ink-muted">
+                On Windows?{" "}
+                <a
+                  href="https://github.com/PrerakGada/myna/issues/1"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-teal-deep underline decoration-teal-deep/30 underline-offset-2 hover:decoration-teal-deep transition-colors"
+                >
+                  👍 vote for a Windows build →
+                </a>
+              </p>
             </div>
 
             <div style={{ animation: "fadeUp 0.9s 0.32s both" }} className="md:pt-2 min-w-0">
@@ -330,6 +342,110 @@ export default function Page() {
               <Detail label="Min macOS" value="Ventura · 13.0" />
               <Detail label="License" value="MIT · open source" />
             </div>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ───────────── PLATFORMS / ROADMAP ───────────── */}
+      <section id="platforms" className="relative py-24 sm:py-32 bg-paper-deep/40">
+        <div className="absolute inset-x-0 top-0 rule-hair" />
+        <div className="mx-auto max-w-5xl px-5 sm:px-8">
+          <Reveal>
+            <div className="mb-10 sm:mb-14 max-w-2xl">
+              <div className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-ink-muted mb-3">
+                No. IV.b · where myna runs
+              </div>
+              <h2 className="font-display text-display-md text-ink balance">
+                One platform now.<br/>
+                <span className="italic text-teal-deep">More if you vote for them.</span>
+              </h2>
+              <p className="mt-4 text-[1rem] leading-[1.65] text-ink-soft pretty max-w-[52ch]">
+                Myna is built by one person in spare hours. We ship what
+                users vote for — publicly, with a counter, and a real
+                threshold.
+              </p>
+            </div>
+          </Reveal>
+
+          <Reveal delay={80}>
+            <div className="grid gap-4 sm:gap-5 md:grid-cols-3">
+              <div className="rounded-2xl bg-paper ring-1 ring-ink/8 shadow-soft p-6 sm:p-7 flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-teal-deep" />
+                  <span className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-teal-deep">
+                    shipped
+                  </span>
+                </div>
+                <h3 className="font-display text-[1.35rem] text-ink mb-2">
+                  macOS · Apple&nbsp;Silicon
+                </h3>
+                <p className="text-[0.95rem] leading-[1.55] text-ink-soft pretty flex-1">
+                  v0.1.0 — Ventura+, M1 through M4. The full app: menu
+                  bar, hotkeys, Kokoro voices, Claude Code integration.
+                </p>
+                <a href="#install" className="mt-5 font-mono text-[0.72rem] uppercase tracking-[0.16em] text-teal-deep hover:text-ink transition-colors">
+                  Install →
+                </a>
+              </div>
+
+              <div className="rounded-2xl bg-paper ring-1 ring-ink/8 shadow-soft p-6 sm:p-7 flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-ink/40" />
+                  <span className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-ink-muted">
+                    gauging interest
+                  </span>
+                </div>
+                <h3 className="font-display text-[1.35rem] text-ink mb-2">
+                  Windows
+                </h3>
+                <p className="text-[0.95rem] leading-[1.55] text-ink-soft pretty flex-1">
+                  Not built yet. We commit to a Windows build when the
+                  vote issue reaches <span className="text-ink">100&nbsp;reactions</span>.
+                  No vaporware — just a public threshold.
+                </p>
+                <a
+                  href="https://github.com/PrerakGada/myna/issues/1"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-5 font-mono text-[0.72rem] uppercase tracking-[0.16em] text-teal-deep hover:text-ink transition-colors"
+                >
+                  👍 vote on GitHub →
+                </a>
+              </div>
+
+              <div className="rounded-2xl bg-paper ring-1 ring-ink/8 shadow-soft p-6 sm:p-7 flex flex-col">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-ink/20" />
+                  <span className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-ink-muted">
+                    open question
+                  </span>
+                </div>
+                <h3 className="font-display text-[1.35rem] text-ink mb-2">
+                  Intel Mac · Linux
+                </h3>
+                <p className="text-[0.95rem] leading-[1.55] text-ink-soft pretty flex-1">
+                  No plans yet. The macOS daemon assumes MLX on Apple
+                  Silicon; Linux would need a different engine entirely.
+                  Open an issue if you'd use it.
+                </p>
+                <a
+                  href="https://github.com/PrerakGada/myna/issues/new"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-5 font-mono text-[0.72rem] uppercase tracking-[0.16em] text-teal-deep hover:text-ink transition-colors"
+                >
+                  Open an issue →
+                </a>
+              </div>
+            </div>
+          </Reveal>
+
+          <Reveal delay={140}>
+            <p className="mt-10 sm:mt-12 text-[0.92rem] leading-[1.55] text-ink-muted pretty max-w-[60ch]">
+              Until the Windows threshold is crossed, every engineering
+              hour goes into deepening the Mac experience — voices,
+              workflows, Claude Code integration. That's the trade.
+            </p>
           </Reveal>
         </div>
       </section>
