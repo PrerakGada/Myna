@@ -130,6 +130,39 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(v, 2)
     }
 
+    /// Even known type names must be rejected when v != 1. A future
+    /// protocol revision may keep the `type` discriminator but change
+    /// the field layout — decoding such a payload against the v1 struct
+    /// would silently mis-interpret data. The decoder gates on v first.
+    func test_discriminator_rejectsKnownTypeWithWrongVersion() throws {
+        // v=2 with a "start"-shaped payload. The v1 struct could decode
+        // this just fine, but the version gate must short-circuit to
+        // .unknown before the type switch is reached.
+        let parts = [
+            #"{"v":2,"type":"start","id":"u","sentence":"hi","#,
+            #""words":[{"i":0,"t":"hi"}],"#,
+            #""estimatedDurationMs":100,"voice":"af_heart"}"#
+        ]
+        let line = Data(parts.joined().utf8)
+        let parsed = try IncomingMessage.decode(line: line)
+        guard case .unknown(let type, let v) = parsed else {
+            XCTFail("expected .unknown for v=2 start, got \(String(describing: parsed))"); return
+        }
+        XCTAssertEqual(type, "start")
+        XCTAssertEqual(v, 2)
+    }
+
+    /// v=0 (missing or explicitly zero) also routes to .unknown.
+    func test_discriminator_rejectsMissingVersion() throws {
+        let line = Data(#"{"type":"word","id":"u","i":2,"tMs":1100}"#.utf8)
+        let parsed = try IncomingMessage.decode(line: line)
+        guard case .unknown(let type, let v) = parsed else {
+            XCTFail("expected .unknown when v is missing, got \(String(describing: parsed))"); return
+        }
+        XCTAssertEqual(type, "word")
+        XCTAssertEqual(v, 0)
+    }
+
     func test_discriminator_blanksReturnNil() throws {
         XCTAssertNil(try IncomingMessage.decode(line: Data()))
         XCTAssertNil(try IncomingMessage.decode(line: Data("   \t  \r\n".utf8)))

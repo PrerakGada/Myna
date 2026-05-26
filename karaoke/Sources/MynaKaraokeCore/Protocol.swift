@@ -186,6 +186,16 @@ public enum IncomingMessage: Equatable, Sendable {
         let type = (dict["type"] as? String) ?? ""
         let v = (dict["v"] as? Int) ?? 0
 
+        // Protocol-version gate. The wire schema is locked at v=1 (see
+        // docs/v0.2-plan/02-karaoke-architecture.md § 2). Anything else
+        // is from a future or mismatched daemon — surface as .unknown so
+        // the PanelController silently ignores it, matching the existing
+        // future-type handling pattern. Throwing would crash the read
+        // loop; .unknown is the graceful path.
+        guard v == 1 else {
+            return .unknown(type: type, v: v)
+        }
+
         let decoder = JSONDecoder()
         switch type {
         case "start":  return .start(try decoder.decode(StartMessage.self, from: trimmed))
