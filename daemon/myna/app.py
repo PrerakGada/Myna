@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import contextlib
 import json
 import logging
@@ -414,7 +415,15 @@ def create_app(config: dict | None = None) -> FastAPI:
         text = _prepare_v2_text(req, mode=mode)
 
         chunk_chars = req.chunk_chars or cfg["chunk_chars"]
-        chunks = chunking.chunk_text(text, chunk_chars)
+        first_chunk_max_words = cfg.get("first_chunk_max_words", 15)
+        # Time-to-first-audio: the first chunk is short (~first_chunk_max_words)
+        # so Kokoro can return playable audio within ~300ms. Rest are sized for
+        # throughput by chunk_chars. See chunking.chunk_text_with_priority_first.
+        chunks = chunking.chunk_text_with_priority_first(
+            text,
+            first_chunk_max_words=first_chunk_max_words,
+            rest_max_chars=chunk_chars,
+        )
         if not chunks:
             raise HTTPException(
                 status_code=400,
@@ -491,6 +500,20 @@ def create_app(config: dict | None = None) -> FastAPI:
             karaoke.schedule_word_events(utt_id, timings)
             return utt_id
 
+        def _synthesize_one(chunk: str) -> bytes:
+            """Worker entrypoint for the prefetch executor. Synthesis happens
+            on a background thread so the main generator can keep yielding
+            bytes to the client while the next chunk is being prepared.
+            """
+            return app.state.synthesize(
+                chunk,
+                voice=voice,
+                speed=speed,
+                base_url=cfg["engine_url"],
+                model=cfg["model"],
+                lang_code=cfg["lang_code"],
+            )
+
         def _generator():
             # First chunk (already synthesized eagerly) — this is the
             # "first audio chunk written" edge per the state spec.
@@ -501,26 +524,54 @@ def create_app(config: dict | None = None) -> FastAPI:
             yield b"\r\n"
             yielded = 1
             truncated = False
-            for idx in range(1, total):
-                try:
-                    wav = app.state.synthesize(
-                        chunks[idx],
-                        voice=voice,
-                        speed=speed,
-                        base_url=cfg["engine_url"],
-                        model=cfg["model"],
-                        lang_code=cfg["lang_code"],
-                    )
-                except Exception:
-                    # Engine died mid-stream — terminate cleanly with the
-                    # closing JSON part reporting the actual count.
-                    truncated = True
-                    break
-                last_utt_id = _emit_chunk_karaoke(idx, chunks[idx], wav)
-                yield _part_headers(idx, total, chunks[idx])
-                yield wav
-                yield b"\r\n"
-                yielded += 1
+
+            # Rolling buffer (YouTube-style): while the client is consuming
+            # chunk N's bytes, we already have chunk N+1 synthesizing on a
+            # worker thread. Single-slot prefetch is enough — Kokoro on
+            # Apple Silicon synthesizes faster than realtime, so one chunk
+            # ahead reliably keeps the buffer ahead of playback.
+            if total > 1:
+                executor = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="myna-prefetch"
+                )
+                # Kick off prefetch of chunk 1 immediately (we're about to
+                # spend time yielding chunk 0 bytes to the network).
+                next_future = executor.submit(_synthesize_one, chunks[1])
+            else:
+                executor = None
+                next_future = None
+
+            try:
+                for idx in range(1, total):
+                    # Await the chunk we previously kicked off.
+                    try:
+                        wav = next_future.result()
+                    except Exception:
+                        # Engine died mid-stream — terminate cleanly with the
+                        # closing JSON part reporting the actual count.
+                        truncated = True
+                        break
+
+                    # Immediately kick off the NEXT prefetch (if any) so we
+                    # overlap network-yield time with synthesis time.
+                    if idx + 1 < total:
+                        next_future = executor.submit(
+                            _synthesize_one, chunks[idx + 1]
+                        )
+                    else:
+                        next_future = None
+
+                    last_utt_id = _emit_chunk_karaoke(idx, chunks[idx], wav)
+                    yield _part_headers(idx, total, chunks[idx])
+                    yield wav
+                    yield b"\r\n"
+                    yielded += 1
+            finally:
+                if next_future is not None:
+                    next_future.cancel()
+                if executor is not None:
+                    executor.shutdown(wait=False, cancel_futures=True)
+
             yield _final_part(yielded)
             # Stream done. Truncation -> error (so the UI can show it);
             # clean drain -> back to idle.

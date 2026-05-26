@@ -16,6 +16,12 @@ DEFAULTS = {
     "summary_timeout": 60.0,
     "speed": 1.0,
     "chunk_chars": 1500,
+    # Time-to-first-audio optimization: the first chunk is capped at this many
+    # words so Kokoro can return playable audio within ~300ms instead of waiting
+    # on a 1500-char first chunk that takes 1.5-3s to synthesize. Subsequent
+    # chunks use `chunk_chars` and are prefetched one ahead of playback so the
+    # buffer never empties (YouTube-style).
+    "first_chunk_max_words": 15,
     "daemon_port": 8766,
     # Karaoke subtitle ribbon (S12). Bound to MynaKaraoke sidecar via
     # ~/.myna/karaoke.sock; off here means the daemon never tries to
