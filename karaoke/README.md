@@ -53,5 +53,5 @@ Wire protocol (Daemon → Sidecar, NDJSON, LOCKED — Track B must match):
 | `stop` | `{"v":1,"type":"stop","id":"..."}` |
 | `config` | `{"v":1,"type":"config","fontSize":N,"position":"...","theme":"...","opacity":N}` |
 
-Bundle ID: `com.prerakgada.myna.karaoke`.
+Bundle ID: `dev.myna.karaoke` (shares the `dev.myna.*` prefix with the outer app at `dev.myna.app`).
 Min macOS: 14.0 (Sonoma). arm64-only.

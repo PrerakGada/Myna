@@ -122,9 +122,11 @@ if [ -f "$ROOT/karaoke/Package.swift" ]; then
   # Verify the Package.swift parses by SwiftPM (and Info.plist exists).
   assert_ok "karaoke Info.plist present" test -f "$ROOT/karaoke/Resources/Info.plist"
   assert_ok "karaoke entitlements present" test -f "$ROOT/karaoke/karaoke.entitlements"
-  # Bundle ID in Info.plist matches the spec.
-  if grep -q 'com.prerakgada.myna.karaoke' "$ROOT/karaoke/Resources/Info.plist"; then
-    printf '  ok   karaoke Info.plist bundle ID = com.prerakgada.myna.karaoke\n'
+  # Bundle ID in Info.plist matches the spec — must share the dev.myna.*
+  # prefix with the outer app (dev.myna.app) so future app-group
+  # entitlements work cleanly.
+  if grep -q 'dev.myna.karaoke' "$ROOT/karaoke/Resources/Info.plist"; then
+    printf '  ok   karaoke Info.plist bundle ID = dev.myna.karaoke\n'
     pass=$((pass+1))
   else
     printf '  FAIL karaoke Info.plist bundle ID mismatch\n' >&2
