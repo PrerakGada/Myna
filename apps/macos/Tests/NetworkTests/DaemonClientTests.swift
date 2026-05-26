@@ -66,9 +66,10 @@ final class DaemonClientTests: XCTestCase {
         XCTAssertEqual(status.config.voice, "af_heart")
         XCTAssertEqual(status.registry.count, 1)
         XCTAssertEqual(status.registry.items.first?.id, "abcd1234")
-        // Fixture has no top-level engine_up → optional decodes to nil but
-        // the derived isEngineUp falls back to the nested engine.status.
-        XCTAssertNil(status.engineUp)
+        // Track B integration: fixture now carries top-level `engine_up: true`
+        // (matches production daemon /v2/status payload), so the optional
+        // decodes to true and isEngineUp reflects that directly.
+        XCTAssertEqual(status.engineUp, true)
         XCTAssertTrue(status.isEngineUp)
     }
 
