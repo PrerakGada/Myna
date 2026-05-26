@@ -37,9 +37,9 @@ targets:
       - path: Sources
         excludes:
           - "**/.DS_Store"
-    resources:
-      - path: Resources/Assets.xcassets
       - path: Resources/changelogs
+        type: folder
+        buildPhase: resources
     info:
       path: Resources/Info.plist
       properties:
