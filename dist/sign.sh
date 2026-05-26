@@ -46,27 +46,66 @@ fi
 # `codesign --deep` is no longer trusted as the only step; modern guidance is
 # to sign each nested executable individually.
 if [ "${DRY_RUN:-0}" != "1" ]; then
-  # Discover everything that needs signing inside the bundle (depth-first).
+
+  # ---------------------------------------------------------------------------
+  # Sparkle.framework needs Sparkle-aware handling.
   #
-  # `-type d` is critical for versioned frameworks like Sparkle.framework:
-  # without it, `find` returns BOTH the real directories
-  # (e.g. Sparkle.framework/Versions/B/Updater.app) AND every symlink that
-  # points at them (Sparkle.framework/Updater.app and
-  # Sparkle.framework/Versions/Current/Updater.app). Signing the same binary
-  # via the symlinks rewrites them as regular files, which breaks the
-  # framework's internal structure and codesign then fails on the framework
-  # root with "bundle format is ambiguous (could be app or framework)".
+  # Sparkle 2 ships a framework whose bundle is unusual: it has BOTH a flat
+  # layout (Sparkle.framework/Updater.app, Sparkle.framework/XPCServices/...)
+  # AND a versioned layout (Versions/B/Updater.app, Versions/Current → B).
+  # When Xcode embeds it via SPM and runs embed-and-sign, the symlinks get
+  # dereferenced and you end up with three real copies of each helper —
+  # signing all three from a generic find loop wedges the framework's internal
+  # structure and codesign refuses the root with:
+  #   "bundle format is ambiguous (could be app or framework)"
   #
-  # Filtering to `-type d` keeps only the real directories — symlinks are
-  # `-type l` and excluded.
+  # Sparkle's official recommendation: sign only what's inside Versions/B
+  # (the "current" Version), bottom-up, then sign Versions/B itself, then sign
+  # the framework root. Exclude this framework from the generic loop below.
+  # ---------------------------------------------------------------------------
+  sign_sparkle() {
+    local sparkle="$1"
+    [ -d "$sparkle" ] || return 0
+    local current_ver="B"
+    if [ -L "$sparkle/Versions/Current" ]; then
+      current_ver=$(readlink "$sparkle/Versions/Current")
+    fi
+    log "sparkle: detected current version = $current_ver"
+    local ver_dir="$sparkle/Versions/$current_ver"
+    for inner in \
+      "$ver_dir/Autoupdate" \
+      "$ver_dir/Updater.app/Contents/MacOS/Autoupdate" \
+      "$ver_dir/XPCServices/Downloader.xpc" \
+      "$ver_dir/XPCServices/Installer.xpc" \
+      "$ver_dir/Updater.app" \
+      "$ver_dir" \
+      "$sparkle"
+    do
+      if [ -e "$inner" ]; then
+        log "sparkle sign: $inner"
+        # shellcheck disable=SC2086
+        codesign --force --options runtime --timestamp \
+          $keychain_arg \
+          --sign "$DEVELOPER_ID_APPLICATION" \
+          "$inner"
+      fi
+    done
+  }
+  sign_sparkle "$APP_PATH/Contents/Frameworks/Sparkle.framework"
+
+  # ---------------------------------------------------------------------------
+  # Generic depth-first sign for everything else. Explicitly exclude Sparkle
+  # (handled above) so we don't re-sign and re-break it.
   #
   # NOTE: `mapfile`/`readarray` is bash 4+; macOS GitHub Actions runners ship
   # bash 3.2 and bail with "command not found". Use a `while read` loop.
   # Per AUDIT_REPORT.md Lane B 🟡 #1.
+  # ---------------------------------------------------------------------------
   targets=()
   while IFS= read -r t; do
     [ -n "$t" ] && targets+=("$t")
   done < <(find "$APP_PATH/Contents" \
+    -not -path "*/Sparkle.framework*" \
     \( -name '*.framework' -o -name '*.bundle' -o -name '*.xpc' -o -name '*.app' \) \
     -type d \
     -print | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
