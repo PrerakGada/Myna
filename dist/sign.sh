@@ -47,7 +47,13 @@ fi
 # to sign each nested executable individually.
 if [ "${DRY_RUN:-0}" != "1" ]; then
   # Discover everything that needs signing inside the bundle (depth-first).
-  mapfile -t targets < <(find "$APP_PATH/Contents" \
+  # NOTE: `mapfile`/`readarray` is bash 4+; macOS GitHub Actions runners ship
+  # bash 3.2 and bail with "command not found". Use a `while read` loop
+  # instead. Per AUDIT_REPORT.md Lane B 🟡 #1 — caught by first v0.1.0 build.
+  targets=()
+  while IFS= read -r t; do
+    [ -n "$t" ] && targets+=("$t")
+  done < <(find "$APP_PATH/Contents" \
     \( -name '*.framework' -o -name '*.bundle' -o -name '*.xpc' -o -name '*.app' \) \
     -print | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
   for t in "${targets[@]}"; do
