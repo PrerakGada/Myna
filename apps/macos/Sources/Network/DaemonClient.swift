@@ -219,6 +219,66 @@ public actor DaemonClient {
         return resp
     }
 
+    // MARK: - v0.2 Track B endpoints (registry v2)
+
+    /// `GET /v2/registry/list` — fetch pending CC announcements for the
+    /// toast pipeline (S08). Returns an empty pending array if the
+    /// endpoint is not yet implemented (404) so callers can treat
+    /// "no pending" and "endpoint not deployed" identically.
+    public func registryListV2() async throws -> RegistryListResponse {
+        let req = try makeRequest(path: "/v2/registry/list", method: "GET")
+        do {
+            return try await decode(req)
+        } catch DaemonError.notFound {
+            return RegistryListResponse(pending: [])
+        } catch DaemonError.http(let code, _) where code == 404 {
+            return RegistryListResponse(pending: [])
+        }
+    }
+
+    /// `POST /v2/registry/announce` — used by stop-hook integrations.
+    /// Lane A exposes this primarily so tests + the future demo CLI
+    /// can drive the pipeline without going through the Python daemon.
+    public func registryAnnounceV2(_ request: RegistryAnnounceRequest) async throws -> RegistryAnnounceResponse {
+        let req = try makeRequest(path: "/v2/registry/announce", method: "POST", body: request)
+        return try await decode(req)
+    }
+
+    /// `POST /v2/registry/play/{id}` — kick off playback for a queued
+    /// CC item (toast click → daemon synthesises + plays through the
+    /// existing pipeline).
+    public func registryPlayV2(id: String) async throws -> PlayResponse {
+        let req = try makeRequest(path: "/v2/registry/play/\(id)", method: "POST")
+        return try await decode(req)
+    }
+
+    // MARK: - v0.2 Track B: voice preview (S09)
+
+    /// `GET /v2/voices/preview/{voice_id}` — returns a short WAV buffer.
+    /// Lane B may return 503 while the engine is warming up; callers
+    /// should surface that as a 2s "Engine warming…" inline message
+    /// per S09 AC #6.
+    public func voicePreview(voiceId: String) async throws -> Data {
+        var req = try makeRequest(path: "/v2/voices/preview/\(voiceId)", method: "GET")
+        req.timeoutInterval = 10  // short — preview WAVs are ≤3s
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch let urlError as URLError {
+            throw DaemonError.transport(urlError.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw DaemonError.transport("non-http response")
+        }
+        if http.statusCode == 503 {
+            throw DaemonError.engineDown
+        }
+        if http.statusCode != 200 {
+            throw mapHTTPError(status: http.statusCode, body: data)
+        }
+        return data
+    }
+
     // MARK: - Helpers
 
     private func makeRequest<Body: Encodable>(
