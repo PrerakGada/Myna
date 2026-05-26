@@ -1,4 +1,7 @@
+import asyncio
+import contextlib
 import json
+import logging
 import os
 import pathlib
 import time
@@ -7,7 +10,7 @@ import uuid
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__, chunking, engine
@@ -18,6 +21,11 @@ from .player import Player
 from .registry import Registry
 from .state import StateMachine
 from .v2_registry import V2Registry
+from .voice_previews import (
+    WARM_VOICES,
+    VoicePreviewCache,
+    sample_for_voice,
+)
 from .v2_types import (
     V2ConfigInfo,
     V2DaemonInfo,
@@ -40,6 +48,8 @@ from .v2_types import (
     V2Voice,
     V2Voices,
 )
+
+logger = logging.getLogger(__name__)
 
 # Cache TTLs
 _ENGINE_CHECK_TTL_S = 1.0       # /v2/health and /v2/status reuse a check this fresh
@@ -91,8 +101,53 @@ def _voice_lang(voice_id: str) -> str:
     return "unknown"
 
 
+async def _warm_voice_previews(app) -> None:
+    """Pre-synthesize top voices at boot. Fire-and-forget; per-voice
+    failures are logged and skipped (engine may be cold).
+
+    Defined at module level so the lifespan context can launch it before
+    create_app finishes mutating app.state — it reads through `app.state`.
+    """
+    cache = app.state.voice_preview_cache
+    cfg = app.state.cfg
+    for voice_id in WARM_VOICES:
+        if cache.get(voice_id) is not None:
+            continue
+        sentence = sample_for_voice(voice_id)
+        try:
+            wav = await asyncio.to_thread(
+                app.state.synthesize,
+                sentence,
+                voice=voice_id,
+                speed=1.0,
+                base_url=cfg["engine_url"],
+                model=cfg["model"],
+                lang_code=cfg["lang_code"],
+            )
+        except Exception as exc:
+            logger.info("voice preview warm skip %s: %s", voice_id, exc)
+            continue
+        cache.put(voice_id, wav)
+
+
 def create_app(config: dict | None = None) -> FastAPI:
-    app = FastAPI(title="Myna")
+    @contextlib.asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        # Opt-in voice preview warming. Default off so test runners and dev
+        # shells don't fire warming. The deployed launchagent sets
+        # MYNA_WARM_VOICES=1.
+        warm_task = None
+        if os.environ.get("MYNA_WARM_VOICES") == "1":
+            warm_task = asyncio.create_task(_warm_voice_previews(app))
+        try:
+            yield
+        finally:
+            if warm_task is not None and not warm_task.done():
+                warm_task.cancel()
+                with contextlib.suppress(BaseException):
+                    await warm_task
+
+    app = FastAPI(title="Myna", lifespan=_lifespan)
     cfg = config or load_config()
     app.state.cfg = cfg
     app.state.speed = cfg["speed"]
@@ -100,6 +155,15 @@ def create_app(config: dict | None = None) -> FastAPI:
     app.state.registry = Registry()
     app.state.machine = StateMachine()
     app.state.v2_registry = V2Registry()
+    # engine_version: identifier used to invalidate voice-preview cache when
+    # the underlying TTS model bumps. For v0.2 we tie it to the daemon
+    # version + configured model (covers `prince-canuma/Kokoro-82M` model
+    # swaps without a real engine /version probe).
+    engine_version = f"{__version__}:{cfg.get('model', 'unknown')}"
+    app.state.engine_version = engine_version
+    app.state.voice_preview_cache = VoicePreviewCache(
+        engine_version=engine_version
+    )
     app.state.synthesize = engine.synthesize
     app.state.engine_up = engine.engine_up
     app.state.summarize = summarize_mod.summarize
@@ -510,6 +574,49 @@ def create_app(config: dict | None = None) -> FastAPI:
         app.state.voices_cache = voices
         app.state.voices_cache_at = now
         return V2Voices(voices=voices)
+
+    @app.get("/v2/voices/preview/{voice_id}")
+    def v2_voice_preview(voice_id: str):
+        # While engine is warming (machine state == thinking) or the engine
+        # is reported down, bounce the client with a 503 + Retry-After.
+        if app.state.machine.state == "thinking":
+            return JSONResponse(
+                status_code=503,
+                content={"ok": False, "reason": "engine_thinking"},
+                headers={"Retry-After": "2"},
+            )
+        if not _check_engine_cached():
+            return JSONResponse(
+                status_code=503,
+                content={"ok": False, "reason": "engine_down"},
+                headers={"Retry-After": "2"},
+            )
+        cache = app.state.voice_preview_cache
+        cached = cache.get(voice_id)
+        if cached is not None:
+            return Response(content=cached, media_type="audio/wav")
+        # Cache miss: synthesize, store, return.
+        sentence = sample_for_voice(voice_id)
+        try:
+            wav = app.state.synthesize(
+                sentence,
+                voice=voice_id,
+                speed=1.0,
+                base_url=cfg["engine_url"],
+                model=cfg["model"],
+                lang_code=cfg["lang_code"],
+            )
+        except Exception as exc:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "ok": False,
+                    "reason": "engine_error",
+                    "detail": str(exc),
+                },
+            )
+        cache.put(voice_id, wav)
+        return Response(content=wav, media_type="audio/wav")
 
     @app.post(
         "/v2/extract",
