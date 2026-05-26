@@ -1,6 +1,6 @@
 # Myna — landing page
 
-A single-page, mobile-first landing page for [Myna](https://github.com/PrerakGada/myna), the local-only macOS menu-bar text-to-speech app.
+A single-page, mobile-first landing page for [Myna](https://github.com/PrerakGada/myna), the native macOS menu-bar text-to-speech app — local-only, signed + notarised, auto-updating via Sparkle, distributed as a DMG + Homebrew Cask.
 
 Built with **Next.js 16**, **React 19**, **Tailwind CSS**, and `next/font` for self-hosted Fraunces + Newsreader + JetBrains Mono. No client-side animation library — everything is CSS keyframes + a tiny IntersectionObserver. Statically generated, deployable to Vercel as-is.
 
@@ -57,7 +57,7 @@ site/
 │   ├── ClaudeSessionsVisual.tsx feature 03 — session queue
 │   ├── ControlVisual.tsx       feature 04 — shortcut table
 │   ├── PrivacyVisual.tsx       feature 05 — local-only diagram
-│   ├── ArchitectureDiagram.tsx Engine · Brain · Surface
+│   ├── ArchitectureDiagram.tsx App · Daemon · Voice
 │   ├── CopyBlock.tsx           tap-to-copy code blocks
 │   ├── FAQ.tsx                 accordion
 │   ├── Reveal.tsx              IO-based scroll reveal

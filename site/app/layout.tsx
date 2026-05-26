@@ -28,11 +28,11 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://myna.dev"),
   title: "Myna — A quiet voice for your Mac",
   description:
-    "A free, open-source menu-bar app that reads selected text, web articles, and finished Claude Code sessions aloud. Runs entirely on your Apple Silicon Mac. No cloud, no cost, no noise.",
+    "A free, open-source native macOS menu-bar app that reads selections, articles, and finished Claude Code sessions aloud. Real audio engine, signed + notarised, auto-updating, runs entirely on Apple Silicon. No cloud, no cost, no noise.",
   openGraph: {
     title: "Myna — A quiet voice for your Mac",
     description:
-      "Reads selections, articles, and Claude Code output aloud. 100% local, free forever, MIT-licensed.",
+      "Native macOS menu-bar TTS. Reads selections, articles, and Claude Code output aloud. 100% local, free forever, MIT-licensed.",
     type: "website",
     url: "/",
     siteName: "Myna",
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Myna — A quiet voice for your Mac",
     description:
-      "Reads selections, articles, and Claude Code output aloud. 100% local, free forever, MIT-licensed.",
+      "Native macOS menu-bar TTS. Reads selections, articles, and Claude Code output aloud. 100% local, free forever, MIT-licensed.",
   },
   authors: [{ name: "Prerak Gada", url: "https://github.com/PrerakGada" }],
   creator: "Prerak Gada",

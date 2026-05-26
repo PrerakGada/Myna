@@ -1,40 +1,3 @@
-/* ─────────────────────────────────────────────────────────────────────
- * TODO — Native Swift migration update list
- *
- * When the Hammerspoon-based stack is replaced by the native SwiftUI
- * menu-bar app currently being built under apps/macos, update the
- * following four spots in this file (and nothing else — the hero,
- * hook, features, why-local, FAQ, and footer are implementation-
- * agnostic and stay):
- *
- *   1. Architecture diagram — components/ArchitectureDiagram.tsx
- *      Currently: "Surface · Hammerspoon · menu bar · CLI".
- *      After:    "Surface · SwiftUI menu bar · CLI".
- *
- *   2. Install section — see the CopyBlock trio below.
- *      Currently: prerequisites (Python 3.13, mlx-audio venv,
- *                 Hammerspoon, Ollama) + `git clone … && ./install.sh`
- *                 + "Open Hammerspoon → Reload Config".
- *      After:    likely a single download line, or a Homebrew cask
- *                (`brew install --cask prerakgada/tap/myna`).
- *                Remove the Hammerspoon finishing steps.
- *
- *   3. Prerequisites — drop the Python/Hammerspoon/Ollama list once
- *      they're bundled into the .app.
- *
- *   4. FAQ — components/FAQ.tsx
- *      "How do I uninstall?" answer mentions `launchctl unload`,
- *      `~/.hammerspoon/myna.lua`, and the Claude Code Stop hook in
- *      `~/.claude/settings.json`. Replace with "Drag Myna.app to
- *      Trash" (and keep the Stop-hook removal if that integration
- *      survives the rewrite).
- *
- * Everything else — the warm reading-room aesthetic, the soundwave,
- * the menubar mockup, the Claude Code session queue visual, the
- * five feature blocks, the privacy story, the typography — does not
- * depend on the implementation and ships unchanged.
- * ─────────────────────────────────────────────────────────────────── */
-
 import { Nav } from "@/components/Nav";
 import { GitHubStarButton } from "@/components/GitHubStar";
 import { MynaMark } from "@/components/MynaMark";
@@ -65,7 +28,7 @@ export default function Page() {
           <div className="flex items-center gap-3 mb-7 sm:mb-10 animate-fade-in">
             <span className="h-px w-8 bg-ink/30" />
             <span className="font-mono text-[0.72rem] uppercase tracking-[0.22em] text-ink-muted">
-              myna · v0.1 · for macOS
+              myna · native for macOS Ventura+
             </span>
           </div>
 
@@ -99,7 +62,7 @@ export default function Page() {
               </div>
 
               <ul className="mt-7 sm:mt-9 flex flex-wrap gap-x-5 gap-y-2.5 font-mono text-[0.72rem] uppercase tracking-[0.16em] text-ink-muted">
-                {["100% local", "zero cost, forever", "MIT licensed", "Apple Silicon"].map((t, i) => (
+                {["100% local", "signed & notarised", "auto-updating", "MIT licensed"].map((t, i) => (
                   <li key={t} className="flex items-center gap-2">
                     <span className="inline-block h-1 w-1 rounded-full bg-teal" />
                     <span>{t}</span>
@@ -199,11 +162,11 @@ export default function Page() {
             eyebrow="Control"
             title={<>Pause, resume, <span className="italic text-teal-deep">rebind</span>, repeat.</>}
             body={<>
-              The menu bar holds the whole control surface: play, pause, stop, speed. Every shortcut — from
-              speak, to summary, to read-article — is rebindable. The CLI is there too, for terminal people:{" "}
-              <span className="font-mono text-[0.92em] text-ink">myna "text"</span>,{" "}
-              <span className="font-mono text-[0.92em] text-ink">pbpaste | myna</span>,{" "}
-              <span className="font-mono text-[0.92em] text-ink">myna --summary</span>.
+              Real audio, not <span className="font-mono text-[0.92em] text-ink">afplay</span>: AVAudioEngine drives
+              playback, so speed changes don't pitch-shift and you can scrub or jump ±15s mid-sentence. A native
+              Settings panel rebinds every shortcut, picks the voice, and points the daemon. And{" "}
+              <span className="font-mono text-[0.92em] text-ink">myna://</span> URLs let BetterTouchTool,
+              Shortcuts, or Alfred drive Myna without simulating a keystroke.
             </>}
             visual={<ControlVisual />}
             reverse
@@ -311,13 +274,13 @@ export default function Page() {
                 No. IV · install
               </div>
               <h2 className="font-display text-display-lg balance">
-                One script. One permission.<br/>
+                Drag once.<br/>
                 <span className="italic text-teal-glow">A small black bird in your menu bar.</span>
               </h2>
               <p className="mt-5 text-[1.05rem] leading-[1.65] text-paper/70 max-w-[52ch] pretty">
-                Clone the repo and run <span className="font-mono text-paper">./install.sh</span>. It sets up a venv,
-                drops the daemon, registers your hotkeys, copies the Hammerspoon module, and loads the LaunchAgents
-                so the voice survives reboots.
+                Myna ships as a native, code-signed, notarised macOS app. Install with Homebrew or grab the DMG
+                from GitHub Releases — either way, the local voice daemon comes along for the ride. macOS
+                Ventura or later, Apple Silicon only.
               </p>
             </div>
           </Reveal>
@@ -326,35 +289,35 @@ export default function Page() {
             <div className="grid gap-6 md:grid-cols-2 md:gap-8">
               <div>
                 <CopyBlock
-                  label="01 · prerequisites"
+                  label="01 · homebrew"
                   lines={[
-                    { comment: true, text: "Apple Silicon Mac · macOS 13+" },
-                    { comment: true, text: "Python 3.13 at ~/.local/bin/python3.13" },
-                    { comment: true, text: "mlx-audio venv at ~/.venvs/mlx-audio" },
-                    { comment: true, text: "Hammerspoon (free, hammerspoon.org)" },
-                    { comment: true, text: "Ollama with qwen3.5:4b (summary mode)" },
+                    { comment: true, text: "Installs the app + the local daemon." },
+                    { prompt: true, text: "brew install --cask PrerakGada/myna/myna" },
+                    { comment: true, text: "" },
+                    { comment: true, text: "Then launch it once and grant Accessibility" },
+                    { comment: true, text: "when macOS asks. That's the whole setup." },
                   ]}
                 />
               </div>
               <div>
                 <CopyBlock
-                  label="02 · clone & install"
+                  label="02 · or, download the dmg"
                   lines={[
-                    { prompt: true, text: "git clone https://github.com/PrerakGada/myna ~/Developer/myna" },
-                    { prompt: true, text: "cd ~/Developer/myna" },
-                    { prompt: true, text: "./install.sh" },
+                    { comment: true, text: "Latest signed + notarised .dmg" },
+                    { prompt: true, text: "open https://github.com/PrerakGada/myna/releases/latest" },
+                    { comment: true, text: "" },
+                    { comment: true, text: "Drag Myna.app to Applications. Done." },
                   ]}
                 />
               </div>
               <div className="md:col-span-2">
                 <CopyBlock
-                  label="03 · finish in Hammerspoon"
+                  label="03 · for summaries (optional)"
                   lines={[
-                    { comment: true, text: "Open Hammerspoon → Reload Config" },
-                    { comment: true, text: "Grant Accessibility permission when prompted" },
-                    { comment: true, text: "Enable 'Launch Hammerspoon at login' in Preferences" },
-                    { comment: true, text: "" },
-                    { prompt: true, text: "myna \"Myna is installed.\"" },
+                    { comment: true, text: "Summary hotkey uses a local LLM via Ollama." },
+                    { comment: true, text: "Skip this if you only want straight selection-reading." },
+                    { prompt: true, text: "brew install ollama" },
+                    { prompt: true, text: "ollama pull qwen3.5:4b" },
                   ]}
                 />
               </div>
@@ -363,8 +326,8 @@ export default function Page() {
 
           <Reveal delay={140}>
             <div className="mt-12 sm:mt-16 grid gap-6 sm:grid-cols-3">
-              <Detail label="Voice" value="Kokoro · af_heart" />
-              <Detail label="Summariser" value="qwen3.5 :4b · Ollama" />
+              <Detail label="Updates" value="Sparkle 2 · signed" />
+              <Detail label="Min macOS" value="Ventura · 13.0" />
               <Detail label="License" value="MIT · open source" />
             </div>
           </Reveal>
@@ -453,7 +416,7 @@ export default function Page() {
           <div className="flex items-center gap-2.5">
             <MynaMark size={22} />
             <span className="font-display text-[1.05rem]">Myna</span>
-            <span className="font-mono text-[0.72rem] text-ink-muted ml-2">v0.1 · MIT</span>
+            <span className="font-mono text-[0.72rem] text-ink-muted ml-2">native · MIT</span>
           </div>
           <div className="flex items-center gap-5 font-mono text-[0.78rem] text-ink-muted">
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="hover:text-ink transition-colors">github</a>

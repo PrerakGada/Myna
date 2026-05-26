@@ -1,5 +1,5 @@
 /**
- * Engine → Brain → Surface — a calm, editorial diagram. Mobile becomes
+ * App → Daemon → Voice — a calm, editorial diagram. Mobile becomes
  * a vertical timeline; desktop a horizontal flow. No SVG curves that
  * compute differently on render; all CSS.
  */
@@ -7,21 +7,21 @@ export function ArchitectureDiagram() {
   const layers = [
     {
       tag: "01",
-      name: "Engine",
-      sub: "mlx-audio · Kokoro af_heart",
-      body: "The voice itself. Runs natively on Apple Silicon. Fast because it's local, warm because Kokoro is just a genuinely good model.",
+      name: "App",
+      sub: "Native SwiftUI · AVAudioEngine",
+      body: "The menu bar, the hotkeys, the Settings panel, the playback. AVAudioEngine handles speed without pitch shift and lets you scrub or jump ±15s. Signed, notarised, and quietly updated by Sparkle.",
     },
     {
       tag: "02",
-      name: "Brain",
-      sub: "Python · FastAPI daemon",
-      body: "Holds the queue, the playback state, and the optional summariser pass through Ollama. The part you never see, which is the point.",
+      name: "Daemon",
+      sub: "Python · FastAPI · streams WAV",
+      body: "A small local service that synthesises in chunks and streams them to the app as the voice plays. Extracts articles, summarises through Ollama, never opens a socket beyond 127.0.0.1.",
     },
     {
       tag: "03",
-      name: "Surface",
-      sub: "Hammerspoon · menu bar · CLI",
-      body: "Menu bar, global hotkeys, the myna CLI, and the Claude Code Stop hook. Lightweight, scriptable, instant.",
+      name: "Voice",
+      sub: "mlx-audio · Kokoro af_heart",
+      body: "The Kokoro model running natively on Apple Silicon. Fast because it's local. Warm because Kokoro is just a genuinely good model.",
     },
   ];
 

@@ -19,23 +19,31 @@ const ITEMS: Item[] = [
   },
   {
     q: "Which voice does it use? Can I change it?",
-    a: <>The default is Kokoro's <span className="font-mono text-ink-soft">af_heart</span>, a warm voice that holds up well at length. Other Kokoro voices can be swapped in by editing the daemon config; a friendlier voice picker is on the roadmap.</>,
+    a: <>The default is Kokoro's <span className="font-mono text-ink-soft">af_heart</span>, a warm voice that holds up well at length. The Voice tab in Settings lets you switch to any Kokoro voice the engine is hosting — no config-file editing required.</>,
   },
   {
     q: "Does it work with Safari or Firefox?",
     a: <>The "read this article" feature currently targets Chrome. Selection reading (<span className="font-mono text-ink-soft">⌘⌥⇧S</span>) works in any app, including Safari and Firefox, because it operates on selected text rather than the page itself.</>,
   },
   {
+    q: "Can I drive Myna from BetterTouchTool, Shortcuts, or Alfred?",
+    a: <>Yes. Myna registers the <span className="font-mono text-ink-soft">myna://</span> URL scheme, so any tool that can open a URL can drive it — speak the selection, toggle pause, jump ±15s, read the current article. Open <span className="font-mono text-ink-soft">myna://toggle-pause</span> from anywhere on your Mac and Myna obeys.</>,
+  },
+  {
     q: "How is this different from the macOS built-in speech?",
-    a: <>The system voices are fine for short alerts and accessibility prompts, less so for reading a long essay or a Claude Code response. Kokoro is a newer, more natural model, and Myna adds the things the built-in speech doesn't have: a global summary hotkey, article extraction, Claude Code session narration, and a proper menu-bar control surface.</>,
+    a: <>The system voices are fine for short alerts and accessibility prompts, less so for reading a long essay or a Claude Code response. Kokoro is a newer, more natural model, and Myna adds the things the built-in speech doesn't have: a global summary hotkey, article extraction, Claude Code session narration, real speed control without pitch shift, ±15s seek, and a proper menu-bar control surface.</>,
   },
   {
     q: "What is the Claude Code integration actually for?",
     a: <>If you run one Claude session at a time, it's a nice convenience: when the session finishes, the response can be read aloud. If you run several in parallel, it's the real reason Myna exists. Each finished session queues silently in the menu bar and waits for you to pick which one to hear. Nothing talks over anything else.</>,
   },
   {
+    q: "How does it update itself?",
+    a: <>Sparkle 2 is baked into the app. New versions are signed with an EdDSA key, served from a JSON appcast, and offered to you with a small native prompt. No App Store, no telemetry — just the next version when it's ready.</>,
+  },
+  {
     q: "How do I uninstall?",
-    a: <>Unload the two LaunchAgents (<span className="font-mono text-ink-soft">launchctl unload …/dev.myna.engine.plist</span> and the daemon one), delete <span className="font-mono text-ink-soft">~/.hammerspoon/myna.lua</span>, remove the Claude Code Stop hook from <span className="font-mono text-ink-soft">~/.claude/settings.json</span>, and delete the repo folder. Myna doesn't scatter files across your system, so cleanup is quick.</>,
+    a: <>Drag Myna.app to the Trash. Or, if you installed via Homebrew, <span className="font-mono text-ink-soft">brew uninstall --cask myna</span> followed by <span className="font-mono text-ink-soft">brew uninstall myna-daemon</span>. Myna doesn't scatter files across your system, so cleanup is one drag away.</>,
   },
 ];
 
