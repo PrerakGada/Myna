@@ -16,6 +16,7 @@ from . import summarize as summarize_mod
 from .config import load_config
 from .player import Player
 from .registry import Registry
+from .state import StateMachine
 from .v2_types import (
     V2ConfigInfo,
     V2DaemonInfo,
@@ -91,6 +92,7 @@ def create_app(config: dict | None = None) -> FastAPI:
     app.state.speed = cfg["speed"]
     app.state.player = Player()
     app.state.registry = Registry()
+    app.state.machine = StateMachine()
     app.state.synthesize = engine.synthesize
     app.state.engine_up = engine.engine_up
     app.state.summarize = summarize_mod.summarize
@@ -315,6 +317,7 @@ def create_app(config: dict | None = None) -> FastAPI:
         # Pre-check the engine. We do this before any work so the Swift client
         # gets a quick 502 rather than waiting on a doomed pipeline.
         if not _check_engine_cached():
+            app.state.machine.transition_to("error")
             return JSONResponse(
                 status_code=502,
                 content={"ok": False, "reason": "engine_down"},
@@ -338,6 +341,10 @@ def create_app(config: dict | None = None) -> FastAPI:
         speed = max(0.5, min(2.0, req.speed))
         session_id = req.session_id or uuid.uuid4().hex
 
+        # Mark thinking the moment we accept the request. Clears any prior
+        # error state and tags the snapshot with this request's id.
+        app.state.machine.transition_to("thinking", request_id=session_id)
+
         # Synthesize the first chunk eagerly so engine errors surface as a real
         # HTTP 502 (we haven't started streaming yet). Subsequent chunks are
         # synthesized inside the generator; failures there end the stream early.
@@ -351,6 +358,7 @@ def create_app(config: dict | None = None) -> FastAPI:
                 lang_code=cfg["lang_code"],
             )
         except Exception as exc:
+            app.state.machine.transition_to("error")
             return JSONResponse(
                 status_code=502,
                 content={"ok": False, "reason": "engine_error", "detail": str(exc)},
@@ -380,11 +388,14 @@ def create_app(config: dict | None = None) -> FastAPI:
             )
 
         def _generator():
-            # First chunk (already synthesized eagerly)
+            # First chunk (already synthesized eagerly) — this is the
+            # "first audio chunk written" edge per the state spec.
+            app.state.machine.transition_to("speaking", request_id=session_id)
             yield _part_headers(0, total, chunks[0])
             yield first_wav
             yield b"\r\n"
             yielded = 1
+            truncated = False
             for idx in range(1, total):
                 try:
                     wav = app.state.synthesize(
@@ -398,12 +409,22 @@ def create_app(config: dict | None = None) -> FastAPI:
                 except Exception:
                     # Engine died mid-stream — terminate cleanly with the
                     # closing JSON part reporting the actual count.
+                    truncated = True
                     break
                 yield _part_headers(idx, total, chunks[idx])
                 yield wav
                 yield b"\r\n"
                 yielded += 1
             yield _final_part(yielded)
+            # Stream done. Truncation -> error (so the UI can show it);
+            # clean drain -> back to idle.
+            if truncated:
+                app.state.machine.transition_to("error")
+            else:
+                # speaking -> idle is the documented "last chunk played"
+                # transition. Daemon doesn't track player time; we treat
+                # "wrote the last chunk" as "done speaking" for status.
+                app.state.machine.transition_to("idle")
 
         return StreamingResponse(
             _generator(),
@@ -425,8 +446,16 @@ def create_app(config: dict | None = None) -> FastAPI:
         engine_up_now = _check_engine_cached()
         player_st = app.state.player.status()
         reg_items = app.state.registry.list_items()
+        machine_snap = app.state.machine.snapshot()
         return V2Status(
-            state="down" if not engine_up_now else "idle",
+            # v0.2 top-level fields (Track A reads these)
+            ok=True,
+            version=__version__,
+            engine_up=engine_up_now,
+            state=machine_snap["state"],
+            since_ms=machine_snap["since_ms"],
+            request_id=machine_snap["request_id"],
+            # v0.1 nested fields (preserved for fixture + Swift decoder compat)
             engine=V2EngineInfo(
                 url=cfg["engine_url"],
                 status="up" if engine_up_now else "down",

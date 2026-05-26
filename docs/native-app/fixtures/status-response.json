@@ -1,5 +1,10 @@
 {
+  "ok": true,
+  "version": "0.2.0",
+  "engine_up": true,
   "state": "idle",
+  "since_ms": 12345,
+  "request_id": null,
   "engine": {
     "url": "http://127.0.0.1:8765",
     "status": "up",

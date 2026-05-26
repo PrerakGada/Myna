@@ -80,12 +80,19 @@ class V2V1PlayerInfo(BaseModel):
 
 
 class V2Status(BaseModel):
+    # v0.1 fields (still required by the existing Swift decoder + fixture)
     state: str
     engine: V2EngineInfo
     daemon: V2DaemonInfo
     config: V2ConfigInfo
     registry: V2RegistryInfo
     v1_player: V2V1PlayerInfo
+    # v0.2 additive fields (Track A consumes these)
+    ok: bool = True
+    version: str = ""
+    engine_up: bool = False
+    since_ms: int = 0
+    request_id: Optional[str] = None
 
 
 class V2Voice(BaseModel):
