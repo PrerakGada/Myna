@@ -115,11 +115,21 @@ jobs:
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
         run: bash dist/build.sh
+      # Why tar instead of uploading the .app dir directly:
+      # actions/upload-artifact@v4 zips with a Linux-style zip that (a)
+      # follows symlinks (flattening Sparkle.framework's versioned-layout
+      # symlinks into duplicate real files), and (b) strips macOS extended
+      # attributes (codesign's Sealed Resources V2 hashes against xattrs,
+      # so post-sign zip+unzip invalidates the binary's own signature with
+      # "The signature of the binary is invalid" at notarytool).
+      # tar preserves symlinks + xattrs verbatim across the artifact boundary.
+      - name: Tar .app for transport
+        run: tar -cf myna-app-unsigned.tar -C dist/export Myna.app
       - name: Upload .app
         uses: actions/upload-artifact@v4
         with:
           name: myna-app-unsigned
-          path: dist/export/Myna.app
+          path: myna-app-unsigned.tar
           retention-days: 7
           if-no-files-found: error
 
@@ -129,11 +139,14 @@ jobs:
     needs: [preflight, build-universal]
     steps:
       - uses: actions/checkout@v4
-      - name: Download .app
+      - name: Download .app tarball
         uses: actions/download-artifact@v4
         with:
           name: myna-app-unsigned
-          path: dist/export/Myna.app
+      - name: Extract .app
+        run: |
+          mkdir -p dist/export
+          tar -xf myna-app-unsigned.tar -C dist/export
       - name: Import Developer ID into temp keychain
         env:
           APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
@@ -161,11 +174,13 @@ jobs:
         env:
           DEVELOPER_ID_APPLICATION: ${{ secrets.APPLE_DEVELOPER_ID_NAME }}
         run: bash dist/sign.sh
-      - name: Upload signed .app
+      - name: Tar signed .app
+        run: tar -cf myna-app-signed.tar -C dist/export Myna.app
+      - name: Upload signed .app tarball
         uses: actions/upload-artifact@v4
         with:
           name: myna-app-signed
-          path: dist/export/Myna.app
+          path: myna-app-signed.tar
           retention-days: 7
           if-no-files-found: error
 
@@ -175,11 +190,14 @@ jobs:
     needs: [preflight, sign]
     steps:
       - uses: actions/checkout@v4
-      - name: Download signed .app
+      - name: Download signed .app tarball
         uses: actions/download-artifact@v4
         with:
           name: myna-app-signed
-          path: dist/export/Myna.app
+      - name: Extract signed .app
+        run: |
+          mkdir -p dist/export
+          tar -xf myna-app-signed.tar -C dist/export
       - name: Notarize + staple
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -188,11 +206,13 @@ jobs:
           TARGET: dist/export/Myna.app
           TARGET_SET: "1"  # force notarize.sh to use TARGET as-is
         run: bash dist/notarize.sh
-      - name: Upload stapled .app
+      - name: Tar stapled .app
+        run: tar -cf myna-app-stapled.tar -C dist/export Myna.app
+      - name: Upload stapled .app tarball
         uses: actions/upload-artifact@v4
         with:
           name: myna-app-stapled
-          path: dist/export/Myna.app
+          path: myna-app-stapled.tar
           retention-days: 7
           if-no-files-found: error
 
@@ -202,11 +222,14 @@ jobs:
     needs: [preflight, notarize]
     steps:
       - uses: actions/checkout@v4
-      - name: Download stapled .app
+      - name: Download stapled .app tarball
         uses: actions/download-artifact@v4
         with:
           name: myna-app-stapled
-          path: dist/export/Myna.app
+      - name: Extract stapled .app
+        run: |
+          mkdir -p dist/export
+          tar -xf myna-app-stapled.tar -C dist/export
       - name: Install create-dmg
         run: brew install create-dmg
       - name: Build DMG
