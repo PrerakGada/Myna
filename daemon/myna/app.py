@@ -750,11 +750,31 @@ def create_app(config: dict | None = None) -> FastAPI:
                 status_code=404,
                 detail={"ok": False, "reason": "not_found"},
             )
-        # Playback is intentionally fire-and-forget here: the Swift app owns
-        # the audio engine. The daemon's role is to acknowledge the play
-        # action and stamp played_at_ms. If a future revision wants the
-        # daemon to stream the registered audio file, it can re-enter the
-        # synth pipeline here.
+        # S08 user flow: clicking Play on the CC toast must actually play
+        # the agent's reply. Registry entries from the Stop hook carry
+        # only metadata (no audio file), so we synthesise from `title`
+        # on-demand. This re-enters the same producer + player.play()
+        # pipeline as v1 /speak so:
+        #   * pause/resume/stop on the v1 player still apply
+        #   * the player is the single audio sink (no competing afplay)
+        #   * synth/play is async — the request returns as soon as the
+        #     player thread is queued.
+        title = (entry.get("title") or "").strip()
+        if title:
+            try:
+                _speak(
+                    SpeakReq(
+                        text=title,
+                        mode="full",
+                        source=f"cc:{entry.get('project_id') or 'claude'}",
+                    )
+                )
+            except HTTPException:
+                # _speak only raises for v2-style errors; v1 returns dicts.
+                # Defensive: a synth failure must not 500 the toast UI —
+                # the entry is already marked played and the user clicked
+                # Play knowingly; surface ok:false reason instead.
+                return V2RegistryActionResp(ok=False, reason="synthesis_failed")
         return V2RegistryActionResp(ok=True)
 
     @app.post(

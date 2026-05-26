@@ -231,6 +231,78 @@ def test_delete_route(tmp_path):
     assert r2.status_code == 404
 
 
+def test_play_route_triggers_synthesis_from_title(tmp_path):
+    """S08 flow: clicking Play on the CC toast must synthesise the
+    registered title (CC-hook entries carry no audio file).
+    """
+    seen_texts: list[str] = []
+
+    def fake_synth(text, **kw):
+        seen_texts.append(text)
+        return b"RIFFfake"
+
+    client, fp, app = make_client(
+        registry_path=tmp_path / "r.json",
+        synthesize=fake_synth,
+    )
+    # Announce a known title.
+    client.post(
+        "/v2/registry/announce",
+        json={
+            "id": "u_play",
+            "source": "claude-code",
+            "project_id": "myna",
+            "title": "Hello from the agent, here is your toast reply.",
+            "ttl_s": 600,
+        },
+    )
+    # Play it.
+    r = client.post("/v2/registry/play/u_play")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    # The v1 player received the queued producer for actual playback.
+    play_calls = [c for c in fp.calls if c[0] == "play"]
+    assert play_calls, "player.play() must be invoked for the CC Play action"
+    _, args, kwargs = play_calls[0]
+    # The producer is a lazy generator. Drain it to confirm synthesis
+    # happens with the registered title — this is what the real Player
+    # thread would do.
+    producer = args[0] if args else kwargs.get("producer")
+    assert producer is not None
+    list(producer)  # drain → triggers synthesize() calls
+    assert seen_texts, "synthesize was not invoked when player drained the producer"
+    assert "Hello from the agent" in seen_texts[0]
+    # The meta carries a cc: source so /status can tell where it came from.
+    meta = kwargs.get("meta") or {}
+    assert meta.get("source", "").startswith("cc:"), (
+        f"expected cc: source on play meta, got {meta!r}"
+    )
+
+
+def test_play_route_marks_played_even_if_title_empty(tmp_path):
+    """If somehow an entry has an empty title, mark_played still runs but
+    no synthesis is queued. Defensive — guards against future callers
+    that announce with title='' (Pydantic would accept that today).
+    """
+    client, fp, app = make_client(registry_path=tmp_path / "r.json")
+    # Reach past the HTTP layer to plant an empty-title entry.
+    app.state.v2_registry.announce(
+        id="u_blank",
+        source="cc",
+        project_id="p",
+        title="",
+        ttl_s=600,
+    )
+    r = client.post("/v2/registry/play/u_blank")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    # No player.play() because there's nothing to synthesise.
+    assert [c for c in fp.calls if c[0] == "play"] == []
+    # But the entry IS marked played.
+    snap = app.state.v2_registry.snapshot()
+    assert any(e["id"] == "u_blank" for e in snap["played"])
+
+
 def test_default_ttl_is_600(tmp_path):
     client, fp, app = make_client(registry_path=tmp_path / "r.json")
     r = client.post(
