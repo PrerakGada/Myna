@@ -142,7 +142,9 @@ public struct MenuBarView: View {
     @ViewBuilder
     private var speedMenu: some View {
         Menu("Speed") {
-            ForEach([0.75, 1.0, 1.2, 1.5, 1.75, 2.0, 2.5, 3.0], id: \.self) { value in
+            // AVAudioUnitTimePitch's `.rate` parameter hard-caps at 2.0× — values
+            // above silently clamp. See TimePitchUnit.maxRate.
+            ForEach([0.75, 1.0, 1.2, 1.5, 1.75, 2.0], id: \.self) { value in
                 Button {
                     controller.setSpeed(value)
                 } label: {
