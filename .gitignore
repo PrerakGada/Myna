@@ -51,3 +51,11 @@ docs/native-app/last-ci-failure.log
 # not for the public repo (references internal CI runs, /tmp scripts, etc.).
 # A historical version exists in commit f5860c8 if anyone needs context.
 HANDOFF.md
+
+# Next.js incremental build artifacts (site/)
+*.tsbuildinfo
+.next/
+
+# Karaoke sidecar build artifacts (ad-hoc dev builds — release flow uses dist/build.sh)
+karaoke/.build/
+karaoke/MynaKaraoke.app/
