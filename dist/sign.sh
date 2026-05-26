@@ -72,14 +72,16 @@ if [ "${DRY_RUN:-0}" != "1" ]; then
     fi
     log "sparkle: detected current version = $current_ver"
     local ver_dir="$sparkle/Versions/$current_ver"
+
+    # Sign Versions/B/* bottom-up, NOT --deep. These are the canonical
+    # binaries codesign expects to be individually signed.
     for inner in \
       "$ver_dir/Autoupdate" \
       "$ver_dir/Updater.app/Contents/MacOS/Autoupdate" \
       "$ver_dir/XPCServices/Downloader.xpc" \
       "$ver_dir/XPCServices/Installer.xpc" \
       "$ver_dir/Updater.app" \
-      "$ver_dir" \
-      "$sparkle"
+      "$ver_dir"
     do
       if [ -e "$inner" ]; then
         log "sparkle sign: $inner"
@@ -90,6 +92,25 @@ if [ "${DRY_RUN:-0}" != "1" ]; then
           "$inner"
       fi
     done
+
+    # Framework root: Xcode's embed-and-sign on CI flattens Sparkle's
+    # top-level symlinks (Updater.app, XPCServices/, etc.) into real
+    # duplicate directories. Codesign then refuses the root with
+    # "bundle format is ambiguous (could be app or framework)" because
+    # the bundle now contains both flat and versioned layouts.
+    #
+    # `--deep` here re-signs everything from the framework root with a
+    # consistent designated requirement and resolves the ambiguity. This
+    # is the documented Sparkle-shipping idiom and what Sparkle's own
+    # codesign helper uses. Apple discourages --deep on FINAL APP sigs
+    # (we don't use it on Myna.app), but it's the standard for embedded
+    # versioned frameworks where Xcode's bundle handling diverges.
+    log "sparkle sign (root, --deep): $sparkle"
+    # shellcheck disable=SC2086
+    codesign --force --deep --options runtime --timestamp \
+      $keychain_arg \
+      --sign "$DEVELOPER_ID_APPLICATION" \
+      "$sparkle"
   }
   sign_sparkle "$APP_PATH/Contents/Frameworks/Sparkle.framework"
 
