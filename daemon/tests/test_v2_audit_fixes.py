@@ -6,7 +6,12 @@ Each test pins a specific bug the auditor caught, so it cannot return silently.
 - 🔴 #2 — /v2/extract success body must not leak `title/byline/reason: null`
          and /v2/summarize success must not leak `reason: null`
 - 🟡 #1 — /v2/synthesize must clamp speed into [0.5, 2.0]
+- v0.2 post-audit security: TrustedHostMiddleware rejects non-loopback Host
 """
+
+from fastapi.testclient import TestClient
+
+from myna.app import create_app
 
 from tests.v2_helpers import make_client, parse_multipart
 
@@ -155,6 +160,34 @@ def test_v2_synthesize_speed_boundary_half_passes():
     r = client.post("/v2/synthesize", json={"text": "Hi.", "speed": 0.5})
     assert r.status_code == 200
     assert all(s == 0.5 for s in seen_speeds)
+
+
+# ----- v0.2 post-audit security: TrustedHostMiddleware -----
+
+def test_dns_rebinding_host_header_rejected():
+    """Requests with a non-loopback Host header are rejected at the
+    middleware layer. Defends the daemon against DNS-rebinding attacks
+    where a malicious site coerces a victim's browser into POSTing to
+    127.0.0.1 via an attacker-controlled hostname that resolves to it.
+    """
+    # Build the app the normal way (no test fakes — middleware runs
+    # before any of our handlers regardless), and use a TestClient that
+    # WON'T be rewritten by v2_helpers (it sends Host: evil.example.com).
+    app = create_app()
+    client = TestClient(app, base_url="http://evil.example.com")
+    r = client.get("/v2/health")
+    # Starlette's TrustedHostMiddleware responds with 400 + plain-text
+    # body for disallowed hosts.
+    assert r.status_code == 400
+
+
+def test_loopback_host_header_accepted():
+    """Sanity: 127.0.0.1 + localhost both pass the allowlist."""
+    app = create_app()
+    for host in ("http://127.0.0.1", "http://localhost"):
+        client = TestClient(app, base_url=host)
+        r = client.get("/v2/health")
+        assert r.status_code == 200, f"host {host} unexpectedly rejected"
 
 
 # ----- Multipart shape unchanged by the fixes -----

@@ -39,7 +39,8 @@ def make_client(**overrides):
     app.state.extract = lambda url: "EXTRACTED"
     for k, v in overrides.items():
         setattr(app.state, k, v)
-    return TestClient(app), fp, app
+    # base_url 127.0.0.1 so Host header is allowed by TrustedHostMiddleware.
+    return TestClient(app, base_url="http://127.0.0.1"), fp, app
 
 
 def test_speak_full_plays(tmp_path, monkeypatch):

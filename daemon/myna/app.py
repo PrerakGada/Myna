@@ -10,6 +10,7 @@ import uuid
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -150,6 +151,17 @@ def create_app(config: dict | None = None) -> FastAPI:
                     await warm_task
 
     app = FastAPI(title="Myna", lifespan=_lifespan)
+    # DNS-rebinding defence: the daemon is reachable only on 127.0.0.1
+    # but a browser the user opens can be coerced into resolving an
+    # attacker's hostname to 127.0.0.1 and POSTing through it. Reject
+    # any Host header that isn't a local-loopback name so cross-origin
+    # browser-driven attackers can't reach our routes even with a
+    # rebinding DNS server. The list mirrors what `myna` actually binds
+    # (uvicorn defaults to 127.0.0.1 from our launchagent).
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["127.0.0.1", "localhost"],
+    )
     cfg = config or load_config()
     app.state.cfg = cfg
     app.state.speed = cfg["speed"]

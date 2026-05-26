@@ -85,7 +85,11 @@ def make_client(config_overrides=None, registry_path=None, **state_overrides):
         app.state.v2_registry = V2Registry(path=registry_path)
     for k, v in state_overrides.items():
         setattr(app.state, k, v)
-    return TestClient(app), fp, app
+    # base_url="http://127.0.0.1" so requests carry Host: 127.0.0.1,
+    # which the TrustedHostMiddleware accepts. (Default TestClient base
+    # is http://testserver — that would be rejected by the middleware,
+    # since "testserver" isn't a deployed host name.)
+    return TestClient(app, base_url="http://127.0.0.1"), fp, app
 
 
 def parse_multipart(body: bytes, boundary: bytes = b"mynachunk"):
