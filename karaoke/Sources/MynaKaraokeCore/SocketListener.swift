@@ -86,18 +86,29 @@ public final class SocketListener {
             }
         }
 
+        // Close the TOCTOU window: bind() creates the socket file with
+        // perms (0o777 & ~umask). Default umask (typically 022) yields a
+        // world-readable/connectable socket for a sub-microsecond window
+        // until the chmod 0600 below lands. A same-uid attacker racing
+        // the chmod could connect() in that window and start receiving
+        // utterances. Forcing umask to 0o077 makes bind() create the
+        // socket file as 0o700 (effectively 0o600 for a SOCK_STREAM
+        // node) up-front, eliminating the race.
+        let oldMask = umask(0o077)
         let bindResult = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { ptr in
                 Darwin.bind(listenFd, ptr, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
+        umask(oldMask)
         if bindResult < 0 {
             let err = errno
             Darwin.close(listenFd); listenFd = -1
             throw SocketError.bind(errno: err)
         }
 
-        // 0600 owner-only on the socket file itself.
+        // Belt-and-braces: enforce 0600 owner-only even if the umask
+        // dance is undone by some future refactor.
         chmod(socketPath, 0o600)
 
         if Darwin.listen(listenFd, 1) < 0 {
