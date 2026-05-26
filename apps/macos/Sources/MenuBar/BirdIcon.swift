@@ -34,10 +34,23 @@ public enum BirdIcon {
 }
 
 /// SwiftUI view that renders the bird in one of the 5 states.
+///
+/// **v0.2.1 hotfix:** the original implementation used `TimelineView` at 20fps
+/// (thinking halo) and 4fps (speaking equalizer). Combined with
+/// `MenuBarController` re-publishing on every 250ms poll, the menu bar label
+/// rebuilt continuously — `NSStatusBarButton setImage:` → CoreUI SF Symbol
+/// resolution → 99% main thread CPU even at idle.
+///
+/// The new implementation is static: one SF Symbol per state, no
+/// `TimelineView`, no compositing layers. The visual richness (halo,
+/// equalizer bars, etc.) is restored later via the v0.2.1 UI revamp using
+/// `.symbolEffect()` (macOS 14+ GPU-accelerated animation) or a pre-rendered
+/// custom asset bundle.
 public struct BirdIconView: View {
     public let state: IconState
-    /// When true, the thinking halo and speaking equalizer hold a static
-    /// pose. Wired from PowerMonitor in the menu bar parent view.
+    /// Kept for API stability — currently unused. The previous TimelineView
+    /// animations have been removed; future custom-asset animation will gate
+    /// on this flag again.
     public let suppressAnimation: Bool
 
     public init(state: IconState, suppressAnimation: Bool = false) {
@@ -46,84 +59,23 @@ public struct BirdIconView: View {
     }
 
     public var body: some View {
-        ZStack {
-            haloLayer
-            baseBird
-            equalizerLayer
-            pausedBarLayer
-            errorDotLayer
-        }
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(state.rawValue)
-    }
-
-    // MARK: - layers
-
-    @ViewBuilder
-    private var baseBird: some View {
-        let opacity: Double = {
-            switch state {
-            case .paused: return 0.75
-            case .idle, .thinking, .error: return 1.0
-            case .speaking:
-                // In speaking state the bird fills; we render it filled
-                // (`bird.fill` when available) at full opacity, but the
-                // SF Symbol set on macOS 13 doesn't ship a `bird.fill`
-                // variant — using the outline at full opacity reads
-                // close enough at menu bar scale. Real spec calls for a
-                // custom asset which is a v0.2.1 follow-up.
-                return 1.0
-            }
-        }()
-        Image(systemName: state == .speaking ? "bird.fill" : "bird")
+        Image(systemName: symbolName)
             .renderingMode(.template)
-            .resizable()
-            .scaledToFit()
-            .opacity(opacity)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityValue(state.rawValue)
     }
 
-    @ViewBuilder
-    private var equalizerLayer: some View {
-        if state == .speaking {
-            EqualizerBars(suppressAnimation: suppressAnimation)
-                // Position roughly where the bird's beak sits in the
-                // SF Symbol — right-of-center, slightly above the
-                // vertical midline. Numbers tuned for the 22pt menu
-                // bar slot.
-                .frame(width: 8, height: 8)
-                .offset(x: 4, y: -1)
-        }
-    }
+    // MARK: - state → symbol
 
-    @ViewBuilder
-    private var haloLayer: some View {
-        if state == .thinking {
-            ThinkingHalo(suppressAnimation: suppressAnimation)
-        }
-    }
-
-    @ViewBuilder
-    private var pausedBarLayer: some View {
-        if state == .paused {
-            // Horizontal bar through the body at vertical-center.
-            GeometryReader { geom in
-                Rectangle()
-                    .fill(Color.primary)
-                    .frame(width: geom.size.width, height: 2)
-                    .position(x: geom.size.width / 2, y: geom.size.height / 2)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var errorDotLayer: some View {
-        if state == .error {
-            GeometryReader { geom in
-                Circle()
-                    .fill(Color(.sRGB, red: 1.0, green: 69.0 / 255.0, blue: 58.0 / 255.0, opacity: 1.0))  // #FF453A
-                    .frame(width: 4, height: 4)
-                    .position(x: geom.size.width - 2, y: 2)
-            }
+    /// One SF Symbol per state. All symbols below ship on macOS 13+ so the
+    /// CUICatalog lookup hits cache reliably.
+    private var symbolName: String {
+        switch state {
+        case .idle:     return "bird"           // outlined bird
+        case .speaking: return "bird.fill"      // filled bird = "active"
+        case .thinking: return "ellipsis.circle"
+        case .paused:   return "pause.circle.fill"
+        case .error:    return "exclamationmark.triangle.fill"
         }
     }
 
@@ -134,50 +86,6 @@ public struct BirdIconView: View {
         case .thinking: return "Myna thinking"
         case .paused: return "Myna paused"
         case .error: return "Myna error"
-        }
-    }
-}
-
-/// Three-bar equalizer that animates ~2fps with asymmetric phases so it
-/// doesn't read as robotic-in-sync. Per spec.
-private struct EqualizerBars: View {
-    let suppressAnimation: Bool
-
-    /// Phase offset per bar (in 0..<1 of cycle) so the three never sync.
-    /// Tuned by eye for a lively-but-not-frantic feel.
-    private static let phases: [Double] = [0.0, 0.35, 0.7]
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 0.25, paused: suppressAnimation)) { timeline in
-            let phase = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.5) / 0.5
-            HStack(alignment: .bottom, spacing: 1) {
-                ForEach(0..<3, id: \.self) { idx in
-                    let local = (phase + Self.phases[idx]).truncatingRemainder(dividingBy: 1.0)
-                    let height = 0.35 + 0.65 * abs(sin(local * .pi))
-                    Capsule()
-                        .fill(Color.primary)
-                        .frame(width: 1.5, height: CGFloat(height) * 7)
-                }
-            }
-        }
-    }
-}
-
-/// Soft halo behind the bird, 600ms cosine cycle, peak ~30% opacity.
-/// Suspends when PowerMonitor flags low power.
-private struct ThinkingHalo: View {
-    let suppressAnimation: Bool
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 0.05, paused: suppressAnimation)) { timeline in
-            let now = timeline.date.timeIntervalSinceReferenceDate
-            // 600ms cycle = 1.667Hz; cosine peak at top of cycle.
-            let cyclePos = (now.truncatingRemainder(dividingBy: 0.6)) / 0.6  // 0..<1
-            let opacity = 0.3 * (1 - cos(cyclePos * 2 * .pi)) / 2  // 0..0.3..0
-            Circle()
-                .fill(Color.primary)
-                .opacity(opacity)
-                .blur(radius: 3)
         }
     }
 }
