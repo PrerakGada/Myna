@@ -13,6 +13,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST="$(cd "$HERE/.." && pwd)"
+ROOT="$(cd "$DIST/.." && pwd)"
 
 SCRIPTS=(build.sh sign.sh notarize.sh dmg.sh appcast.sh)
 
@@ -94,6 +95,45 @@ for s in "${SCRIPTS[@]}"; do
     failed_scripts+=("$s --dry-run")
   fi
 done
+
+echo "==> karaoke/build.sh smoke (v0.2+)"
+KSCRIPT="$ROOT/karaoke/build.sh"
+if [ -f "$KSCRIPT" ]; then
+  assert_ok "parse karaoke/build.sh" bash -n "$KSCRIPT"
+  out=$(bash "$KSCRIPT" --help 2>&1) || { failed_scripts+=("karaoke/build.sh --help"); fail=$((fail+1)); }
+  if [ -n "$out" ]; then
+    printf '  ok   karaoke/build.sh --help\n'
+    pass=$((pass+1))
+  fi
+  if bash "$KSCRIPT" --dry-run >/dev/null 2>&1; then
+    printf '  ok   karaoke/build.sh --dry-run\n'
+    pass=$((pass+1))
+  else
+    printf '  FAIL karaoke/build.sh --dry-run\n' >&2
+    fail=$((fail+1))
+    failed_scripts+=("karaoke/build.sh --dry-run")
+  fi
+else
+  printf '  warn karaoke/build.sh missing — skipping (pre-v0.2?)\n' >&2
+fi
+
+echo "==> karaoke nested-bundle structure (v0.2+)"
+if [ -f "$ROOT/karaoke/Package.swift" ]; then
+  # Verify the Package.swift parses by SwiftPM (and Info.plist exists).
+  assert_ok "karaoke Info.plist present" test -f "$ROOT/karaoke/Resources/Info.plist"
+  assert_ok "karaoke entitlements present" test -f "$ROOT/karaoke/karaoke.entitlements"
+  # Bundle ID in Info.plist matches the spec.
+  if grep -q 'com.prerakgada.myna.karaoke' "$ROOT/karaoke/Resources/Info.plist"; then
+    printf '  ok   karaoke Info.plist bundle ID = com.prerakgada.myna.karaoke\n'
+    pass=$((pass+1))
+  else
+    printf '  FAIL karaoke Info.plist bundle ID mismatch\n' >&2
+    fail=$((fail+1))
+    failed_scripts+=("karaoke bundle id")
+  fi
+else
+  printf '  warn karaoke/Package.swift missing — skipping (pre-v0.2?)\n' >&2
+fi
 
 echo
 if [ "$fail" -eq 0 ]; then

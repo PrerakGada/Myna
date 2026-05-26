@@ -172,11 +172,20 @@ if [ "${DRY_RUN:-0}" != "1" ]; then
   # bash 3.2 and bail with "command not found". Use a `while read` loop.
   # Per AUDIT_REPORT.md Lane B 🟡 #1.
   # ---------------------------------------------------------------------------
+  # v0.2+: MynaKaraoke.app sidecar lives at Resources/MynaKaraoke.app.
+  # It was already signed by karaoke/build.sh BEFORE being ditto'd in. Do
+  # NOT re-sign here — codesign-with-same-identity is idempotent in theory
+  # but the v0.1 sign saga showed nested re-signs can desync signature
+  # blobs and break notarization. Exclude it from the generic loop. The
+  # outer Myna.app sign at the bottom of this script re-seals the nested
+  # bundle's HASH into the outer's CodeResources, which is the correct
+  # Apple-nested-bundle pattern.
   targets=()
   while IFS= read -r t; do
     [ -n "$t" ] && targets+=("$t")
   done < <(find "$APP_PATH/Contents" \
     -not -path "*/Sparkle.framework*" \
+    -not -path "*/MynaKaraoke.app*" \
     \( -name '*.framework' -o -name '*.bundle' -o -name '*.xpc' -o -name '*.app' \) \
     -type d \
     -print | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
@@ -189,6 +198,15 @@ if [ "${DRY_RUN:-0}" != "1" ]; then
       --sign "$DEVELOPER_ID_APPLICATION" \
       "$t"
   done
+
+  # Verify the sidecar's standalone signature survived the ditto — fast
+  # smoke check before we proceed to outer signing.
+  if [ -d "$APP_PATH/Contents/Resources/MynaKaraoke.app" ]; then
+    log "verify nested MynaKaraoke.app signature (pre-outer-sign):"
+    codesign --verify --strict --verbose=2 \
+      "$APP_PATH/Contents/Resources/MynaKaraoke.app" 2>&1 | sed 's/^/  /' || \
+      die "nested MynaKaraoke.app failed pre-outer-sign verify"
+  fi
 else
   warn "dry-run: skipping nested-bundle discovery"
 fi
