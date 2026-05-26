@@ -47,14 +47,28 @@ fi
 # to sign each nested executable individually.
 if [ "${DRY_RUN:-0}" != "1" ]; then
   # Discover everything that needs signing inside the bundle (depth-first).
+  #
+  # `-type d` is critical for versioned frameworks like Sparkle.framework:
+  # without it, `find` returns BOTH the real directories
+  # (e.g. Sparkle.framework/Versions/B/Updater.app) AND every symlink that
+  # points at them (Sparkle.framework/Updater.app and
+  # Sparkle.framework/Versions/Current/Updater.app). Signing the same binary
+  # via the symlinks rewrites them as regular files, which breaks the
+  # framework's internal structure and codesign then fails on the framework
+  # root with "bundle format is ambiguous (could be app or framework)".
+  #
+  # Filtering to `-type d` keeps only the real directories — symlinks are
+  # `-type l` and excluded.
+  #
   # NOTE: `mapfile`/`readarray` is bash 4+; macOS GitHub Actions runners ship
-  # bash 3.2 and bail with "command not found". Use a `while read` loop
-  # instead. Per AUDIT_REPORT.md Lane B 🟡 #1 — caught by first v0.1.0 build.
+  # bash 3.2 and bail with "command not found". Use a `while read` loop.
+  # Per AUDIT_REPORT.md Lane B 🟡 #1.
   targets=()
   while IFS= read -r t; do
     [ -n "$t" ] && targets+=("$t")
   done < <(find "$APP_PATH/Contents" \
     \( -name '*.framework' -o -name '*.bundle' -o -name '*.xpc' -o -name '*.app' \) \
+    -type d \
     -print | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
   for t in "${targets[@]}"; do
     [ "$t" = "$APP_PATH" ] && continue
