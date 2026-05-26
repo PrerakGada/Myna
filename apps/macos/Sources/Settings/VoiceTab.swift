@@ -1,29 +1,52 @@
-// VoiceTab.swift — voice picker (queries DaemonClient.voices()),
-// default speed slider, summary mode toggle.
+// VoiceTab.swift — voice picker (queries DaemonClient.voices()) with
+// a per-voice ▶ Preview button (S09). Preview behaviour:
+//
+//   • Click ▶ → fetch + play short sample at -6dB
+//   • Main playback ducks to 30% during preview (AudioDuckable)
+//   • Switching voices mid-preview cancels the in-flight one within 100ms
+//   • Closing Settings stops any active preview
+//   • Engine 503 → inline "Engine warming…" for 2s
+//
+// VoicePreviewService owns the orchestration; this view just binds.
 import SwiftUI
 
 public struct VoiceTab: View {
     @ObservedObject var viewModel: SettingsViewModel
     let client: DaemonClient
+    /// Optional audio sink (the main AudioPlayer) so preview can duck it
+    /// to 30% per S09. AppDelegate injects this; tests can pass nil.
+    private weak var audioSink: (any AudioDuckable)?
+
     @State private var voices: [Voice] = []
     @State private var refreshing = false
     @State private var errorMessage: String?
+    @StateObject private var previewService: VoicePreviewService
 
-    public init(viewModel: SettingsViewModel, client: DaemonClient) {
+    public init(
+        viewModel: SettingsViewModel,
+        client: DaemonClient,
+        audioSink: (any AudioDuckable)? = nil
+    ) {
         self.viewModel = viewModel
         self.client = client
+        self.audioSink = audioSink
+        _previewService = StateObject(
+            wrappedValue: VoicePreviewService(client: client, sink: audioSink)
+        )
     }
 
     public var body: some View {
         Form {
             Section("Voice") {
-                Picker("Voice:", selection: $viewModel.voice) {
-                    if voices.isEmpty {
-                        Text(viewModel.voice).tag(viewModel.voice)
-                    } else {
-                        ForEach(voices) { voice in
-                            Text(voice.label).tag(voice.id)
-                        }
+                if voices.isEmpty {
+                    HStack {
+                        Text(viewModel.voice)
+                        Spacer()
+                        if refreshing { Text("Refreshing…").foregroundStyle(.secondary) }
+                    }
+                } else {
+                    ForEach(voices) { voice in
+                        voiceRow(voice)
                     }
                 }
                 Button(refreshing ? "Refreshing…" : "Refresh voice list") {
@@ -42,8 +65,60 @@ public struct VoiceTab: View {
             }
         }
         .padding()
-        .frame(width: 460, height: 280)
+        .frame(width: 460, height: 360)
         .task { await refresh() }
+        .onDisappear {
+            previewService.cancel()
+        }
+    }
+
+    private func voiceRow(_ voice: Voice) -> some View {
+        HStack {
+            Button {
+                viewModel.voice = voice.id
+            } label: {
+                HStack {
+                    Text(voice.label)
+                    if viewModel.voice == voice.id {
+                        Text("✓").foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            inlineWarmingLabel(for: voice)
+            Button {
+                previewService.preview(voiceId: voice.id)
+            } label: {
+                Image(systemName: isPlayingPreview(voice) ? "stop.circle" : "play.circle")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Preview \(voice.label) voice")
+        }
+    }
+
+    @ViewBuilder
+    private func inlineWarmingLabel(for voice: Voice) -> some View {
+        if case .warming(let id) = previewService.state, id == voice.id {
+            Text("Engine warming…")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .transition(.opacity)
+        } else if case .failed(let id, _) = previewService.state, id == voice.id {
+            Text("Couldn't preview")
+                .font(.caption2)
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func isPlayingPreview(_ voice: Voice) -> Bool {
+        switch previewService.state {
+        case .loading(let id), .playing(let id):
+            return id == voice.id
+        default:
+            return false
+        }
     }
 
     private func refresh() async {

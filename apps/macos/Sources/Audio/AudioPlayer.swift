@@ -411,3 +411,24 @@ extension Array {
         indices.contains(idx) ? self[idx] : nil
     }
 }
+
+// MARK: - AudioDuckable conformance (S09 voice preview)
+
+extension AudioPlayer: AudioDuckable {
+    /// Duck the main mixer to `factor` of full volume. Returns a closure
+    /// the preview service calls to restore the original volume after
+    /// the preview ends or is cancelled.
+    ///
+    /// Implementation: we set `engine.mainMixerNode.outputVolume`, which
+    /// applies an instantaneous gain ramp across the entire mix bus. We
+    /// don't fade — at 30%, an instant change reads as "stepped softer"
+    /// not "popped" because the underlying audio is speech, not music.
+    public func duck(to factor: Float) -> () -> Void {
+        let previous = engine.mainMixerNode.outputVolume
+        engine.mainMixerNode.outputVolume = max(0.0, min(1.0, factor))
+        return { [weak self] in
+            guard let self = self else { return }
+            self.engine.mainMixerNode.outputVolume = previous
+        }
+    }
+}
