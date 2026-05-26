@@ -17,6 +17,10 @@ DEFAULTS = {
     "speed": 1.0,
     "chunk_chars": 1500,
     "daemon_port": 8766,
+    # Karaoke subtitle ribbon (S12). Bound to MynaKaraoke sidecar via
+    # ~/.myna/karaoke.sock; off here means the daemon never tries to
+    # connect or spawn the binary. Set to false to disable entirely.
+    "karaoke": {"enabled": True},
 }
 
 

@@ -1,4 +1,7 @@
+import asyncio
+import contextlib
 import json
+import logging
 import os
 import pathlib
 import time
@@ -7,7 +10,8 @@ import uuid
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__, chunking, engine
@@ -16,6 +20,15 @@ from . import summarize as summarize_mod
 from .config import load_config
 from .player import Player
 from .registry import Registry
+from .state import StateMachine
+from .karaoke.socket import make_karaoke_emitter
+from .karaoke.timing import WordTimingEstimator, samples_from_wav
+from .v2_registry import V2Registry
+from .voice_previews import (
+    WARM_VOICES,
+    VoicePreviewCache,
+    sample_for_voice,
+)
 from .v2_types import (
     V2ConfigInfo,
     V2DaemonInfo,
@@ -23,8 +36,13 @@ from .v2_types import (
     V2ExtractReq,
     V2ExtractResp,
     V2Health,
+    V2RegistryActionResp,
+    V2RegistryAnnounceReq,
+    V2RegistryAnnounceResp,
+    V2RegistryEntry,
     V2RegistryInfo,
     V2RegistryItem,
+    V2RegistryListResp,
     V2Status,
     V2SummarizeReq,
     V2SummarizeResp,
@@ -33,6 +51,8 @@ from .v2_types import (
     V2Voice,
     V2Voices,
 )
+
+logger = logging.getLogger(__name__)
 
 # Cache TTLs
 _ENGINE_CHECK_TTL_S = 1.0       # /v2/health and /v2/status reuse a check this fresh
@@ -84,13 +104,83 @@ def _voice_lang(voice_id: str) -> str:
     return "unknown"
 
 
+async def _warm_voice_previews(app) -> None:
+    """Pre-synthesize top voices at boot. Fire-and-forget; per-voice
+    failures are logged and skipped (engine may be cold).
+
+    Defined at module level so the lifespan context can launch it before
+    create_app finishes mutating app.state — it reads through `app.state`.
+    """
+    cache = app.state.voice_preview_cache
+    cfg = app.state.cfg
+    for voice_id in WARM_VOICES:
+        if cache.get(voice_id) is not None:
+            continue
+        sentence = sample_for_voice(voice_id)
+        try:
+            wav = await asyncio.to_thread(
+                app.state.synthesize,
+                sentence,
+                voice=voice_id,
+                speed=1.0,
+                base_url=cfg["engine_url"],
+                model=cfg["model"],
+                lang_code=cfg["lang_code"],
+            )
+        except Exception as exc:
+            logger.info("voice preview warm skip %s: %s", voice_id, exc)
+            continue
+        cache.put(voice_id, wav)
+
+
 def create_app(config: dict | None = None) -> FastAPI:
-    app = FastAPI(title="Myna")
+    @contextlib.asynccontextmanager
+    async def _lifespan(app: FastAPI):
+        # Opt-in voice preview warming. Default off so test runners and dev
+        # shells don't fire warming. The deployed launchagent sets
+        # MYNA_WARM_VOICES=1.
+        warm_task = None
+        if os.environ.get("MYNA_WARM_VOICES") == "1":
+            warm_task = asyncio.create_task(_warm_voice_previews(app))
+        try:
+            yield
+        finally:
+            if warm_task is not None and not warm_task.done():
+                warm_task.cancel()
+                with contextlib.suppress(BaseException):
+                    await warm_task
+
+    app = FastAPI(title="Myna", lifespan=_lifespan)
+    # DNS-rebinding defence: the daemon is reachable only on 127.0.0.1
+    # but a browser the user opens can be coerced into resolving an
+    # attacker's hostname to 127.0.0.1 and POSTing through it. Reject
+    # any Host header that isn't a local-loopback name so cross-origin
+    # browser-driven attackers can't reach our routes even with a
+    # rebinding DNS server. The list mirrors what `myna` actually binds
+    # (uvicorn defaults to 127.0.0.1 from our launchagent).
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["127.0.0.1", "localhost"],
+    )
     cfg = config or load_config()
     app.state.cfg = cfg
     app.state.speed = cfg["speed"]
     app.state.player = Player()
     app.state.registry = Registry()
+    app.state.machine = StateMachine()
+    app.state.v2_registry = V2Registry()
+    # engine_version: identifier used to invalidate voice-preview cache when
+    # the underlying TTS model bumps. For v0.2 we tie it to the daemon
+    # version + configured model (covers `prince-canuma/Kokoro-82M` model
+    # swaps without a real engine /version probe).
+    engine_version = f"{__version__}:{cfg.get('model', 'unknown')}"
+    app.state.engine_version = engine_version
+    app.state.voice_preview_cache = VoicePreviewCache(
+        engine_version=engine_version
+    )
+    # Karaoke sidecar emitter (S12). Honors cfg["karaoke"]["enabled"];
+    # default True. Returns NullKaraokeEmitter if disabled.
+    app.state.karaoke = make_karaoke_emitter(cfg)
     app.state.synthesize = engine.synthesize
     app.state.engine_up = engine.engine_up
     app.state.summarize = summarize_mod.summarize
@@ -315,6 +405,7 @@ def create_app(config: dict | None = None) -> FastAPI:
         # Pre-check the engine. We do this before any work so the Swift client
         # gets a quick 502 rather than waiting on a doomed pipeline.
         if not _check_engine_cached():
+            app.state.machine.transition_to("error")
             return JSONResponse(
                 status_code=502,
                 content={"ok": False, "reason": "engine_down"},
@@ -338,6 +429,10 @@ def create_app(config: dict | None = None) -> FastAPI:
         speed = max(0.5, min(2.0, req.speed))
         session_id = req.session_id or uuid.uuid4().hex
 
+        # Mark thinking the moment we accept the request. Clears any prior
+        # error state and tags the snapshot with this request's id.
+        app.state.machine.transition_to("thinking", request_id=session_id)
+
         # Synthesize the first chunk eagerly so engine errors surface as a real
         # HTTP 502 (we haven't started streaming yet). Subsequent chunks are
         # synthesized inside the generator; failures there end the stream early.
@@ -351,6 +446,7 @@ def create_app(config: dict | None = None) -> FastAPI:
                 lang_code=cfg["lang_code"],
             )
         except Exception as exc:
+            app.state.machine.transition_to("error")
             return JSONResponse(
                 status_code=502,
                 content={"ok": False, "reason": "engine_error", "detail": str(exc)},
@@ -379,12 +475,32 @@ def create_app(config: dict | None = None) -> FastAPI:
                 b"--" + boundary + b"--\r\n"
             )
 
+        karaoke = app.state.karaoke
+        estimator = WordTimingEstimator(voice)
+
+        def _emit_chunk_karaoke(chunk_idx: int, chunk_text: str, wav_bytes: bytes):
+            """Send start + scheduled word events for one chunk."""
+            words = estimator.tokenize(chunk_text)
+            if not words:
+                return None
+            samples = samples_from_wav(wav_bytes)
+            timings = estimator.estimate(chunk_text, samples)
+            est_dur_ms = estimator.estimated_duration_ms(chunk_text, samples)
+            utt_id = f"{session_id}_{chunk_idx}"
+            karaoke.start(utt_id, chunk_text, words, est_dur_ms, voice)
+            karaoke.schedule_word_events(utt_id, timings)
+            return utt_id
+
         def _generator():
-            # First chunk (already synthesized eagerly)
+            # First chunk (already synthesized eagerly) — this is the
+            # "first audio chunk written" edge per the state spec.
+            app.state.machine.transition_to("speaking", request_id=session_id)
+            last_utt_id = _emit_chunk_karaoke(0, chunks[0], first_wav)
             yield _part_headers(0, total, chunks[0])
             yield first_wav
             yield b"\r\n"
             yielded = 1
+            truncated = False
             for idx in range(1, total):
                 try:
                     wav = app.state.synthesize(
@@ -398,12 +514,25 @@ def create_app(config: dict | None = None) -> FastAPI:
                 except Exception:
                     # Engine died mid-stream — terminate cleanly with the
                     # closing JSON part reporting the actual count.
+                    truncated = True
                     break
+                last_utt_id = _emit_chunk_karaoke(idx, chunks[idx], wav)
                 yield _part_headers(idx, total, chunks[idx])
                 yield wav
                 yield b"\r\n"
                 yielded += 1
             yield _final_part(yielded)
+            # Stream done. Truncation -> error (so the UI can show it);
+            # clean drain -> back to idle.
+            if last_utt_id is not None:
+                karaoke.stop(last_utt_id)
+            if truncated:
+                app.state.machine.transition_to("error")
+            else:
+                # speaking -> idle is the documented "last chunk played"
+                # transition. Daemon doesn't track player time; we treat
+                # "wrote the last chunk" as "done speaking" for status.
+                app.state.machine.transition_to("idle")
 
         return StreamingResponse(
             _generator(),
@@ -425,8 +554,16 @@ def create_app(config: dict | None = None) -> FastAPI:
         engine_up_now = _check_engine_cached()
         player_st = app.state.player.status()
         reg_items = app.state.registry.list_items()
+        machine_snap = app.state.machine.snapshot()
         return V2Status(
-            state="down" if not engine_up_now else "idle",
+            # v0.2 top-level fields (Track A reads these)
+            ok=True,
+            version=__version__,
+            engine_up=engine_up_now,
+            state=machine_snap["state"],
+            since_ms=machine_snap["since_ms"],
+            request_id=machine_snap["request_id"],
+            # v0.1 nested fields (preserved for fixture + Swift decoder compat)
             engine=V2EngineInfo(
                 url=cfg["engine_url"],
                 status="up" if engine_up_now else "down",
@@ -474,6 +611,49 @@ def create_app(config: dict | None = None) -> FastAPI:
         app.state.voices_cache = voices
         app.state.voices_cache_at = now
         return V2Voices(voices=voices)
+
+    @app.get("/v2/voices/preview/{voice_id}")
+    def v2_voice_preview(voice_id: str):
+        # While engine is warming (machine state == thinking) or the engine
+        # is reported down, bounce the client with a 503 + Retry-After.
+        if app.state.machine.state == "thinking":
+            return JSONResponse(
+                status_code=503,
+                content={"ok": False, "reason": "engine_thinking"},
+                headers={"Retry-After": "2"},
+            )
+        if not _check_engine_cached():
+            return JSONResponse(
+                status_code=503,
+                content={"ok": False, "reason": "engine_down"},
+                headers={"Retry-After": "2"},
+            )
+        cache = app.state.voice_preview_cache
+        cached = cache.get(voice_id)
+        if cached is not None:
+            return Response(content=cached, media_type="audio/wav")
+        # Cache miss: synthesize, store, return.
+        sentence = sample_for_voice(voice_id)
+        try:
+            wav = app.state.synthesize(
+                sentence,
+                voice=voice_id,
+                speed=1.0,
+                base_url=cfg["engine_url"],
+                model=cfg["model"],
+                lang_code=cfg["lang_code"],
+            )
+        except Exception as exc:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "ok": False,
+                    "reason": "engine_error",
+                    "detail": str(exc),
+                },
+            )
+        cache.put(voice_id, wav)
+        return Response(content=wav, media_type="audio/wav")
 
     @app.post(
         "/v2/extract",
@@ -540,5 +720,106 @@ def create_app(config: dict | None = None) -> FastAPI:
             version=__version__,
             engine_up=_check_engine_cached(),
         )
+
+    # ----- v2 registry (CC-hook toast) -----
+
+    @app.post(
+        "/v2/registry/announce",
+        response_model=V2RegistryAnnounceResp,
+    )
+    def v2_registry_announce(
+        req: V2RegistryAnnounceReq,
+    ) -> V2RegistryAnnounceResp:
+        entry = app.state.v2_registry.announce(
+            id=req.id,
+            source=req.source,
+            project_id=req.project_id,
+            title=req.title,
+            ttl_s=req.ttl_s,
+        )
+        return V2RegistryAnnounceResp(
+            ok=True,
+            announced_at_ms=entry["announced_at_ms"],
+        )
+
+    @app.get("/v2/registry/list", response_model=V2RegistryListResp)
+    def v2_registry_list() -> V2RegistryListResp:
+        snap = app.state.v2_registry.snapshot()
+        return V2RegistryListResp(
+            pending=[V2RegistryEntry(**e) for e in snap["pending"]],
+            played=[V2RegistryEntry(**e) for e in snap["played"]],
+        )
+
+    @app.post(
+        "/v2/registry/play/{entry_id}",
+        response_model=V2RegistryActionResp,
+        response_model_exclude_none=True,
+    )
+    def v2_registry_play(entry_id: str) -> V2RegistryActionResp:
+        entry = app.state.v2_registry.mark_played(entry_id)
+        if entry is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"ok": False, "reason": "not_found"},
+            )
+        # S08 user flow: clicking Play on the CC toast must actually play
+        # the agent's reply. Registry entries from the Stop hook carry
+        # only metadata (no audio file), so we synthesise from `title`
+        # on-demand. This re-enters the same producer + player.play()
+        # pipeline as v1 /speak so:
+        #   * pause/resume/stop on the v1 player still apply
+        #   * the player is the single audio sink (no competing afplay)
+        #   * synth/play is async — the request returns as soon as the
+        #     player thread is queued.
+        title = (entry.get("title") or "").strip()
+        if title:
+            try:
+                _speak(
+                    SpeakReq(
+                        text=title,
+                        mode="full",
+                        source=f"cc:{entry.get('project_id') or 'claude'}",
+                    )
+                )
+            except HTTPException:
+                # _speak only raises for v2-style errors; v1 returns dicts.
+                # Defensive: a synth failure must not 500 the toast UI —
+                # the entry is already marked played and the user clicked
+                # Play knowingly; surface ok:false reason instead.
+                return V2RegistryActionResp(ok=False, reason="synthesis_failed")
+        return V2RegistryActionResp(ok=True)
+
+    @app.post(
+        "/v2/registry/dismiss/{entry_id}",
+        response_model=V2RegistryActionResp,
+        response_model_exclude_none=True,
+    )
+    def v2_registry_dismiss(entry_id: str) -> V2RegistryActionResp:
+        entry = app.state.v2_registry.mark_dismissed(entry_id)
+        if entry is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"ok": False, "reason": "not_found"},
+            )
+        # No audio file is associated with v0.2 CC-hook entries (the field
+        # was removed for security; see v2_registry.py docstring). If a
+        # future revision attaches a daemon-owned audio file, cleanup
+        # belongs here — and ONLY for paths the daemon itself created,
+        # never paths supplied by an HTTP caller.
+        return V2RegistryActionResp(ok=True)
+
+    @app.delete(
+        "/v2/registry/{entry_id}",
+        response_model=V2RegistryActionResp,
+        response_model_exclude_none=True,
+    )
+    def v2_registry_delete(entry_id: str) -> V2RegistryActionResp:
+        removed = app.state.v2_registry.delete(entry_id)
+        if not removed:
+            raise HTTPException(
+                status_code=404,
+                detail={"ok": False, "reason": "not_found"},
+            )
+        return V2RegistryActionResp(ok=True)
 
     return app

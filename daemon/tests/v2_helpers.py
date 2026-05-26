@@ -48,7 +48,7 @@ class FakePlayer:
         return {"state": "idle", "now_playing": None}
 
 
-def make_client(config_overrides=None, **state_overrides):
+def make_client(config_overrides=None, registry_path=None, **state_overrides):
     """Build a TestClient with sensible v2 defaults.
 
     Defaults:
@@ -57,13 +57,20 @@ def make_client(config_overrides=None, **state_overrides):
       summarize  → "SUMMARY"
       extract    → "EXTRACTED"
       player     → FakePlayer (will record any v2-side misuse)
+      v2_registry → fresh in-memory (path in a tempfile per call if provided)
 
     `config_overrides` are merged into the loaded config before create_app.
+    `registry_path` (Path|None): override the v2 registry persistence path
+        — tests should pass a tmp_path to avoid touching ~/.cache/myna.
     `state_overrides` are setattr'd on app.state after create_app.
     """
     from myna.config import load_config
+    from myna.v2_registry import V2Registry
 
     cfg = load_config()
+    # Disable karaoke for tests by default — make_client() callers that
+    # want to exercise the karaoke path should override via state_overrides.
+    cfg["karaoke"] = {"enabled": False}
     if config_overrides:
         cfg.update(config_overrides)
 
@@ -74,9 +81,15 @@ def make_client(config_overrides=None, **state_overrides):
     app.state.engine_up = lambda base_url, **kw: True
     app.state.summarize = lambda text, **kw: "SUMMARY"
     app.state.extract = lambda url: "EXTRACTED"
+    if registry_path is not None:
+        app.state.v2_registry = V2Registry(path=registry_path)
     for k, v in state_overrides.items():
         setattr(app.state, k, v)
-    return TestClient(app), fp, app
+    # base_url="http://127.0.0.1" so requests carry Host: 127.0.0.1,
+    # which the TrustedHostMiddleware accepts. (Default TestClient base
+    # is http://testserver — that would be rejected by the middleware,
+    # since "testserver" isn't a deployed host name.)
+    return TestClient(app, base_url="http://127.0.0.1"), fp, app
 
 
 def parse_multipart(body: bytes, boundary: bytes = b"mynachunk"):
