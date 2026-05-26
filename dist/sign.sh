@@ -98,7 +98,15 @@ if [ "${DRY_RUN:-0}" != "1" ]; then
         rm -rf "Versions/Current"
         ln -s "$current_ver" "Versions/Current"
       fi
-      for alias in Sparkle Headers Modules Resources Updater.app XPCServices; do
+      # Note: Autoupdate is in this list even though Sparkle 2's *canonical*
+      # framework layout has no top-level Autoupdate symlink — Xcode's
+      # embed-and-sign flattens Versions/B/Autoupdate into a real 726KB
+      # binary at the framework root (observed in CI run 26437410769).
+      # Apple's framework rule allows only Versions/ + aliases into
+      # Versions/Current/ at root; a real binary there triggers
+      # "unsealed contents present in the root directory of an embedded
+      # framework". Symlink-restore it like the others.
+      for alias in Sparkle Headers Modules Resources Updater.app XPCServices Autoupdate; do
         if [ -e "$alias" ] && [ ! -L "$alias" ] && [ -e "Versions/Current/$alias" ]; then
           log "sparkle normalize: $alias is a real dir → symlink → Versions/Current/$alias"
           rm -rf "$alias"
