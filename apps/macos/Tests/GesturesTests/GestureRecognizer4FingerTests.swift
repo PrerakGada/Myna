@@ -213,6 +213,61 @@ final class GestureRecognizer4FingerTests: XCTestCase {
         XCTAssertEqual(sink.gestures, [.click], "phantom tap inside debounce window must be dropped")
     }
 
+    // MARK: - regression: BTT-style "tap recognized as double-tap" bug
+
+    /// After firing a double-tap, the next isolated 4-finger tap should
+    /// still be classified as a single tap — not as another double. This
+    /// is the BTT bug Prerak called out: their state machine kept a
+    /// reference to the prior pair and falsely promoted the next single.
+    func test_single_tap_after_double_tap_still_classifies_as_single() {
+        let sink = GestureSink()
+        let cfg = GestureRecognizerConfig(
+            doubleClickInterval: 0.300,
+            postEmitDebounce: 0.050
+        )
+        let r = makeRecognizer(config: cfg, sink: sink)
+
+        // Burn a double-tap to seed prior state.
+        driveTap(on: r, start: 100.000, duration: 0.060)
+        driveTap(on: r, start: 100.200, duration: 0.060)
+        XCTAssertEqual(sink.gestures, [.doubleTap])
+
+        // Wait out the postEmitDebounce, then do one isolated tap and
+        // let the double-window elapse.
+        driveTap(on: r, start: 102.000, duration: 0.060)
+        r.flushIfDue(at: 102.500)
+        XCTAssertEqual(sink.gestures, [.doubleTap, .tap],
+            "isolated tap after a prior double-tap must classify as single")
+    }
+
+    /// Pending tap + new 4-finger contact that lifts as a tap must
+    /// promote the pair to .doubleTap. This is the v0.2.x state-machine
+    /// regression where the pending tag was discarded when transitioning
+    /// pending → contact.
+    func test_pending_tap_carries_forward_into_next_contact() {
+        let sink = GestureSink()
+        let cfg = GestureRecognizerConfig(
+            doubleClickInterval: 0.500,
+            postEmitDebounce: 0.050
+        )
+        let r = makeRecognizer(config: cfg, sink: sink)
+
+        // First tap: pending after lift.
+        driveTap(on: r, start: 100.000, duration: 0.060)
+        XCTAssertEqual(r.pendingDeadline(), 100.060 + 0.500)
+
+        // Second contact starts before pending deadline. The recognizer
+        // moves into contact-with-upgradeFrom=.tap (not visible publicly,
+        // but observable via the promoted emission on lift).
+        r.onTouchFrame(.init(timestamp: 100.250, fingerCount: 4))
+        // While in this carry-forward contact, no emission yet.
+        XCTAssertEqual(sink.gestures, [])
+
+        // Lift → upgrade to doubleTap.
+        r.onTouchFrame(.init(timestamp: 100.310, fingerCount: 0))
+        XCTAssertEqual(sink.gestures, [.doubleTap])
+    }
+
     // MARK: - cross-kind interaction
 
     func test_pending_tap_followed_by_click_flushes_tap_then_pends_click() {

@@ -164,12 +164,20 @@ public final class MultitouchBridge {
 
     public init(router: GestureRouter) {
         self.router = router
-        // Source the system double-click interval at construction time
-        // so we honour the user's accessibility tuning. We use the
-        // `NSEvent` value (a TimeInterval) rather than a hard-coded
-        // 500 ms; on slow-double-click systems this can be > 1 s.
+        // Latency tuning: NSEvent.doubleClickInterval is the user's
+        // *mouse* double-click setting — typically 500 ms. That's too
+        // slow for trackpad gestures (users perform a 4-finger double
+        // tap in 150–250 ms; waiting 500 ms before firing the single
+        // tap feels broken). BTT, Magnet, and the other multitouch
+        // utilities settle around 250–300 ms. We do the same:
+        //   * cap at 300 ms by default (snappy single-tap)
+        //   * respect users on the slow end of NSEvent — accessibility
+        //     setups configure that low for a reason (motor-impaired
+        //     users genuinely need more time between events)
+        let systemInterval = NSEvent.doubleClickInterval
+        let trackpadInterval = min(systemInterval, 0.300)
         let cfg = GestureRecognizerConfig(
-            doubleClickInterval: NSEvent.doubleClickInterval
+            doubleClickInterval: trackpadInterval
         )
         // We can't capture `self` in the recognizer's emit closure
         // before `self.recognizer` is assigned. Bounce through a

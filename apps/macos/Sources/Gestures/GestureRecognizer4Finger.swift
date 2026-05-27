@@ -135,7 +135,14 @@ public final class GestureRecognizer4Finger {
         case idle
         /// Currently in 4-finger contact (≥ requiredFingerCount fingers
         /// have been seen since the most recent transition from < 4).
-        case contact(start: TimeInterval, sawClickStage: Bool)
+        ///
+        /// `upgradeFrom` is the pending kind we were holding when this
+        /// contact began. When the contact resolves the same way (tap
+        /// after a pending tap, click after a pending click), we emit
+        /// `.doubleTap` / `.doubleClick` directly instead of dropping
+        /// into a fresh `.pending`. This was the v0.2.x bug that made
+        /// double-tap silently degrade to single-tap.
+        case contact(start: TimeInterval, sawClickStage: Bool, upgradeFrom: PendingKind?)
         /// One tap or click landed and we're waiting to see whether
         /// it becomes a double.
         case pending(kind: PendingKind, firedAt: TimeInterval)
@@ -173,37 +180,69 @@ public final class GestureRecognizer4Finger {
         switch phase {
         case .idle:
             if frame.fingerCount >= config.requiredFingerCount {
-                phase = .contact(start: frame.timestamp, sawClickStage: false)
+                phase = .contact(start: frame.timestamp, sawClickStage: false, upgradeFrom: nil)
             }
-        case .contact(let start, let sawClickStage):
+        case .contact(let start, let sawClickStage, let upgradeFrom):
             if frame.fingerCount == 0 {
                 // Fingers lifted. Decide tap vs nothing.
                 let duration = frame.timestamp - start
-                if !sawClickStage,
-                   duration <= config.tapMaxDuration,
-                   frame.timestamp - lastEmitAt >= config.postEmitDebounce {
-                    enterPending(.tap, at: frame.timestamp)
+                let isTap = !sawClickStage
+                    && duration <= config.tapMaxDuration
+                    && frame.timestamp - lastEmitAt >= config.postEmitDebounce
+                if isTap {
+                    // Tap landed. Now decide single vs double, factoring
+                    // in any pending upgrade we were carrying.
+                    switch upgradeFrom {
+                    case .tap:
+                        // Pending tap + new tap = double-tap. Fire and
+                        // reset.
+                        emit(.doubleTap)
+                        lastEmitAt = frame.timestamp
+                        phase = .idle
+                    case .click:
+                        // Pending click + a tap is a cross-kind pair.
+                        // Flush the click; the new tap goes pending.
+                        emit(.click)
+                        lastEmitAt = frame.timestamp
+                        phase = .pending(kind: .tap, firedAt: frame.timestamp)
+                    case .none:
+                        phase = .pending(kind: .tap, firedAt: frame.timestamp)
+                    }
                 } else {
-                    // Either it was a click already (emitted separately
-                    // via pressure event), or held too long, or debounced.
+                    // Held too long, debounced, or saw a click already.
+                    // If we were carrying a pending upgrade we still
+                    // owe the user that gesture — flush it as the
+                    // original single, not a double.
+                    if let kind = upgradeFrom, !sawClickStage {
+                        switch kind {
+                        case .tap:   emit(.tap)
+                        case .click: emit(.click)
+                        }
+                        lastEmitAt = frame.timestamp
+                    }
                     phase = .idle
                 }
             } else if frame.fingerCount < config.requiredFingerCount {
                 // Some fingers dropped but not all. Stay in contact —
-                // count climbs again often during a hard press.
-                // We treat this as still-in-contact so the eventual
-                // lift counts as a tap *if* total duration is short.
+                // count climbs again often during a hard press. The
+                // eventual full-lift counts as a tap *if* total duration
+                // is short.
                 _ = sawClickStage  // unchanged
             }
             // If count is still ≥ required, just continue in contact.
-        case .pending:
+        case .pending(let kind, _):
             // A pending tap/click is in flight. The user's second
-            // finger-down kicks us back into contact, but `onPressure`
-            // / `onTouchFrame` below upgrade pending → double on
-            // re-tap/re-click. Track new contact so the second tap is
-            // recognized.
+            // 4-finger contact kicks us into a contact phase, BUT we
+            // must carry forward the pending kind via `upgradeFrom` so
+            // the lift (or pressure event) can promote single → double.
+            // Without this carry-forward, the pending state was silently
+            // overwritten and double-tap silently became single-tap.
             if frame.fingerCount >= config.requiredFingerCount {
-                phase = .contact(start: frame.timestamp, sawClickStage: false)
+                phase = .contact(
+                    start: frame.timestamp,
+                    sawClickStage: false,
+                    upgradeFrom: kind
+                )
             }
         }
     }
@@ -215,23 +254,44 @@ public final class GestureRecognizer4Finger {
         guard event.timestamp - lastEmitAt >= config.postEmitDebounce else { return }
 
         switch phase {
-        case .contact(let start, _):
-            // Promote the contact to "click-witnessed" so the eventual
-            // lift doesn't accidentally also count as a tap.
-            phase = .contact(start: start, sawClickStage: true)
-            enterPending(.click, at: event.timestamp)
+        case .contact(let start, _, let upgradeFrom):
+            switch upgradeFrom {
+            case .click:
+                // Pending click + new click = double-click. Fire and
+                // reset. The current contact has effectively been
+                // consumed by the click; we expect the eventual lift
+                // frame to find us in .idle and do nothing.
+                emit(.doubleClick)
+                lastEmitAt = event.timestamp
+                phase = .idle
+            case .tap:
+                // Pending tap + click = cross-kind pair. Flush the
+                // tap, then mark this contact as click-witnessed and
+                // queue the click as the new pending.
+                emit(.tap)
+                lastEmitAt = event.timestamp
+                phase = .contact(start: start, sawClickStage: true, upgradeFrom: nil)
+                phase = .pending(kind: .click, firedAt: event.timestamp)
+            case .none:
+                // Plain click during contact. Mark contact as
+                // click-witnessed so the lift doesn't double-count,
+                // then enter pending click.
+                phase = .contact(start: start, sawClickStage: true, upgradeFrom: nil)
+                phase = .pending(kind: .click, firedAt: event.timestamp)
+            }
         case .pending(let kind, _):
-            // Second click within window → double-click.
+            // No contact frame yet (pressure can race the MT callback
+            // on a hard force-touch). Treat it as the same logic as
+            // an upgrade-from-contact: same kind = double, different
+            // kind = flush then re-pend.
             if kind == .click {
                 emit(.doubleClick)
                 lastEmitAt = event.timestamp
                 phase = .idle
             } else {
-                // First was a tap, now a click landed — distinct
-                // gestures. Flush the tap, then enter pending click.
                 emit(.tap)
                 lastEmitAt = event.timestamp
-                enterPending(.click, at: event.timestamp)
+                phase = .pending(kind: .click, firedAt: event.timestamp)
             }
         case .idle:
             // Click without ever seeing a 4-finger contact frame.
@@ -275,30 +335,19 @@ public final class GestureRecognizer4Finger {
 
     // MARK: - Helpers
 
-    private func enterPending(_ kind: PendingKind, at timestamp: TimeInterval) {
-        // If we were already pending, an arriving same-kind event is a
-        // double; the callers handle that explicitly. Mismatched-kind
-        // (e.g. a click arriving while a tap is pending) is handled in
-        // onPressure / onTouchFrame.
-        if case .pending(let prev, _) = phase, prev == kind {
-            switch kind {
-            case .tap: emit(.doubleTap)
-            case .click: emit(.doubleClick)
-            }
-            lastEmitAt = timestamp
-            phase = .idle
-        } else {
-            phase = .pending(kind: kind, firedAt: timestamp)
-        }
-    }
+    // (Previously this file had an `enterPending(_:at:)` helper that
+    // duplicated the "promote to double if already pending" logic. The
+    // refactor above moved that promotion into the lift / pressure
+    // handlers — which can also factor in the carried `upgradeFrom`
+    // value — so the helper is gone. Single source of truth wins.)
 
     /// Test/diagnostic accessor — what phase is the recognizer in?
     /// String form so the (private) Phase enum stays internal.
     public var debugPhase: String {
         switch phase {
         case .idle: return "idle"
-        case .contact(let start, let sawClick):
-            return "contact(start=\(start), sawClick=\(sawClick))"
+        case .contact(let start, let sawClick, let upgradeFrom):
+            return "contact(start=\(start), sawClick=\(sawClick), upgradeFrom=\(String(describing: upgradeFrom)))"
         case .pending(let kind, let at):
             return "pending(\(kind), at=\(at))"
         }
