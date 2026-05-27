@@ -55,6 +55,17 @@ public struct GesturesTab: View {
 
             Section("Known limitations") {
                 VStack(alignment: .leading, spacing: 6) {
+                    Text("• Conflicts with BetterTouchTool & other multitouch utilities.")
+                    Text(
+                        "  BTT, Magnet, Cinch and similar tools also subscribe to "
+                        + "MultitouchSupport's contact-frame callback. Only one app "
+                        + "reliably receives the events at a time — whichever started "
+                        + "first usually wins. If your gestures aren't firing, quit "
+                        + "those apps (or disable their trackpad gestures) and "
+                        + "toggle Myna's gestures off and on once to re-subscribe."
+                    )
+                    .foregroundStyle(.secondary)
+
                     Text("• Requires a built-in or Magic Trackpad.")
                     Text(
                         "  External mice and most Bluetooth keyboards' trackpads "
