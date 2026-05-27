@@ -11,11 +11,17 @@ import XCTest
 final class AudioPlayerTests: XCTestCase {
     private var subscriptions: Set<AnyCancellable> = []
 
-    override func setUp() {
-        // Note: don't call `try await super.setUp()` here — CI Xcode 16.0's
-        // Swift 6 strict concurrency flags `@MainActor` class + async super
-        // call as "sending value of non-Sendable type 'XCTestCase'". The
-        // base setUp() is a no-op anyway, so skipping it is safe.
+    override func setUp() async throws {
+        // Use the async override (NOT the sync `setUp()`) so the body
+        // inherits the @MainActor isolation of the class. Without it,
+        // CI's Swift 6 strict concurrency flags every property write as
+        // "main actor-isolated property cannot be mutated from a
+        // nonisolated context."
+        //
+        // Skip `try await super.setUp()` — that *sends* a non-Sendable
+        // XCTestCase across the @MainActor boundary which is the other
+        // strict-concurrency violation CI catches. Base setUp() is a
+        // no-op anyway, so omitting it has no effect on test semantics.
         subscriptions.removeAll()
     }
 

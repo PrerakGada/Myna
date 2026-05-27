@@ -12,18 +12,18 @@ final class SettingsViewModelTests: XCTestCase {
     private var defaults: UserDefaults!
     private var store: SettingsStore!
 
-    override func setUp() {
-        // No `try await super.setUp()` — CI Xcode 16.0's strict concurrency
-        // flags `@MainActor` class + async super-call as a non-Sendable
-        // XCTestCase send across actors.
-        // Unique suite per test, wiped clean.
+    override func setUp() async throws {
+        // Async override (not sync `setUp()`) so the body inherits the
+        // class's @MainActor isolation. Skip `super.setUp()` — that sends
+        // a non-Sendable XCTestCase across the @MainActor boundary, which
+        // CI's Swift 6 strict concurrency rejects. Base setUp() is a no-op.
         suiteName = "dev.myna.app.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
         defaults.removePersistentDomain(forName: suiteName)
         store = SettingsStore(defaults: defaults)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         store = nil
