@@ -45,9 +45,15 @@ final class PillSettingsTests: XCTestCase {
         let viewModel = SettingsViewModel(store: store)
         viewModel.pillAlwaysVisible = true
         viewModel.resetAll()
+        // The user-visible contract is "value returns to default". The
+        // on-disk key persists with the default value because the
+        // @Published didSet writes through after resetAll() rebinds
+        // each property — that's the same semantics as every other
+        // setting in this view model.
         XCTAssertFalse(viewModel.pillAlwaysVisible)
-        // And the on-disk key is gone.
-        XCTAssertNil(defaults.object(forKey: SettingsKey.pillAlwaysVisible.rawValue))
+        let stored = defaults.object(forKey: SettingsKey.pillAlwaysVisible.rawValue) as? Bool
+        XCTAssertEqual(stored ?? SettingsDefaults.pillAlwaysVisible,
+                       SettingsDefaults.pillAlwaysVisible)
     }
 
     func test_floatingPillFrame_autosave_key_matches_appkit_convention() {

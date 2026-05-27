@@ -97,6 +97,14 @@ targets:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Myna.app/Contents/MacOS/Myna"
+        # Xcode 15+ requires every target to either ship an Info.plist file
+        # OR set GENERATE_INFOPLIST_FILE=YES. The MynaTests target had
+        # neither, which made `xcodebuild test` fail with
+        # "Cannot code sign because the target does not have an Info.plist
+        # file". Both Lane 2 and Lane 3 hit this independently — fixing it
+        # here unblocks the whole test suite (gestures + pill + audio
+        # tests added in v0.2.x can now run).
+        GENERATE_INFOPLIST_FILE: YES
 
 schemes:
   Myna:

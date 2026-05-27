@@ -147,7 +147,7 @@ final class GestureRecognizer4FingerTests: XCTestCase {
 
     func test_low_pressure_stage_does_not_count_as_click() {
         let sink = GestureSink()
-        let cfg = GestureRecognizerConfig(clickStage: 2, doubleClickInterval: 0.300)
+        let cfg = GestureRecognizerConfig(doubleClickInterval: 0.300, clickStage: 2)
         let r = makeRecognizer(config: cfg, sink: sink)
 
         r.onTouchFrame(.init(timestamp: 100.000, fingerCount: 4))
