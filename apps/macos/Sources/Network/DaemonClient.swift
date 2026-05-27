@@ -94,7 +94,17 @@ public actor DaemonClient {
 
     /// Stream of audio chunks for the given synthesize request.
     /// Caller iterates with `for try await chunk in stream { ... }`.
-    public nonisolated func synthesize(_ request: SynthesizeRequest) -> AsyncThrowingStream<SynthesizedChunk, Error> {
+    ///
+    /// ``onMetadata`` (optional) is invoked once with the response-level
+    /// metadata parsed from the HTTP headers — currently the
+    /// X-Myna-Detected-Lang / X-Myna-Lang-Mismatch pair emitted by the
+    /// daemon. It runs on whatever actor the stream is being consumed
+    /// from; the caller is responsible for hopping to its own actor if
+    /// needed. Pass nil if you don't care.
+    public nonisolated func synthesize(
+        _ request: SynthesizeRequest,
+        onMetadata: (@Sendable (SynthesizeMetadata) -> Void)? = nil
+    ) -> AsyncThrowingStream<SynthesizedChunk, Error> {
         AsyncThrowingStream { continuation in
             let task = Task { [weak self] in
                 guard let self else {
@@ -102,7 +112,11 @@ public actor DaemonClient {
                     return
                 }
                 do {
-                    try await self.runSynthesize(request, continuation: continuation)
+                    try await self.runSynthesize(
+                        request,
+                        onMetadata: onMetadata,
+                        continuation: continuation
+                    )
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -116,6 +130,7 @@ public actor DaemonClient {
 
     private func runSynthesize(
         _ request: SynthesizeRequest,
+        onMetadata: (@Sendable (SynthesizeMetadata) -> Void)?,
         continuation: AsyncThrowingStream<SynthesizedChunk, Error>.Continuation
     ) async throws {
         try Self.validateSynthesizeRequest(request)
@@ -130,6 +145,18 @@ public actor DaemonClient {
         if http.statusCode != 200 {
             let body = try await collect(bytes: bytes)
             throw mapHTTPError(status: http.statusCode, body: body)
+        }
+
+        if let onMetadata {
+            let detected = http.value(forHTTPHeaderField: "X-Myna-Detected-Lang")
+            let mismatchRaw = http.value(forHTTPHeaderField: "X-Myna-Lang-Mismatch")
+            if detected != nil || mismatchRaw != nil {
+                let metadata = SynthesizeMetadata(
+                    detectedLang: detected,
+                    langMismatch: mismatchRaw == "1"
+                )
+                onMetadata(metadata)
+            }
         }
 
         let boundary = parseBoundary(from: http.value(forHTTPHeaderField: "Content-Type")) ?? "mynachunk"
@@ -183,6 +210,36 @@ public actor DaemonClient {
                 continuation.yield(chunk)
             }
         }
+    }
+
+    // MARK: - GET /v2/voice_wardrobe
+
+    public func voiceWardrobe() async throws -> VoiceWardrobeResponse {
+        let req = try makeRequest(path: "/v2/voice_wardrobe", method: "GET")
+        return try await decode(req)
+    }
+
+    // MARK: - POST /v2/voice_wardrobe
+
+    /// Upsert (voiceId non-nil) or remove (voiceId nil) a wardrobe entry.
+    @discardableResult
+    public func setVoiceWardrobe(
+        bundleId: String,
+        voiceId: String?
+    ) async throws -> VoiceWardrobeResponse {
+        let req = try makeRequest(
+            path: "/v2/voice_wardrobe",
+            method: "POST",
+            body: VoiceWardrobeUpsertRequest(bundleId: bundleId, voiceId: voiceId)
+        )
+        return try await decode(req)
+    }
+
+    // MARK: - GET /v2/model/status
+
+    public func modelStatus() async throws -> ModelStatusResponse {
+        let req = try makeRequest(path: "/v2/model/status", method: "GET")
+        return try await decode(req)
     }
 
     // MARK: - POST /announce (v1 endpoint, still used by clients)

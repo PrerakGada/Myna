@@ -22,6 +22,7 @@ import SwiftUI
 public struct MenuBarView: View {
     @ObservedObject var controller: MenuBarController
     @ObservedObject var player: AudioPlayer
+    @ObservedObject var toastCenter: LangMismatchToastCenter = .shared
 
     /// Voices loaded lazily — same lazy-pattern as v0.2.0. Held at the
     /// top-level view so the network round-trip happens once per popover
@@ -44,6 +45,11 @@ public struct MenuBarView: View {
         let model = controller.popoverModel()
         VStack(alignment: .leading, spacing: PopoverDesign.sectionSpacing) {
             PopoverHeader(iconState: controller.iconState)
+            // Transient lang-mismatch hint (only when langid signalled a
+            // detected language different from the configured voice's).
+            if let metadata = toastCenter.latest, let lang = metadata.detectedLang {
+                langMismatchChip(detectedLang: lang)
+            }
             heroSection(model: model)
             voiceSection
             speedSection
@@ -69,6 +75,40 @@ public struct MenuBarView: View {
         .frame(width: PopoverDesign.popoverWidth, alignment: .leading)
         .background(PopoverDesign.surface)
         .task { await loadVoices() }
+    }
+
+    // MARK: - lang-mismatch chip
+    //
+    // Small dismissible row that appears at the top of the popover when
+    // the daemon's langid detector signalled `X-Myna-Lang-Mismatch: 1`
+    // on the last synthesize. Tapping the chip opens Settings (where the
+    // user can change voice or wire a Voice Wardrobe rule); the × dismisses
+    // the toast for this session. Intentionally minimal — full UX (slide-in
+    // animation, snooze, "switch voice" inline action) belongs in v0.3.
+    @ViewBuilder
+    private func langMismatchChip(detectedLang: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "globe").foregroundStyle(.tint)
+            Text("Detected: \(detectedLang.uppercased()) — adjust voice in Settings")
+                .font(.caption)
+                .foregroundStyle(.primary.opacity(0.85))
+            Spacer(minLength: 4)
+            Button(action: { toastCenter.dismiss() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.accentColor.opacity(0.12))
+        )
+        .onTapGesture {
+            controller.openSettings()
+            toastCenter.dismiss()
+        }
     }
 
     // MARK: - hero (Now Playing / Idle / Error)

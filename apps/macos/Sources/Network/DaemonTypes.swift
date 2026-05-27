@@ -200,6 +200,9 @@ public struct SynthesizeRequest: Codable, Sendable, Equatable {
     public var mode: SynthesizeMode
     public var chunkChars: Int?
     public var sessionId: String?
+    /// Bundle identifier of the frontmost app at the time of the
+    /// request. Daemon uses this to look up the voice wardrobe.
+    public var bundleId: String?
 
     enum CodingKeys: String, CodingKey {
         case text
@@ -209,6 +212,7 @@ public struct SynthesizeRequest: Codable, Sendable, Equatable {
         case mode
         case chunkChars = "chunk_chars"
         case sessionId = "session_id"
+        case bundleId = "bundle_id"
     }
 
     public init(
@@ -218,7 +222,8 @@ public struct SynthesizeRequest: Codable, Sendable, Equatable {
         speed: Double = 1.0,
         mode: SynthesizeMode = .full,
         chunkChars: Int? = nil,
-        sessionId: String? = nil
+        sessionId: String? = nil,
+        bundleId: String? = nil
     ) {
         self.text = text
         self.url = url
@@ -227,6 +232,7 @@ public struct SynthesizeRequest: Codable, Sendable, Equatable {
         self.mode = mode
         self.chunkChars = chunkChars
         self.sessionId = sessionId
+        self.bundleId = bundleId
     }
 }
 
@@ -241,6 +247,22 @@ public struct SynthesizedChunk: Sendable, Equatable {
         self.totalEstimate = totalEstimate
         self.textPreview = textPreview
         self.wavData = wavData
+    }
+}
+
+/// Response-level metadata for a /v2/synthesize call. Today this carries
+/// the X-Myna-Detected-Lang / X-Myna-Lang-Mismatch headers used to drive
+/// the "Detected: Spanish — switch voice?" UX.
+public struct SynthesizeMetadata: Sendable, Equatable {
+    /// ISO-639-1 code, if the daemon's detector was confident enough.
+    public let detectedLang: String?
+    /// True if the detected language differs from the daemon's
+    /// configured cfg["lang_code"].
+    public let langMismatch: Bool
+
+    public init(detectedLang: String?, langMismatch: Bool) {
+        self.detectedLang = detectedLang
+        self.langMismatch = langMismatch
     }
 }
 
@@ -285,6 +307,63 @@ public struct SummarizeResponse: Codable, Sendable, Equatable {
         self.ok = ok
         self.summary = summary
         self.reason = reason
+    }
+}
+
+public struct VoiceWardrobeResponse: Codable, Sendable, Equatable {
+    /// `{ bundle_id: voice_id }` mapping from the daemon.
+    public let mappings: [String: String]
+
+    public init(mappings: [String: String]) {
+        self.mappings = mappings
+    }
+}
+
+public struct VoiceWardrobeUpsertRequest: Codable, Sendable, Equatable {
+    public let bundleId: String
+    public let voiceId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case bundleId = "bundle_id"
+        case voiceId = "voice_id"
+    }
+
+    public init(bundleId: String, voiceId: String?) {
+        self.bundleId = bundleId
+        self.voiceId = voiceId
+    }
+}
+
+public struct ModelStatusResponse: Codable, Sendable, Equatable {
+    public let modelLoaded: Bool
+    public let engineURL: String
+    public let daemonRssMb: Double
+    public let daemonPID: Int
+    /// False on the current Myna daemon because the TTS engine lives
+    /// out-of-process. Swift UI hides the "Pause Myna" toggle when this
+    /// is false.
+    public let suspendSupported: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case modelLoaded = "model_loaded"
+        case engineURL = "engine_url"
+        case daemonRssMb = "daemon_rss_mb"
+        case daemonPID = "daemon_pid"
+        case suspendSupported = "suspend_supported"
+    }
+
+    public init(
+        modelLoaded: Bool,
+        engineURL: String,
+        daemonRssMb: Double,
+        daemonPID: Int,
+        suspendSupported: Bool
+    ) {
+        self.modelLoaded = modelLoaded
+        self.engineURL = engineURL
+        self.daemonRssMb = daemonRssMb
+        self.daemonPID = daemonPID
+        self.suspendSupported = suspendSupported
     }
 }
 

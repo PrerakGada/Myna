@@ -19,13 +19,19 @@ public struct SettingsView: View {
                 .tabItem { Label("Hotkeys", systemImage: "keyboard") }
             VoiceTab(viewModel: viewModel, client: client, audioSink: audioSink)
                 .tabItem { Label("Voice", systemImage: "waveform") }
+            VoiceWardrobeView(client: client)
+                .tabItem { Label("Wardrobe", systemImage: "person.crop.rectangle.stack") }
             BehaviorTab(viewModel: viewModel)
                 .tabItem { Label("Behavior", systemImage: "sparkles") }
+            GesturesTab(viewModel: viewModel)
+                .tabItem { Label("Gestures", systemImage: "hand.tap") }
             DaemonTab(viewModel: viewModel, client: client)
                 .tabItem { Label("Daemon", systemImage: "server.rack") }
             AdvancedTab(viewModel: viewModel)
                 .tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }
         }
-        .frame(width: 540, height: 420)
+        // Frame sized for the largest tab (Wardrobe with rows + add button).
+        // Bumped 540×420 → 560×440 when Wardrobe and Gestures tabs were added.
+        .frame(width: 560, height: 440)
     }
 }

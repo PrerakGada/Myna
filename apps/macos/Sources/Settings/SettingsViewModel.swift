@@ -27,6 +27,10 @@ public enum SettingsKey: String, CaseIterable, Sendable {
     case thinkingEarconEnabled = "dev.myna.app.thinkingEarconEnabled"
     case toastChimeEnabled = "dev.myna.app.toastChimeEnabled"
     case ccToastsEnabled = "dev.myna.app.ccToastsEnabled"
+    /// v0.2: opt-in trackpad gesture recognition. Default OFF — we
+    /// don't want to surprise users with a 4-finger swipe that
+    /// silently jumps chunks.
+    case trackpadGesturesEnabled = "dev.myna.app.trackpadGesturesEnabled"
 }
 
 /// Built-in defaults — must mirror the daemon's config defaults so the
@@ -46,6 +50,8 @@ public enum SettingsDefaults {
     public static let thinkingEarconEnabled: Bool = false
     public static let toastChimeEnabled: Bool = true
     public static let ccToastsEnabled: Bool = true
+    /// v0.2: trackpad gestures default OFF. See SettingsKey docs.
+    public static let trackpadGesturesEnabled: Bool = false
 }
 
 /// Thin wrapper over UserDefaults so tests can inject an ephemeral
@@ -123,6 +129,11 @@ public final class SettingsViewModel: ObservableObject {
     @Published public var ccToastsEnabled: Bool {
         didSet { store.set(.ccToastsEnabled, ccToastsEnabled) }
     }
+    /// v0.2: opt-in trackpad gesture recognition. Read by AppDelegate
+    /// to decide whether to spin up GestureMonitor.
+    @Published public var trackpadGesturesEnabled: Bool {
+        didSet { store.set(.trackpadGesturesEnabled, trackpadGesturesEnabled) }
+    }
 
     /// Most recent validation error for the daemon URL field. Settings
     /// UI displays this inline. Nil = currently valid.
@@ -142,6 +153,8 @@ public final class SettingsViewModel: ObservableObject {
         self.thinkingEarconEnabled = store.bool(.thinkingEarconEnabled) ?? SettingsDefaults.thinkingEarconEnabled
         self.toastChimeEnabled = store.bool(.toastChimeEnabled) ?? SettingsDefaults.toastChimeEnabled
         self.ccToastsEnabled = store.bool(.ccToastsEnabled) ?? SettingsDefaults.ccToastsEnabled
+        self.trackpadGesturesEnabled =
+            store.bool(.trackpadGesturesEnabled) ?? SettingsDefaults.trackpadGesturesEnabled
     }
 
     /// Validate that the given URL string is localhost-only (we never
@@ -204,6 +217,7 @@ public final class SettingsViewModel: ObservableObject {
         thinkingEarconEnabled = SettingsDefaults.thinkingEarconEnabled
         toastChimeEnabled = SettingsDefaults.toastChimeEnabled
         ccToastsEnabled = SettingsDefaults.ccToastsEnabled
+        trackpadGesturesEnabled = SettingsDefaults.trackpadGesturesEnabled
         daemonURLError = nil
     }
 

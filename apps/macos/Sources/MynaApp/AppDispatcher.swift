@@ -9,11 +9,12 @@
 //
 // All audio actually plays through the in-process AudioPlayer; only
 // synthesis is fanned out to the daemon over HTTP.
+import AppKit
 import AVFoundation
 import Foundation
 
 @MainActor
-public final class AppDispatcher: URLSchemeDispatching {
+public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
     private let client: DaemonClient
     private let player: AudioPlayer
     private let selection: SelectionService
@@ -95,20 +96,33 @@ public final class AppDispatcher: URLSchemeDispatching {
 
     private func synthesizeAndPlay(text: String?, url: String?, mode: SynthesizeMode) async {
         player.stop()
+        // Capture frontmost app bundle id at request time so the daemon
+        // can apply the voice wardrobe. nil if there's no foreground
+        // app (rare — usually Finder or our own process).
+        let bundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let req = SynthesizeRequest(
             text: text,
             url: url,
             voice: settings.voice,
             speed: settings.defaultSpeed,
             mode: mode,
-            sessionId: UUID().uuidString
+            sessionId: UUID().uuidString,
+            bundleId: bundleId
         )
         // Record into recents (S06 Recent submenu). Title is the URL
         // host or the first ~60 chars of the text if no URL.
         let recentTitle = computeRecentTitle(text: text, url: url)
         menuController?.recordNowReading(title: recentTitle, voice: settings.voice)
         do {
-            for try await chunk in client.synthesize(req) {
+            let stream = client.synthesize(req) { metadata in
+                // Hop to main actor — onMetadata fires on whichever
+                // actor the stream consumer is on, which here is
+                // already @MainActor (the for-await below).
+                Task { @MainActor in
+                    LangMismatchToastCenter.shared.surface(metadata)
+                }
+            }
+            for try await chunk in stream {
                 if let buffer = await decodeWAV(chunk.wavData) {
                     player.enqueue(buffer: buffer)
                 } else {
