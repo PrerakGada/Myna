@@ -29,13 +29,13 @@ public struct GesturesTab: View {
                     Text("Speak selection").foregroundStyle(.secondary)
                 }
                 LabeledContent("4-finger double-tap") {
-                    Text("Speak selection (summary)").foregroundStyle(.secondary)
+                    Text("Stop").foregroundStyle(.secondary)
                 }
                 LabeledContent("4-finger click") {
-                    Text("Play / pause").foregroundStyle(.secondary)
+                    Text("Play / pause  (debug)").foregroundStyle(.secondary)
                 }
                 LabeledContent("4-finger double-click") {
-                    Text("Stop").foregroundStyle(.secondary)
+                    Text("Stop  (debug)").foregroundStyle(.secondary)
                 }
             }
 

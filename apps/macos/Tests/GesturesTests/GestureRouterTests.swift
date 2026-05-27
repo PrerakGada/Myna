@@ -13,11 +13,14 @@ final class GestureRouterTests: XCTestCase {
         XCTAssertEqual(target.calls, [.speakSelection(.full)])
     }
 
-    func test_double_tap_speaks_summary_selection() {
+    func test_double_tap_stops_while_click_path_is_dormant() {
+        // Provisional mapping — see GestureRouter docs. Restore
+        // `.speakSelection(.summary)` once the click path is debugged
+        // on real hardware.
         let target = FakeGestureTarget()
         let router = GestureRouter(target: target)
         router.handle(.fourFingerDoubleTap)
-        XCTAssertEqual(target.calls, [.speakSelection(.summary)])
+        XCTAssertEqual(target.calls, [.stop])
     }
 
     func test_click_toggles_pause() {
