@@ -173,39 +173,64 @@ if [ "${DRY_RUN:-0}" != "1" ]; then
   # Per AUDIT_REPORT.md Lane B 🟡 #1.
   # ---------------------------------------------------------------------------
   # v0.2+: MynaKaraoke.app sidecar lives at Resources/MynaKaraoke.app.
-  # It was already signed by karaoke/build.sh BEFORE being ditto'd in. Do
-  # NOT re-sign here — codesign-with-same-identity is idempotent in theory
-  # but the v0.1 sign saga showed nested re-signs can desync signature
-  # blobs and break notarization. Exclude it from the generic loop. The
-  # outer Myna.app sign at the bottom of this script re-seals the nested
-  # bundle's HASH into the outer's CodeResources, which is the correct
-  # Apple-nested-bundle pattern.
+  #
+  # v0.2.0 — sign MynaKaraoke HERE, not at the karaoke/build.sh layer:
+  # The Build job in release.yml does NOT have Developer ID credentials
+  # in scope (they live only in the Sign job's keychain). So
+  # karaoke/build.sh skipped its own sign step in CI, the .app arrived
+  # carrying only the Swift linker's ad-hoc binary signature with no
+  # bundle-level _CodeSignature, and `codesign --verify --strict`
+  # rejected it with "code has no resources but signature indicates
+  # they must be present". Notarization would also fail later for the
+  # missing hardened-runtime flag on the karaoke binary.
+  #
+  # Including MynaKaraoke in the generic nested-sign loop fixes both:
+  # it gets Developer-ID-signed with hardened runtime + its own
+  # entitlements, then the outer Myna.app sign reseals the nested
+  # hash into CodeResources as usual.
+  #
+  # The v0.1 saga's "don't re-sign nested" warning was specifically
+  # about double-signing a bundle that was already Developer-ID
+  # signed — not the case here.
   targets=()
   while IFS= read -r t; do
     [ -n "$t" ] && targets+=("$t")
   done < <(find "$APP_PATH/Contents" \
     -not -path "*/Sparkle.framework*" \
-    -not -path "*/MynaKaraoke.app*" \
     \( -name '*.framework' -o -name '*.bundle' -o -name '*.xpc' -o -name '*.app' \) \
     -type d \
     -print | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
   for t in "${targets[@]}"; do
     [ "$t" = "$APP_PATH" ] && continue
     log "sign nested: $t"
+    # The karaoke sidecar gets its own entitlements file; everything
+    # else (KeyboardShortcuts bundle, etc.) signs without entitlements.
+    ent_arg=""
+    if [[ "$t" == *"/MynaKaraoke.app" ]]; then
+      script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+      karaoke_ent="$script_dir/../karaoke/karaoke.entitlements"
+      if [ -f "$karaoke_ent" ]; then
+        ent_arg="--entitlements $karaoke_ent"
+        log "  + karaoke entitlements: $karaoke_ent"
+      else
+        warn "  ! karaoke entitlements not found at $karaoke_ent"
+      fi
+    fi
     # shellcheck disable=SC2086
     codesign --force --options runtime --timestamp \
       $keychain_arg \
+      $ent_arg \
       --sign "$DEVELOPER_ID_APPLICATION" \
       "$t"
   done
 
-  # Verify the sidecar's standalone signature survived the ditto — fast
-  # smoke check before we proceed to outer signing.
+  # Final smoke check on the karaoke sidecar — we just signed it
+  # ourselves, so strict verify must pass before we seal the outer.
   if [ -d "$APP_PATH/Contents/Resources/MynaKaraoke.app" ]; then
-    log "verify nested MynaKaraoke.app signature (pre-outer-sign):"
+    log "verify nested MynaKaraoke.app signature (post-sign):"
     codesign --verify --strict --verbose=2 \
       "$APP_PATH/Contents/Resources/MynaKaraoke.app" 2>&1 | sed 's/^/  /' || \
-      die "nested MynaKaraoke.app failed pre-outer-sign verify"
+      die "nested MynaKaraoke.app failed post-sign verify"
   fi
 else
   warn "dry-run: skipping nested-bundle discovery"
