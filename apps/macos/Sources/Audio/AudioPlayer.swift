@@ -110,20 +110,65 @@ public final class AudioPlayer: ObservableObject {
 
     /// Append a PCM buffer to the end of the playback queue. Auto-starts
     /// playback if the queue was empty and the engine is idle.
+    ///
+    /// Three reachable cases:
+    ///   1. Fresh session   — idle + first chunk → beginSession()
+    ///   2. Mid-session     — playing/paused → schedule this chunk
+    ///   3. Late arrival    — idle + N>0 → resume the session (see below)
+    ///
+    /// Case 3 is the priority-first-chunking edge: chunk 0 (~2s of audio)
+    /// can finish playing before the daemon has chunk 1 ready (Kokoro can
+    /// take ~3-5s to synthesize chunk 1's full 1500 chars). The player
+    /// transitions to `.idle` via `handleChunkCompletion`, and when
+    /// chunk 1 finally arrives we must resume — under the SAME session
+    /// token so any late completion callbacks from chunk 0 still get
+    /// dropped correctly, and without bumping the token so we don't
+    /// invalidate the cross-chunk timeline. v0.2.0 shipped without
+    /// this branch; users saw "only the first sentence plays."
     public func enqueue(buffer: AVAudioPCMBuffer) {
         let nextIndex = queue.chunks.count
         let chunk = QueuedChunk(index: nextIndex, buffer: buffer)
         queue.append(chunk)
         duration = queue.totalDuration
 
-        // If the player is idle and this is the very first chunk, prime
-        // the graph and start playing.
         if state == .idle && nextIndex == 0 {
             beginSession()
         } else if state == .playing || state == .paused {
             // Already a session in flight — schedule this new chunk so
             // the player auto-plays it when prior chunks finish.
             scheduleChunk(index: nextIndex, fromOffset: 0, completionToken: sessionToken)
+        } else if state == .idle && nextIndex > 0 {
+            resumeAfterDrain(at: nextIndex)
+        }
+    }
+
+    /// Reconnect the audio graph for the late chunk's format (Kokoro
+    /// always emits the same sample rate / channel count, so this is
+    /// almost always a no-op, but we cover the rare format change),
+    /// schedule it, and re-arm playback.
+    private func resumeAfterDrain(at index: Int) {
+        guard index >= 0 && index < queue.chunks.count else { return }
+        let chunk = queue.chunks[index]
+        connectGraphIfNeeded(for: chunk.buffer.format)
+        currentChunkIndex = index
+        currentChunkStartOffset = 0
+        pausedAtOffset = 0
+        // Position math: chunks already played account for queue.totalDuration
+        // up to (but not including) this new chunk. Anchor position at that
+        // boundary so updatePositionPublished() reports correctly.
+        position = queue.chunks.prefix(index).reduce(0) { $0 + $1.duration }
+        scheduleChunk(index: index, fromOffset: 0, completionToken: sessionToken)
+        do {
+            try startEngineIfNeeded()
+            playerNode.play()
+            playStartWallTime = CACurrentMediaTime()
+            // Drop any lingering pre-audio loading flag (caller may have
+            // re-set it before re-priming the stream).
+            isLoading = false
+            state = .playing
+            startPositionTimer()
+        } catch {
+            state = .idle
         }
     }
 

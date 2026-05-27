@@ -13,20 +13,21 @@ final class PillSettingsTests: XCTestCase {
     private var defaults: UserDefaults!
     private var store: SettingsStore!
 
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUp() {
+        // No `try await super.setUp()` — CI Xcode 16.0's strict concurrency
+        // flags `@MainActor` class + async super-call as a non-Sendable
+        // XCTestCase send across actors. Base setUp is a no-op anyway.
         suiteName = "dev.myna.app.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
         defaults.removePersistentDomain(forName: suiteName)
         store = SettingsStore(defaults: defaults)
     }
 
-    override func tearDown() async throws {
+    override func tearDown() {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         store = nil
         suiteName = nil
-        try await super.tearDown()
     }
 
     func test_pillAlwaysVisible_defaults_off() {

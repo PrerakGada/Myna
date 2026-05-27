@@ -12,8 +12,10 @@ final class SettingsViewModelTests: XCTestCase {
     private var defaults: UserDefaults!
     private var store: SettingsStore!
 
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUp() {
+        // No `try await super.setUp()` — CI Xcode 16.0's strict concurrency
+        // flags `@MainActor` class + async super-call as a non-Sendable
+        // XCTestCase send across actors.
         // Unique suite per test, wiped clean.
         suiteName = "dev.myna.app.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
@@ -21,12 +23,11 @@ final class SettingsViewModelTests: XCTestCase {
         store = SettingsStore(defaults: defaults)
     }
 
-    override func tearDown() async throws {
+    override func tearDown() {
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         store = nil
         suiteName = nil
-        try await super.tearDown()
     }
 
     func test_default_values_match_daemon_config() {
