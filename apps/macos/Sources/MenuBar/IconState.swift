@@ -42,14 +42,23 @@ public enum IconState: String, Sendable, Equatable {
 ///   6. Daemon state synthesizing    → .thinking
 ///   7. Daemon emits "thinking" raw  → .thinking  (Lane B contract)
 ///   8. Daemon emits "error" raw     → .error
-///   9. Otherwise                    → .idle
+///   9. Local player loading (pre-audio) → .thinking
+///  10. Otherwise                    → .idle
+///
+/// "Local player loading" is the pre-audio prelude flag the dispatcher
+/// flips the moment a speak request fires (before the daemon's first
+/// chunk lands). The 250ms idle-polling cadence means the daemon's own
+/// "synthesizing" status arrives 100-200ms late — pre-empting with the
+/// local signal closes that gap so the icon transitions to thinking
+/// within ~50ms of the user's hotkey.
 public enum IconStateMapping {
     public static func compute(
         reachability: MenuBarController.DaemonReachability,
         daemonStateRaw: String?,
         isPlayerPaused: Bool,
         isPlayerPlaying: Bool,
-        isEngineUp: Bool? = nil
+        isEngineUp: Bool? = nil,
+        isPlayerLoading: Bool = false
     ) -> IconState {
         if reachability == .down { return .error }
         // A reachable daemon can still report its engine is down — surface
@@ -65,6 +74,9 @@ public enum IconStateMapping {
             if raw == "paused" { return .paused }
         }
         if isPlayerPlaying { return .speaking }
+        // Pre-audio loading takes precedence over idle so the user sees
+        // an immediate "thinking" cue while the daemon spools up.
+        if isPlayerLoading { return .thinking }
         return .idle
     }
 }

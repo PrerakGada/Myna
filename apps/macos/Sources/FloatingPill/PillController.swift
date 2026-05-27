@@ -144,6 +144,19 @@ public final class PillController: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Pre-audio loading drives visibility too — this is the only
+        // way the pill can appear inside ~50ms of a hotkey instead of
+        // the 200-300ms gap before AudioPlayer.state flips to .playing.
+        // The PillView renders a distinct "Processing…" + spinner
+        // affordance for this window. See PillViewModel.isLoading and
+        // AudioPlayer.isLoading for the contract.
+        player.$isLoading
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.syncVisibility()
+            }
+            .store(in: &cancellables)
+
         // Screen / front-app changes re-position the pill (only when
         // the user has not dragged it to a custom spot).
         let center = NotificationCenter.default
@@ -240,12 +253,14 @@ public final class PillController: ObservableObject {
         guard let player else { return }
         let isPlayingOrPaused = (player.state == .playing || player.state == .paused)
         let alwaysVisible = settings?.pillAlwaysVisible ?? false
-        // TODO(integrator): once Lane 1 ships `player.isLoading`,
-        // OR it into this expression so the pill appears during the
-        // pre-roll fetch phase too. For now we gate on playing/paused
-        // only — same behaviour as v0.2.0.
+        // Pill is visible when:
+        //   • always-visible mode is ON (Lane 2 / v0.2.x feature), or
+        //   • audio is playing/paused, or
+        //   • the dispatcher is in the pre-audio loading window (Lane 1
+        //     ~50ms responsiveness — AudioPlayer.isLoading clears in
+        //     stop() and at first-chunk arrival).
         let shouldBeVisible = isEnabledInDefaults
-            && (alwaysVisible || isPlayingOrPaused)
+            && (alwaysVisible || isPlayingOrPaused || player.isLoading)
         if shouldBeVisible {
             showWindow()
         } else {

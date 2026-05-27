@@ -24,6 +24,11 @@ public enum TransportAction: String, Sendable, Equatable {
 public struct PopoverModel: Sendable, Equatable {
     public enum Status: Sendable, Equatable {
         case idle
+        /// Pre-audio "we asked the daemon, haven't heard back yet" state.
+        /// Owns an optional preview title (sourced from the dispatcher's
+        /// recent-title computation) so the hero can show what's being
+        /// requested without making it look like audio is already playing.
+        case loading(title: String?)
         case playing(NowReading)
         case paused(NowReading)
         case error(message: String)
@@ -35,7 +40,7 @@ public struct PopoverModel: Sendable, Equatable {
         public var nowReading: NowReading? {
             switch self {
             case .playing(let nr), .paused(let nr): return nr
-            case .idle, .error: return nil
+            case .idle, .loading, .error: return nil
             }
         }
     }
@@ -120,7 +125,9 @@ public enum PopoverModelBuilder {
         recents: [RecentItem],
         ccItems: [RegistryV2Item],
         reachability: MenuBarController.DaemonReachability,
-        hotkeyLabelFor: (HotkeyAction) -> String?
+        hotkeyLabelFor: (HotkeyAction) -> String?,
+        isPlayerLoading: Bool = false,
+        loadingTitle: String? = nil
     ) -> PopoverModel {
         let status: PopoverModel.Status
         switch (reachability, playerState) {
@@ -147,7 +154,11 @@ public enum PopoverModelBuilder {
                         durationSeconds: 0
                     ))
         case (_, .idle):
-            status = .idle
+            // The loading flag only kicks in while the player is idle —
+            // once audio starts playing the .playing branch above already
+            // owns the hero. This keeps the status enum total and avoids
+            // a "loading + paused" ambiguity that doesn't exist in practice.
+            status = isPlayerLoading ? .loading(title: loadingTitle) : .idle
         }
         let isPlaying = playerState == .playing
         let isPaused = playerState == .paused

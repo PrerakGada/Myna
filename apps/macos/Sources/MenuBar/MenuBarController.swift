@@ -61,6 +61,7 @@ public final class MenuBarController: ObservableObject, CCToastActions {
     private var pollTask: Task<Void, Never>?
     private var debounceTask: Task<Void, Never>?
     private var playerCancellable: AnyCancellable?
+    private var loadingCancellable: AnyCancellable?
     private var hadThinkingState: Bool = false
 
     public init(
@@ -85,6 +86,21 @@ public final class MenuBarController: ObservableObject, CCToastActions {
             .removeDuplicates()
             .sink { [weak self] _ in
                 Task { @MainActor in self?.recomputeIconState() }
+            }
+        // Same for the pre-audio loading flag: when AppDispatcher flips
+        // it true at hotkey time, we want the bird icon and the popover
+        // hero to react inside one frame, not 200-300ms later after the
+        // next daemon poll. We also call objectWillChange so the popover
+        // (which reads `popoverModel()` on each body call) re-renders
+        // its hero with a LoadingHero immediately.
+        loadingCancellable = player.$isLoading
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.recomputeIconState()
+                    self.objectWillChange.send()
+                }
             }
     }
 
@@ -147,7 +163,8 @@ public final class MenuBarController: ObservableObject, CCToastActions {
             daemonStateRaw: status?.state.rawValue,
             isPlayerPaused: player.state == .paused,
             isPlayerPlaying: player.state == .playing,
-            isEngineUp: status?.isEngineUp
+            isEngineUp: status?.isEngineUp,
+            isPlayerLoading: player.isLoading
         )
         lastRawIconState = raw
         if raw == iconState { return }
@@ -194,7 +211,9 @@ public final class MenuBarController: ObservableObject, CCToastActions {
             recents: recents,
             ccItems: ccPending,
             reachability: reachability,
-            hotkeyLabelFor: HotkeyLabel.display(for:)
+            hotkeyLabelFor: HotkeyLabel.display(for:),
+            isPlayerLoading: player.isLoading,
+            loadingTitle: lastReadTitle
         )
     }
 

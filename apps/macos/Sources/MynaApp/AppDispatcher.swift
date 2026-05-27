@@ -96,6 +96,17 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
 
     private func synthesizeAndPlay(text: String?, url: String?, mode: SynthesizeMode) async {
         player.stop()
+        // Flip the pre-audio loading flag *immediately* so every
+        // observer (menu-bar bird, popover hero, floating pill) gets
+        // a "Processing…" affordance within a frame of the hotkey,
+        // not 200-300ms later when the first chunk lands. AudioPlayer
+        // auto-clears the flag inside beginSession() the moment real
+        // audio starts, and also on stop().
+        player.isLoading = true
+        // Belt-and-braces: if synthesis throws before any chunk arrives,
+        // we still need to drop the flag so the UI doesn't get stuck
+        // showing "Processing…".
+        defer { player.isLoading = false }
         // Capture frontmost app bundle id at request time so the daemon
         // can apply the voice wardrobe. nil if there's no foreground
         // app (rare — usually Finder or our own process).

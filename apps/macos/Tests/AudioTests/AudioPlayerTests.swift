@@ -227,6 +227,56 @@ final class AudioPlayerTests: XCTestCase {
         try await waitForState(player, .idle, timeout: 2.0)
     }
 
+    // MARK: isLoading (pre-audio prelude)
+
+    func test_isLoading_defaults_to_false() {
+        let player = AudioPlayer()
+        XCTAssertFalse(player.isLoading)
+    }
+
+    func test_isLoading_cleared_when_first_chunk_starts_playing() async throws {
+        // Caller (AppDispatcher) flips isLoading=true before calling
+        // enqueue. AudioPlayer is responsible for clearing it the moment
+        // beginSession() fires.
+        let player = AudioPlayer()
+        player.isLoading = true
+        let buffer = SineBuffer.make(duration: 0.3)
+        player.enqueue(buffer: buffer)
+        // beginSession runs synchronously inside enqueue when state is
+        // idle and the queue was empty, so isLoading should already be
+        // false by the time the function returns.
+        XCTAssertFalse(player.isLoading)
+        XCTAssertEqual(player.state, .playing)
+        try await waitForState(player, .idle, timeout: 2.0)
+    }
+
+    func test_isLoading_cleared_on_stop() {
+        let player = AudioPlayer()
+        player.isLoading = true
+        player.stop()
+        XCTAssertFalse(player.isLoading)
+    }
+
+    func test_isLoading_publisher_emits_change() async throws {
+        let player = AudioPlayer()
+        let snapshots = SendableBox<[Bool]>([])
+        let cancellable = player.$isLoading.sink { value in
+            snapshots.value += [value]
+        }
+        defer { cancellable.cancel() }
+        // Caller flips on…
+        player.isLoading = true
+        // …and then a chunk lands, triggering clear inside beginSession.
+        player.enqueue(buffer: SineBuffer.make(duration: 0.2))
+        try await waitForState(player, .idle, timeout: 2.0)
+        let trail = snapshots.value
+        // We expect: initial false, then true, then false (from
+        // beginSession). Order matters because UI observers depend on it.
+        XCTAssertTrue(trail.contains(true), "isLoading should have flipped true at some point")
+        // The last value the publisher saw must be false (playback finished).
+        XCTAssertEqual(trail.last, false)
+    }
+
     // MARK: helpers
 
     private func waitForState(

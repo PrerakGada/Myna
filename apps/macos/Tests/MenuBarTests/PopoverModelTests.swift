@@ -69,6 +69,85 @@ final class PopoverModelTests: XCTestCase {
         }
     }
 
+    // MARK: - loading status (pre-audio)
+
+    func test_idle_with_loading_flag_yields_loading_status() {
+        let model = PopoverModelBuilder.build(
+            playerState: .idle,
+            nowReading: nil,
+            recents: [],
+            ccItems: [],
+            reachability: .up,
+            hotkeyLabelFor: { _ in nil },
+            isPlayerLoading: true,
+            loadingTitle: "hello.com"
+        )
+        if case .loading(let title) = model.status {
+            XCTAssertEqual(title, "hello.com")
+        } else {
+            XCTFail("expected .loading status")
+        }
+    }
+
+    func test_loading_status_clears_when_player_starts_playing() {
+        let nr = PopoverModel.NowReading(
+            title: "T", voice: "V", speed: 1.0, positionSeconds: 0, durationSeconds: 1
+        )
+        // Even with isPlayerLoading=true, .playing wins because the
+        // player has moved past the prelude.
+        let model = PopoverModelBuilder.build(
+            playerState: .playing,
+            nowReading: nr,
+            recents: [],
+            ccItems: [],
+            reachability: .up,
+            hotkeyLabelFor: { _ in nil },
+            isPlayerLoading: true,
+            loadingTitle: "x"
+        )
+        if case .playing = model.status {
+            // ok
+        } else {
+            XCTFail("expected .playing to dominate over isPlayerLoading")
+        }
+    }
+
+    func test_loading_status_nil_title_is_acceptable() {
+        let model = PopoverModelBuilder.build(
+            playerState: .idle,
+            nowReading: nil,
+            recents: [],
+            ccItems: [],
+            reachability: .up,
+            hotkeyLabelFor: { _ in nil },
+            isPlayerLoading: true,
+            loadingTitle: nil
+        )
+        if case .loading(let title) = model.status {
+            XCTAssertNil(title)
+        } else {
+            XCTFail("expected .loading with nil title")
+        }
+    }
+
+    func test_daemon_down_overrides_loading_to_error() {
+        let model = PopoverModelBuilder.build(
+            playerState: .idle,
+            nowReading: nil,
+            recents: [],
+            ccItems: [],
+            reachability: .down,
+            hotkeyLabelFor: { _ in nil },
+            isPlayerLoading: true,
+            loadingTitle: "x"
+        )
+        if case .error = model.status {
+            // ok
+        } else {
+            XCTFail("daemon-down must dominate over loading")
+        }
+    }
+
     // MARK: - transport rows
 
     func test_transport_rows_include_pause_stop_skips() {

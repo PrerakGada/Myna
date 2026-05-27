@@ -26,15 +26,28 @@ public final class PillViewModel: ObservableObject {
     // MARK: - published UI state
 
     /// True when AudioPlayer.state is .playing or .paused. Pill is
-    /// visible iff this is true (and the user has not turned the
-    /// feature off in Settings). Pause keeps the pill on screen so the
-    /// user can hit play again — disappearing on pause would be
-    /// confusing.
+    /// visible iff this OR `isLoading` is true (and the user has not
+    /// turned the feature off in Settings). Pause keeps the pill on
+    /// screen so the user can hit play again — disappearing on pause
+    /// would be confusing.
     @Published public private(set) var isSpeaking: Bool = false
 
     /// True when the underlying player is paused (vs actively playing).
     /// Drives the play/pause icon swap in the expanded view.
     @Published public private(set) var isPaused: Bool = false
+
+    /// True from the moment AppDispatcher fires a speak request until
+    /// the first audio chunk lands (or the request fails). The pill
+    /// shows a tiny "Processing…" affordance with an indeterminate
+    /// spinner during this window so the user sees immediate feedback
+    /// — without it, the pill only appears 200-300ms after the hotkey,
+    /// which reads as "did the gesture register?"
+    @Published public private(set) var isLoading: Bool = false
+
+    /// Convenience: pill should be on-screen when either we're loading
+    /// or we're actively speaking. Pulled out so PillController can
+    /// observe one flag instead of two.
+    public var shouldBeVisible: Bool { isLoading || isSpeaking }
 
     /// True when the pill should render its expanded mini-player.
     /// Driven by hover OR explicit pin (whichever is more permissive).
@@ -92,6 +105,7 @@ public final class PillViewModel: ObservableObject {
         // the real player's idle state.
         if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
             applyPlayerState(player.state)
+            isLoading = player.isLoading
             return
         }
         #endif
@@ -101,6 +115,17 @@ public final class PillViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] state in
                 self?.applyPlayerState(state)
+            }
+            .store(in: &cancellables)
+
+        // Mirror the pre-audio loading flag — the dispatcher flips it
+        // true the instant a speak request fires (well before any
+        // chunk arrives), so this is how the pill achieves the ~50ms
+        // visibility budget the spec calls for.
+        player.$isLoading
+            .receive(on: RunLoop.main)
+            .sink { [weak self] loading in
+                self?.applyLoading(loading)
             }
             .store(in: &cancellables)
 
@@ -123,6 +148,11 @@ public final class PillViewModel: ObservableObject {
             .store(in: &cancellables)
 
         applyPlayerState(player.state)
+        applyLoading(player.isLoading)
+    }
+
+    private func applyLoading(_ loading: Bool) {
+        isLoading = loading
     }
 
     /// True when the pill is on screen but the player is idle. Drives
@@ -239,12 +269,14 @@ public final class PillViewModel: ObservableObject {
         isSpeaking: Bool,
         isExpanded: Bool,
         paused: Bool,
-        alwaysVisible: Bool = false
+        alwaysVisible: Bool = false,
+        loading: Bool = false
     ) {
         self.isSpeaking = isSpeaking
         self.isExpanded = isExpanded
         self.isPaused = paused
         self.isAlwaysVisible = alwaysVisible
+        self.isLoading = loading
     }
     #endif
 }

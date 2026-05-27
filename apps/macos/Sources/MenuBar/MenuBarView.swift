@@ -103,10 +103,15 @@ public struct MenuBarView: View {
                 .foregroundStyle(.primary.opacity(0.85))
             Spacer(minLength: 4)
             Button(action: { toastCenter.dismiss() }) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 3) {
+                    Image(systemName: "xmark.circle.fill")
+                    Text("Dismiss")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss language hint")
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
@@ -127,6 +132,8 @@ public struct MenuBarView: View {
         switch model.status {
         case .idle:
             IdleHero(speakHotkey: HotkeyLabel.display(for: .speakSelectionFull))
+        case .loading(let title):
+            LoadingHero(previewTitle: title)
         case .playing(let nr):
             NowPlayingCard(
                 nowReading: nr,

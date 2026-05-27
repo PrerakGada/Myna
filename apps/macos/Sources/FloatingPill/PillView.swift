@@ -97,9 +97,14 @@ public struct PillView: View {
     // MARK: - collapsed
 
     /// Status label shown next to the bird in the collapsed pill.
-    /// "Myna" when nothing is playing (always-visible mode shows
-    /// the brand chip), "Paused" when paused, "Speaking" otherwise.
+    /// "Processing" during the pre-audio loading window (Lane 1 ~50ms
+    /// responsiveness), "Paused" when paused, "Speaking" while active,
+    /// "Myna" when idle (always-visible mode shows the brand chip).
+    /// Loading wins over speaking because it owns the leading edge of
+    /// the session — once a chunk arrives we flip to "Speaking" in the
+    /// same frame.
     private var collapsedStatusText: String {
+        if viewModel.isLoading && !viewModel.isSpeaking { return "Processing" }
         if viewModel.isPaused { return "Paused" }
         if viewModel.isSpeaking { return "Speaking" }
         return "Myna"
@@ -117,12 +122,23 @@ public struct PillView: View {
                 .foregroundStyle(Pill.foreground)
                 .matchedGeometryEffect(id: "status", in: pillNamespace)
 
-            // Hide the waveform when idle — a pulsing chip while
-            // nothing is playing reads as "loading" and is wrong UX.
-            // matchedGeometryEffect still needs the placeholder so
-            // the expand/collapse animation has something to anchor;
-            // we use an empty 0-width view in idle.
-            if viewModel.isSpeaking {
+            // Three-way affordance:
+            //   • Loading (pre-audio window) → indeterminate spinner so
+            //     the user sees the trigger took effect before audio
+            //     arrives. Lane 1 / v0.2.x feature.
+            //   • Speaking → animated WaveformDots.
+            //   • Idle (only reachable in always-visible mode) → empty
+            //     placeholder. A pulsing chip while nothing is playing
+            //     reads as "loading" and is wrong UX. matchedGeometry
+            //     still needs the anchor so we hold a 0-width Color.
+            if viewModel.isLoading && !viewModel.isSpeaking {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.mini)
+                    .tint(Pill.foreground)
+                    .frame(width: dotsWidth, height: 12)
+                    .matchedGeometryEffect(id: "waveform", in: pillNamespace)
+            } else if viewModel.isSpeaking {
                 WaveformDots(isPlaying: !viewModel.isPaused)
                     .frame(width: dotsWidth, height: 12)
                     .matchedGeometryEffect(id: "waveform", in: pillNamespace)
@@ -149,8 +165,14 @@ public struct PillView: View {
     // MARK: - expanded
 
     /// Headline shown in the expanded pill. Falls back through:
-    /// bridge preview text → "Paused" → "Speaking…" → "Myna" (idle).
+    /// loading (with preview text if available) → bridge preview text →
+    /// "Paused" → "Speaking…" → "Myna" (idle). Loading prefers the
+    /// dispatcher's preview text so the user can confirm the right
+    /// thing is queued before audio starts.
     private var expandedHeadline: String {
+        if viewModel.isLoading && !viewModel.isSpeaking {
+            return viewModel.previewText ?? "Processing\u{2026}"
+        }
         if let text = viewModel.previewText { return text }
         if viewModel.isPaused { return "Paused" }
         if viewModel.isSpeaking { return "Speaking\u{2026}" }
@@ -173,10 +195,18 @@ public struct PillView: View {
                     .matchedGeometryEffect(id: "status", in: pillNamespace)
                 HStack(spacing: 6) {
                     voiceChip
-                    // Only animate the waveform when we have an
-                    // active speech session AND we have preview text
-                    // worth animating alongside.
-                    if viewModel.isSpeaking && viewModel.previewText != nil {
+                    // Same three-way affordance as the collapsed view:
+                    //   loading → mini spinner
+                    //   speaking with preview text → waveform
+                    //   else → zero-width placeholder
+                    if viewModel.isLoading && !viewModel.isSpeaking {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .controlSize(.mini)
+                            .tint(Pill.foreground)
+                            .frame(width: dotsWidth, height: 10)
+                            .matchedGeometryEffect(id: "waveform", in: pillNamespace)
+                    } else if viewModel.isSpeaking && viewModel.previewText != nil {
                         WaveformDots(isPlaying: !viewModel.isPaused)
                             .frame(width: dotsWidth, height: 10)
                             .matchedGeometryEffect(id: "waveform", in: pillNamespace)

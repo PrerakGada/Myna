@@ -101,7 +101,8 @@ public struct NowPlayingCard: View {
         HStack(spacing: 6) {
             transportButton(
                 systemImage: "gobackward.15",
-                label: "Skip back 15 seconds",
+                label: "Back 15s",
+                a11yLabel: "Skip back 15 seconds",
                 action: onSkipBack
             )
             transportButton(
@@ -119,7 +120,8 @@ public struct NowPlayingCard: View {
             )
             transportButton(
                 systemImage: "goforward.15",
-                label: "Skip forward 15 seconds",
+                label: "Skip 15s",
+                a11yLabel: "Skip forward 15 seconds",
                 action: onSkipForward
             )
         }
@@ -130,6 +132,7 @@ public struct NowPlayingCard: View {
     private func transportButton(
         systemImage: String,
         label: String,
+        a11yLabel: String? = nil,
         hotkey: String? = nil,
         emphasised: Bool = false,
         action: @escaping () -> Void
@@ -137,6 +140,7 @@ public struct NowPlayingCard: View {
         TransportButton(
             systemImage: systemImage,
             label: label,
+            a11yLabel: a11yLabel ?? label,
             hotkey: hotkey,
             emphasised: emphasised,
             action: action
@@ -145,10 +149,14 @@ public struct NowPlayingCard: View {
 }
 
 /// Single transport button. Pulled out so hover state stays local to
-/// each button.
+/// each button. The label sits under the icon at caption size so users
+/// can identify each control without relying on the tooltip.
 private struct TransportButton: View {
     let systemImage: String
     let label: String
+    /// Longer description used for the tooltip + VoiceOver (e.g. "Skip
+    /// back 15 seconds" while the visible label is shortened to fit).
+    let a11yLabel: String
     let hotkey: String?
     let emphasised: Bool
     let action: () -> Void
@@ -160,14 +168,23 @@ private struct TransportButton: View {
         ZStack {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(fillColor)
-            Image(systemName: systemImage)
-                .font(.system(size: emphasised ? 15 : 13, weight: .semibold))
-                .foregroundStyle(PopoverDesign.bodyColor)
+            VStack(spacing: 2) {
+                Image(systemName: systemImage)
+                    .font(.system(size: emphasised ? 15 : 13, weight: .semibold))
+                    .foregroundStyle(PopoverDesign.bodyColor)
+                Text(label)
+                    .font(.system(size: 9, weight: .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(PopoverDesign.secondaryColor)
+            }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: emphasised ? 36 : 32)
+        // Slightly taller now that we host a caption row underneath
+        // the glyph. Still under the popover's 360pt outer footprint.
+        .frame(height: emphasised ? 44 : 40)
         .help(helpString)
-        .accessibilityLabel(label)
+        .accessibilityLabel(a11yLabel)
         .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .onHover { hovering in isHovering = hovering }
         .gesture(
@@ -191,7 +208,7 @@ private struct TransportButton: View {
     }
 
     private var helpString: String {
-        if let hotkey { return "\(label) (\(hotkey))" }
-        return label
+        if let hotkey { return "\(a11yLabel) (\(hotkey))" }
+        return a11yLabel
     }
 }

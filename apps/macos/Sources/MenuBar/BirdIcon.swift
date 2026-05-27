@@ -41,11 +41,13 @@ public enum BirdIcon {
 /// rebuilt continuously — `NSStatusBarButton setImage:` → CoreUI SF Symbol
 /// resolution → 99% main thread CPU even at idle.
 ///
-/// The new implementation is static: one SF Symbol per state, no
-/// `TimelineView`, no compositing layers. The visual richness (halo,
-/// equalizer bars, etc.) is restored later via the v0.2.1 UI revamp using
-/// `.symbolEffect()` (macOS 14+ GPU-accelerated animation) or a pre-rendered
-/// custom asset bundle.
+/// The implementation is static: one SF Symbol per state, no
+/// `TimelineView`, no compositing layers. The thinking state adds a
+/// `.symbolEffect(.pulse, options: .repeating)` on macOS 14+ — this is
+/// GPU-driven (Core Animation render server, not the main thread) so it
+/// cannot regress the 99.5% CPU bug. The pulse only fires while the
+/// state actually is `.thinking`; idle / speaking / paused / error stay
+/// fully static.
 public struct BirdIconView: View {
     public let state: IconState
     /// Kept for API stability — currently unused. The previous TimelineView
@@ -59,10 +61,26 @@ public struct BirdIconView: View {
     }
 
     public var body: some View {
-        Image(systemName: symbolName)
-            .renderingMode(.template)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityValue(state.rawValue)
+        if #available(macOS 14.0, *) {
+            Image(systemName: symbolName)
+                .renderingMode(.template)
+                // `.symbolEffect(.pulse, ...)` is GPU-driven on macOS 14+
+                // — it ships through Core Animation's render server, not
+                // the main thread, so it doesn't tip the menu bar back
+                // into the v0.2.1 99.5% CPU trap that killed TimelineView.
+                // We only apply it to the "thinking" state so the icon's
+                // pre-audio loading affordance is *visibly* distinct from
+                // idle (a static ellipsis is easy to mistake for "nothing
+                // happening" the first time a user hits the hotkey).
+                .symbolEffectIfPulsing(isPulsing: state == .thinking)
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityValue(state.rawValue)
+        } else {
+            Image(systemName: symbolName)
+                .renderingMode(.template)
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityValue(state.rawValue)
+        }
     }
 
     // MARK: - state → symbol
@@ -86,6 +104,27 @@ public struct BirdIconView: View {
         case .thinking: return "Myna thinking"
         case .paused: return "Myna paused"
         case .error: return "Myna error"
+        }
+    }
+}
+
+@available(macOS 14.0, *)
+private extension View {
+    /// Apply the `.pulse` symbol effect when `isPulsing` is true; no-op
+    /// otherwise. Wrapping the conditional in a view-modifier keeps the
+    /// caller free of `if/else` ladders and ensures both branches return
+    /// the same opaque type — SwiftUI's "modify the modifier list, not
+    /// the view tree" idiom for state-dependent effects.
+    @ViewBuilder
+    func symbolEffectIfPulsing(isPulsing: Bool) -> some View {
+        if isPulsing {
+            // `.repeating` is the macOS 14-compatible option (the more
+            // granular `.repeat(.periodic(delay:))` form is macOS 15+).
+            // The pulse cycle is ~1.5s which is plenty calm for a status
+            // icon — no need for finer-grained control.
+            self.symbolEffect(.pulse, options: .repeating)
+        } else {
+            self
         }
     }
 }

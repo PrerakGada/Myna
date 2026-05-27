@@ -35,6 +35,19 @@ public final class AudioPlayer: ObservableObject {
     @Published public private(set) var position: TimeInterval = 0
     @Published public private(set) var duration: TimeInterval = 0
     @Published public private(set) var speed: Double = 1.0
+    /// Pre-audio "we're talking to the daemon" flag. Flipped true by
+    /// AppDispatcher.synthesizeAndPlay() at the moment a speak request
+    /// fires; flipped false the instant the first chunk lands in the
+    /// queue (or synthesis fails / is stopped). UI surfaces (menu-bar
+    /// bird, popover hero, floating pill) observe this so the user gets
+    /// immediate feedback within ~50ms of a hotkey, instead of the
+    /// 200-300ms gap before audio actually plays.
+    ///
+    /// Lives here (not on AppDispatcher / PillBridge) because it's
+    /// semantically the prelude to AudioPlayer.state == .playing —
+    /// every consumer that already observes the player gets the new
+    /// signal for free.
+    @Published public var isLoading: Bool = false
 
     // MARK: engine
 
@@ -164,6 +177,9 @@ public final class AudioPlayer: ObservableObject {
         currentChunkStartOffset = 0
         pausedAtOffset = 0
         playStartWallTime = nil
+        // Clear any pending pre-audio loading flag — the session is
+        // gone, so the prelude indicator should retract too.
+        isLoading = false
         state = .idle
         if engine.isRunning {
             engine.stop()
@@ -246,6 +262,10 @@ public final class AudioPlayer: ObservableObject {
             try startEngineIfNeeded()
             playerNode.play()
             playStartWallTime = CACurrentMediaTime()
+            // Real audio is starting — drop the pre-audio loading flag
+            // so the menu bar / pill / popover transition out of the
+            // "Processing…" affordance and into the speaking visuals.
+            isLoading = false
             state = .playing
             startPositionTimer()
         } catch {

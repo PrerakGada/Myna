@@ -97,15 +97,20 @@ public struct VoiceTile: View {
     @ViewBuilder
     private var previewButton: some View {
         if let onPreview {
-            Image(systemName: "play.circle.fill")
-                .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(
-                    isPreviewHovering ? PopoverDesign.accent : PopoverDesign.secondaryColor
-                )
-                .contentShape(Circle())
-                .onHover { isPreviewHovering = $0 }
-                .onTapGesture { onPreview() }
-                .help("Preview \(displayLabel)")
+            HStack(spacing: 3) {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 11, weight: .regular))
+                Text("Preview")
+                    .font(.system(size: 9, weight: .medium))
+            }
+            .foregroundStyle(
+                isPreviewHovering ? PopoverDesign.accent : PopoverDesign.secondaryColor
+            )
+            .contentShape(Rectangle())
+            .onHover { isPreviewHovering = $0 }
+            .onTapGesture { onPreview() }
+            .help("Preview \(displayLabel)")
+            .accessibilityLabel("Preview \(displayLabel)")
         }
     }
 }

@@ -11,14 +11,16 @@ final class IconStateTests: XCTestCase {
         daemonState: String? = nil,
         paused: Bool = false,
         playing: Bool = false,
-        engineUp: Bool? = nil
+        engineUp: Bool? = nil,
+        loading: Bool = false
     ) -> IconState {
         IconStateMapping.compute(
             reachability: reachability,
             daemonStateRaw: daemonState,
             isPlayerPaused: paused,
             isPlayerPlaying: playing,
-            isEngineUp: engineUp
+            isEngineUp: engineUp,
+            isPlayerLoading: loading
         )
     }
 
@@ -73,6 +75,35 @@ final class IconStateTests: XCTestCase {
         // No engine_up signal: trust reachability + daemon state as before.
         XCTAssertEqual(compute(daemonState: "speaking", engineUp: nil), .speaking)
         XCTAssertEqual(compute(engineUp: nil), .idle)
+    }
+
+    // MARK: - loading (pre-audio prelude)
+
+    func test_loading_maps_to_thinking_when_idle() {
+        XCTAssertEqual(compute(loading: true), .thinking)
+    }
+
+    func test_loading_does_not_override_playing() {
+        XCTAssertEqual(compute(playing: true, loading: true), .speaking)
+    }
+
+    func test_loading_does_not_override_paused() {
+        XCTAssertEqual(compute(paused: true, loading: true), .paused)
+    }
+
+    func test_loading_does_not_override_daemon_error() {
+        XCTAssertEqual(compute(daemonState: "error", loading: true), .error)
+    }
+
+    func test_daemon_thinking_still_thinking_with_loading() {
+        // Both signals agree → still thinking. Just confirming no
+        // ordering surprise where loading short-circuits before daemon
+        // signals are read.
+        XCTAssertEqual(compute(daemonState: "synthesizing", loading: true), .thinking)
+    }
+
+    func test_loading_does_not_override_daemon_down() {
+        XCTAssertEqual(compute(reachability: .down, loading: true), .error)
     }
 
     func test_isAnimated_only_speaking_and_thinking() {
