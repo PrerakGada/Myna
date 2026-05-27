@@ -85,7 +85,10 @@ def test_v2_status_includes_daemon_version():
     client, fp, app = make_client()
     r = client.get("/v2/status").json()
     assert r["daemon"]["version"] == myna.__version__
-    assert r["daemon"]["version"] == "0.2.0"
+    # See test_v2_health_includes_version for why we don't pin the
+    # version digits here — line above already covers identity with
+    # myna.__version__; the literal would just churn on every bump.
+    assert r["daemon"]["version"].count(".") >= 2
 
 
 def test_v2_status_includes_registry_items():
