@@ -23,7 +23,7 @@ const ITEMS: Item[] = [
   },
   {
     q: "Does it work with Safari or Firefox?",
-    a: <>The "read this article" feature currently targets Chrome. Selection reading (<span className="font-mono text-ink-soft">⌘⌥⇧S</span>) works in any app, including Safari and Firefox, because it operates on selected text rather than the page itself.</>,
+    a: <>The "read this article" feature works in Chrome and Safari. Selection reading (<span className="font-mono text-ink-soft">⌘⌥⇧S</span>) works in any app, including Firefox, because it operates on selected text rather than the page itself.</>,
   },
   {
     q: "Can I drive Myna from BetterTouchTool, Shortcuts, or Alfred?",

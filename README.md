@@ -1,126 +1,128 @@
 # Myna
 
-[![platform: macOS Apple Silicon](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon-black)](#requirements)
-[![Windows: 👍 vote](https://img.shields.io/badge/Windows-%F0%9F%91%8D%20vote%20here-0075ca)](https://github.com/PrerakGada/myna/issues/1)
-[![license: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+**Listen to your screen.** An always-on, fully local text-to-speech companion for macOS.
 
-Always-on, fully local text-to-speech companion for macOS (Apple Silicon).
-Reads selections, web articles, and Claude Code output aloud through
-Kokoro (mlx-audio) — zero API cost, controlled from the menu bar and
-recordable global hotkeys.
+Myna lives in your menu bar and reads any selection, any web article, or any Claude Code reply aloud with a single hotkey. Everything happens on your Mac — text never leaves the device.
 
-> **Myna runs on macOS (Apple Silicon) today.** On Windows?
-> [👍 the vote issue](https://github.com/PrerakGada/myna/issues/1) — we
-> commit to a Windows build when the issue crosses **100 reactions**. See
-> the [Roadmap](#roadmap) for the full decision rule.
+[Install](#install) · [What it does](#what-it-does) · [Hotkeys](#hotkeys) · [CLI](#cli) · [How it works](#how-it-works)
 
-## What it does
-
-- **Speak any selection** — select text in any app, press the hotkey, listen.
-- **Read Chrome articles** — one hotkey reads the current page's main article.
-- **Claude Code, on your terms** — parallel sessions announce their replies
-  silently into the menu bar; you click the one you want to hear (full or
-  summary). They never all talk at once.
-- **Full or summary** — separate triggers; summaries run locally via Ollama.
-- **Controls** — pause / resume / stop / speed from the menu bar or hotkeys.
-
-## Architecture
-
-```
-Adapters (hotkeys, CLI, CC hook)  ->  myna daemon (:8766)  ->  mlx-audio (:8765)
-Hammerspoon menu bar  <- /status -'
-```
-
-- **Engine** — mlx-audio Kokoro server (`af_heart`), 24/7 via LaunchAgent.
-- **Brain** — Python FastAPI daemon: extract -> summarise -> chunk -> play,
-  plus the Claude announce/pick registry.
-- **Surface** — Hammerspoon menu bar + recordable hotkeys; `myna` CLI; CC Stop hook.
-
-## Requirements
-
-- **macOS 13+ on Apple Silicon** (M1 / M2 / M3 / M4). Intel Macs and
-  Windows are not supported today — see the [Roadmap](#roadmap).
-- The existing mlx-audio venv at `~/.venvs/mlx-audio` with Kokoro cached
-  (see `docs/superpowers/specs/2026-05-24-myna-design.md`).
-- Python 3.13 at `~/.local/bin/python3.13`.
-- [Hammerspoon](https://www.hammerspoon.org) (free).
-- [Ollama](https://ollama.com) with `qwen3.5:4b` (summary mode only).
+---
 
 ## Install
 
-```bash
-git clone <repo-url> ~/Developer/myna
-cd ~/Developer/myna
-./install.sh
+```sh
+brew install --cask PrerakGada/myna/myna
 ```
 
-Then open Hammerspoon, Reload Config, grant Accessibility permission, and
-enable **Launch Hammerspoon at login** (Hammerspoon → Preferences) so the
-menu bar and hotkeys survive reboots.
+Or grab the signed, notarised DMG from [the latest release](https://github.com/PrerakGada/myna/releases/latest).
 
-## Default shortcuts (all rebindable)
+On first launch Myna walks you through a 60-second spoken intro, asks for Accessibility permission, and then sits quietly in your menu bar.
+
+**Requirements:** macOS 14 (Sonoma) or later · Apple Silicon (M1/M2/M3/M4).
+
+---
+
+## What it does
+
+- **Speak any selection** — highlight text in any app, press the hotkey, listen.
+- **Read articles** — Chrome or Safari front tab, parsed and read in order.
+- **Claude Code, on your terms** — when a Claude Code hook fires, a small playable card slides in from the top-right of your screen. One tap to play, one to dismiss. Parallel sessions stack up to three; nothing ever talks over itself.
+- **Full or summary** — separate triggers; summaries run locally via Ollama.
+- **Floating pill** — while Myna reads, a slim transport sits at the bottom of the active display. Hover to expand into a mini player; drag it wherever you want.
+- **Per-app voices** — pin a different voice per app. Bella for articles, Joe for code, Anna for chat.
+- **Karaoke ribbon** (opt-in) — the current spoken line appears at the bottom of your screen, line by line.
+- **Voice previews** — audition voices in Settings before committing.
+- **Trackpad gestures** (opt-in) — four-finger tap to speak, four-finger double-tap to stop.
+
+---
+
+## Hotkeys
+
+All shortcuts are rebindable from **Settings → Hotkeys**.
 
 | Action | Default |
 |---|---|
 | Speak selection (full) | ⌘⌥⇧S |
 | Speak selection (summary) | ⌘⌥⇧A |
-| Read Chrome article | ⌘⌥⇧R |
-| Pause / Resume | ⌘⌥⇧Space |
+| Read article (front tab) | ⌘⌥⇧R |
+| Pause / resume | ⌘⌥⇧Space |
 | Stop | ⌘⌥⇧. |
 
-Defaults use ⌘⌥⇧ (Command-Option-Shift) to avoid clashing with app shortcuts. The menu-bar icon is a Myna bird; Hammerspoon's Dock icon is hidden so Myna runs as a background menu-bar app.
+Defaults use ⌘⌥⇧ (Command-Option-Shift) to stay clear of common app shortcuts.
 
-Rebind any of them: menu bar → **Customize Shortcuts…** → pick an action →
-press the new chord.
+---
 
 ## CLI
 
-```bash
+```sh
 myna "Read this aloud."
 pbpaste | myna
 myna --summary "Long text to condense first."
 myna --speed 1.25 "Faster reading."
 ```
 
-## Config
+---
 
-- `~/.config/myna/config.json` — voice, speed, summary model, ports, and the
-  summariser controls `summary_think` (default `false` — disables the reasoning
-  model's "thinking" phase so a summary returns in seconds instead of minutes;
-  set `true` for slower, higher-effort summaries) and `summary_timeout`.
-- `~/.config/myna/keybindings.json` — recorded shortcuts.
-- Logs: `~/Library/Logs/myna-{engine,daemon}.log`.
+## Configuration
 
-## Status
+- `~/.config/myna/config.json` — voice, speed, summary model, ports
+- `~/.config/myna/voice_wardrobe.json` — per-app voice rules
+- `~/.config/myna/keybindings.json` — recorded shortcuts
+- Logs: `~/Library/Logs/myna-{engine,daemon}.log`
 
-The daemon, adapters, control surface, and installer are built and tested
-(33 automated tests). The remaining work is the one-time guided install on a
-machine: running `install.sh`, installing/reloading Hammerspoon, granting
-Accessibility, enabling launch-at-login, and confirming each integration
-speaks. Not yet published to GitHub.
+---
+
+## How it works
+
+```
+Selection / hotkey / Claude Code event
+                  ↓
+        Myna.app
+        (menu bar · floating pill · settings)
+                  ↓
+        myna daemon (FastAPI, :8766)
+                  ↓
+        mlx-audio Kokoro engine (:8765)
+```
+
+- **Voice engine** — [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) running on [mlx-audio](https://github.com/ml-explore/mlx-audio). ~80 MB model, runs entirely on the Apple Neural Engine.
+- **Daemon** — Python FastAPI service that handles extraction, summarisation, chunking, and streaming. Priority-first chunking returns the first audio in ~240 ms.
+- **App** — Swift / SwiftUI menu-bar app with a custom popover, the floating pill, the karaoke sidecar, and global hotkeys (built with [Sindre Sorhus's KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts)).
+- **Auto-update** — [Sparkle 2](https://sparkle-project.org), EdDSA-signed.
+
+---
+
+## Privacy
+
+- Text and audio stay on your Mac. No telemetry, no network calls except to localhost.
+- The daemon binds to `127.0.0.1` only. Firewall-friendly by default.
+- Sparkle update checks hit GitHub Releases — that's the only outbound traffic.
+
+---
 
 ## Roadmap
 
-Myna is built in public, by one person, in spare hours. We ship what users
-vote for.
+Myna is built for macOS Apple Silicon today. Other platforms will follow if there's clear demand. File an [issue](https://github.com/PrerakGada/myna/issues) with feature requests or bug reports.
 
-| Platform | Status | How to influence |
-|---|---|---|
-| **macOS Apple Silicon** | ✅ Shipped — v0.1.0 | [File issues](https://github.com/PrerakGada/myna/issues/new) |
-| **Windows** | 🗳️ Gauging interest | [👍 vote on #1](https://github.com/PrerakGada/myna/issues/1) — we build at **100 reactions** |
-| **Intel Mac** | 🤔 Not planned | Open an issue if you'd use it |
-| **Linux** | 🤔 Not planned | Open an issue if you'd use it |
+---
 
-**The Windows decision rule** (full text on
-[issue #1](https://github.com/PrerakGada/myna/issues/1)):
+## Develop
 
-- **< 30 reactions at 90 days** → close the issue, Windows is parked.
-- **30 – 99 reactions at 90 days** → extend 60 days, re-evaluate at day 150.
-- **≥ 100 reactions** → commit to scoping a Windows build.
+```sh
+git clone https://github.com/PrerakGada/myna
+cd myna
 
-A monthly heartbeat post on the issue reports the current count and
-whatever shipped on macOS that month. Source-of-truth for the issue body:
-[`docs/roadmap/windows-vote-issue.md`](docs/roadmap/windows-vote-issue.md).
+# Daemon
+cd daemon && pip install -e . && pytest
 
-Until the threshold is crossed, all engineering hours go into deepening
-the macOS experience — voices, workflows, Claude Code integration.
+# Mac app
+cd ../apps/macos && ./dev.sh
+```
+
+Project layout, contribution guide, and architecture notes live in [`docs/`](docs/).
+
+---
+
+## License
+
+[MIT](LICENSE). Built by [Prerak Gada](https://github.com/PrerakGada).
