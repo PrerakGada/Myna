@@ -14,7 +14,11 @@ final class PillSettingsTests: XCTestCase {
     private var store: SettingsStore!
 
     override func setUp() async throws {
-        try await super.setUp()
+        // Async override (NOT sync `setUp()`) so the body inherits the
+        // class's @MainActor isolation and can write the @MainActor
+        // properties below. We DO NOT call `try await super.setUp()` —
+        // that sends a non-Sendable XCTestCase across actors, which CI's
+        // Swift 6 strict concurrency rejects. Base setUp() is a no-op.
         suiteName = "dev.myna.app.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
         defaults.removePersistentDomain(forName: suiteName)
@@ -22,11 +26,11 @@ final class PillSettingsTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        // Async override for the same isolation reason as setUp().
         defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         store = nil
         suiteName = nil
-        try await super.tearDown()
     }
 
     func test_pillAlwaysVisible_defaults_off() {

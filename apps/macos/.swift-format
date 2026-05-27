@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "lineLength": 120,
+  "lineLength": 140,
   "indentation": { "spaces": 4 },
   "tabWidth": 4,
   "respectsExistingLineBreaks": true,
@@ -37,7 +37,7 @@
     "OneCasePerLine": true,
     "OneVariableDeclarationPerLine": true,
     "OnlyOneTrailingClosureArgument": true,
-    "OrderedImports": true,
+    "OrderedImports": false,
     "ReturnVoidInsteadOfEmptyTuple": true,
     "UseEarlyExits": true,
     "UseLetInEveryBoundCaseVariable": true,

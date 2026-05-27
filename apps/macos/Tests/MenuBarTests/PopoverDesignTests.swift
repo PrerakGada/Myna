@@ -14,6 +14,11 @@ import XCTest
 
 @testable import Myna
 
+// SpeedChips.options and PopoverHeader.defaultVersion() are @MainActor-isolated
+// (they live in SwiftUI view layer). Hoist the whole class onto the main actor
+// so synchronous XCTestCase methods can call them without an `await` dance —
+// the design-token tests below are pure-data assertions, no real concurrency.
+@MainActor
 final class PopoverDesignTests: XCTestCase {
 
     // MARK: - SpeedChips.options

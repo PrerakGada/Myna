@@ -134,8 +134,7 @@ public final class OnboardingController: ObservableObject {
         // version so the What's New dialog doesn't immediately re-fire
         // for this user (parallels WhatsNewLauncher.markFirstRunComplete).
         if state.lastSeenVersion == "0.0.0",
-            let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        {
+           let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
             state.lastSeenVersion = raw
         }
         _ = store.save(state)

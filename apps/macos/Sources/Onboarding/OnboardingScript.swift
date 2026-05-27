@@ -58,6 +58,11 @@ public struct OnboardingSlide: Equatable, Sendable {
     }
 }
 
+// The slide bodies and spoken lines below are user-visible prose. Hand-breaking
+// them to fit the lint budget would scatter sentences across multiple source
+// lines for no reading-benefit, so we suspend `line_length` for this enum and
+// re-enable it after the script.
+// swiftlint:disable line_length
 public enum OnboardingScript {
     /// Ordered list of slides for the cinematic. Adapted from the
     /// 60s script in docs/v0.2-plan/03-ux-direction.md § 2.
@@ -114,3 +119,4 @@ public enum OnboardingScript {
         ),
     ]
 }
+// swiftlint:enable line_length

@@ -102,6 +102,12 @@ public struct GesturesTab: View {
     // MARK: - body strings (kept as plain Swift constants so the
     // compiler doesn't have to type-check string concatenation inside
     // a SwiftUI body builder)
+    //
+    // These are user-facing prose paragraphs rendered verbatim in the
+    // Settings → Gestures tab. We keep each paragraph on a single source
+    // line so editors can wrap them visually without us hand-breaking
+    // sentences — the lint rule isn't useful here.
+    // swiftlint:disable line_length
 
     private let howItWorksBody = """
 Tap = brief contact with all four fingers, then lift. Click = press the trackpad firmly while four fingers are down. Double versions need a second tap or click within the system double-click interval.
@@ -122,4 +128,5 @@ Tap = brief contact with all four fingers, then lift. Click = press the trackpad
     private let limitClickBody = """
   Press the trackpad firmly enough to actuate the click (the haptic feedback / audible click). Force Touch is not required — a normal click works on any trackpad.
 """
+    // swiftlint:enable line_length
 }

@@ -13,8 +13,10 @@ final class SettingsViewModelTests: XCTestCase {
     private var store: SettingsStore!
 
     override func setUp() async throws {
-        try await super.setUp()
-        // Unique suite per test, wiped clean.
+        // Async override (not sync `setUp()`) so the body inherits the
+        // class's @MainActor isolation. Skip `super.setUp()` — that sends
+        // a non-Sendable XCTestCase across the @MainActor boundary, which
+        // CI's Swift 6 strict concurrency rejects. Base setUp() is a no-op.
         suiteName = "dev.myna.app.tests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
         defaults.removePersistentDomain(forName: suiteName)
@@ -26,7 +28,6 @@ final class SettingsViewModelTests: XCTestCase {
         defaults = nil
         store = nil
         suiteName = nil
-        try await super.tearDown()
     }
 
     func test_default_values_match_daemon_config() {

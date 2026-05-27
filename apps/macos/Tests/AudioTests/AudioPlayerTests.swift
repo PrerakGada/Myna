@@ -12,7 +12,22 @@ final class AudioPlayerTests: XCTestCase {
     private var subscriptions: Set<AnyCancellable> = []
 
     override func setUp() async throws {
-        try await super.setUp()
+        // Use the async override (NOT the sync `setUp()`) so the body
+        // inherits the @MainActor isolation of the class. Without it,
+        // CI's Swift 6 strict concurrency flags every property write as
+        // "main actor-isolated property cannot be mutated from a
+        // nonisolated context."
+        //
+        // Skip `try await super.setUp()` — that *sends* a non-Sendable
+        // XCTestCase across the @MainActor boundary which is the other
+        // strict-concurrency violation CI catches. Base setUp() is a
+        // no-op anyway, so omitting it has no effect on test semantics.
+        //
+        // NB: CI runners (macos-15) crash this whole suite — AVAudioEngine
+        // there has no output device, the player node never delivers
+        // completion callbacks, and xctest's watchdog terminates the
+        // process. The CI workflow skips this suite at the xcodebuild
+        // level (`-skip-testing`) so we don't see those crashes.
         subscriptions.removeAll()
     }
 
@@ -162,6 +177,65 @@ final class AudioPlayerTests: XCTestCase {
         XCTAssertEqual(player.duration, 0.6, accuracy: 0.05)
         try await waitForState(player, .idle, timeout: 5.0)
         XCTAssertEqual(player.position, player.duration, accuracy: 0.2)
+    }
+
+    // MARK: late-arriving chunk after queue drain (priority-first regression)
+
+    /// Regression test for the v0.2.0 paragraph-cutoff bug.
+    ///
+    /// After the priority-first chunking optimization landed (commit
+    /// 61d27b3), the first chunk from the daemon is intentionally short
+    /// (~15 words → ~2s of audio) so time-to-first-audio drops to ~300ms.
+    /// The downstream effect: chunk N often finishes playing BEFORE the
+    /// daemon has finished synthesizing chunk N+1. The player would
+    /// transition to `.idle` in `handleChunkCompletion`, and when chunk
+    /// N+1 finally arrived via `enqueue`, neither branch fired —
+    /// `state == .idle && nextIndex == 0` is false (queue is non-empty),
+    /// and `state == .playing || .paused` is false (we just went idle).
+    /// Result: only the first line of any paragraph would play. Users
+    /// reported "Myna never plays a full paragraph."
+    ///
+    /// Fix: `enqueue` must also handle the late-arrival case — schedule
+    /// the new chunk and resume playback under the SAME session token.
+    func test_late_chunk_after_idle_resumes_playback() async throws {
+        let player = AudioPlayer()
+        // First chunk lands and plays to completion. Queue then drains
+        // and the player goes idle (this mirrors what happens between
+        // the eager first chunk and a slow-to-synthesize chunk 1).
+        player.enqueue(buffer: SineBuffer.make(duration: 0.2))
+        try await waitForState(player, .idle, timeout: 2.0)
+        XCTAssertEqual(player.state, .idle)
+
+        // Now chunk 1 finally arrives. Without the fix, this is a no-op
+        // — the new buffer just sits in the queue unscheduled.
+        player.enqueue(buffer: SineBuffer.make(duration: 0.4))
+        XCTAssertEqual(player.state, .playing,
+                       "late-arriving chunk after queue drain must restart playback")
+        // And it must actually play through to completion.
+        try await waitForState(player, .idle, timeout: 2.0)
+        // Total duration = both chunks' sums.
+        XCTAssertEqual(player.duration, 0.6, accuracy: 0.05)
+        // Final position should land at total duration (we played both).
+        XCTAssertEqual(player.position, player.duration, accuracy: 0.15)
+    }
+
+    /// Same scenario but with multiple late chunks — simulates a long
+    /// paragraph where every chunk arrives slightly after the previous
+    /// one finishes.
+    func test_multiple_late_chunks_all_play() async throws {
+        let player = AudioPlayer()
+        var totalDuration: TimeInterval = 0
+        for _ in 0..<3 {
+            let dur: TimeInterval = 0.2
+            player.enqueue(buffer: SineBuffer.make(duration: dur))
+            totalDuration += dur
+            // Wait for this chunk to finish before queueing the next.
+            try await waitForState(player, .idle, timeout: 2.0)
+        }
+        // All three should have played in sequence; we end .idle with
+        // position == sum of all chunk durations.
+        XCTAssertEqual(player.duration, totalDuration, accuracy: 0.05)
+        XCTAssertEqual(player.position, totalDuration, accuracy: 0.2)
     }
 
     // MARK: speed persists across chunks

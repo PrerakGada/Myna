@@ -1,7 +1,5 @@
 // SemverTests.swift — exercise the small semver helper used by the
 // What's New dialog gating (S10).
-//
-// swiftlint:disable force_unwrapping identifier_name
 import XCTest
 
 @testable import Myna
@@ -67,5 +65,3 @@ final class SemverTests: XCTestCase {
         XCTAssertEqual(Semver("0.2.1")?.displayString, "0.2.1")
     }
 }
-
-// swiftlint:enable force_unwrapping identifier_name

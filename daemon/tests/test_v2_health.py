@@ -27,7 +27,11 @@ def test_v2_health_includes_version():
     client, fp, app = make_client()
     r = client.get("/v2/health").json()
     assert r["version"] == myna.__version__
-    assert r["version"] == "0.2.0"
+    # Sanity-check the version string is a non-empty semver. We
+    # deliberately don't hardcode the version digits here — that just
+    # creates a test failure on every release bump that adds no signal
+    # beyond what the line above already provides.
+    assert r["version"].count(".") >= 2
 
 
 def test_v2_health_engine_up_field():

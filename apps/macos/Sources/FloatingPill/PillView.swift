@@ -433,6 +433,7 @@ private final class WaveformDotsView: NSView {
 // MARK: - previews
 
 #if DEBUG
+// swiftlint:disable:next type_name
 struct PillView_PreviewModel {
     @MainActor
     static func make(
