@@ -114,15 +114,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // recents/now-reading state populates when speakSelection runs.
         self.dispatcher.attach(menuController: self.menuController)
         self.didBootstrap = true
-        // First bootstrap → mark first_run_complete so the next minor
-        // bump triggers the What's New dialog (S10 AC #7).
-        WhatsNewLauncher.shared.markFirstRunComplete()
-        // Show the What's New dialog if it's due (minor bump since
-        // last_seen_version). Runs ~immediately after bootstrap returns
-        // so the menu bar has time to come up first.
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            _ = WhatsNewLauncher.shared.showIfDue()
+        // First-run gate (S11):
+        //   • Truly fresh install (state.json missing OR last_seen_version
+        //     == "0.0.0") → show the cinematic. The cinematic sets
+        //     first_run_complete=true + seeds last_seen_version when it
+        //     finishes / is skipped.
+        //   • Upgrader from v0.1.x (state.json has a real version) → mark
+        //     first_run_complete immediately and let the What's New
+        //     dialog show as before. No cinematic for upgraders.
+        let priorState = WhatsNewStateStore.shared.load()
+        let isTrulyFresh = !priorState.firstRunComplete && priorState.lastSeenVersion == "0.0.0"
+        if isTrulyFresh {
+            // Cinematic owns the first_run_complete slot per S10 AC #7.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                _ = OnboardingLauncher.shared.present(
+                    client: self.client,
+                    player: self.player,
+                    settings: self.settings
+                )
+            }
+        } else {
+            // Upgrader path — mark complete (idempotent) and show
+            // What's New if a minor bump landed.
+            WhatsNewLauncher.shared.markFirstRunComplete()
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                _ = WhatsNewLauncher.shared.showIfDue()
+            }
         }
     }
 
