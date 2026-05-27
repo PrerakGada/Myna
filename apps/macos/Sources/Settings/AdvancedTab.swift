@@ -25,6 +25,7 @@ public struct AdvancedTab: View {
                 Toggle("Show floating pill while speaking", isOn: $showFloatingPill)
                 Toggle("Keep floating pill always visible", isOn: $viewModel.pillAlwaysVisible)
                     .disabled(!showFloatingPill)
+                // swiftlint:disable:next line_length
                 Text("A small chip appears at the bottom of your active display when Myna is speaking. Hover to expand into a mini-player. Turn on \u{201C}always visible\u{201D} to keep the chip on screen even when nothing is playing — drag it anywhere and Myna will remember.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -262,6 +262,9 @@ public final class PillViewModel: ObservableObject {
     }
 
     #if DEBUG
+    // Leading underscore on the next func deliberately signals
+    // "preview-only API, not for production code paths".
+    // swiftlint:disable identifier_name
     /// Preview-only escape hatch. Not for production code paths.
     /// Forces published booleans so SwiftUI previews can render a
     /// specific visual state without driving the real AudioPlayer.
@@ -278,5 +281,6 @@ public final class PillViewModel: ObservableObject {
         self.isAlwaysVisible = alwaysVisible
         self.isLoading = loading
     }
+    // swiftlint:enable identifier_name
     #endif
 }

@@ -2,8 +2,6 @@
 // orchestration: debounce, cancel-on-switch, ducking, 503 warming-label.
 // We feed canned WAV data via MockURLProtocol and a stub AudioDuckable
 // that records the duck factor history.
-//
-// swiftlint:disable identifier_name
 import AVFoundation
 import XCTest
 
@@ -12,7 +10,6 @@ import XCTest
 @MainActor
 final class VoicePreviewServiceTests: XCTestCase {
 
-    // swiftlint:disable:next force_unwrapping
     private let baseURL = URL(string: "http://127.0.0.1:8766")!
 
     override func setUp() {
@@ -67,7 +64,6 @@ final class VoicePreviewServiceTests: XCTestCase {
 
     func test_503_yields_warming_state_then_idle() async throws {
         MockURLProtocol.enqueue { req in
-            // swiftlint:disable:next force_unwrapping
             (.make(url: req.url!, status: 503), Data())
         }
         let client = makeClient()
@@ -89,7 +85,6 @@ final class VoicePreviewServiceTests: XCTestCase {
         // Only enqueue ONE handler; the second click should be debounced
         // and never hit the network.
         MockURLProtocol.enqueue { req in
-            // swiftlint:disable:next force_unwrapping
             (.make(url: req.url!, status: 200), wav)
         }
         let client = makeClient()
@@ -112,7 +107,6 @@ final class VoicePreviewServiceTests: XCTestCase {
     func test_ducking_envelope_records_duck_and_restore() async throws {
         let wav = try silenceWAV()
         MockURLProtocol.enqueue { req in
-            // swiftlint:disable:next force_unwrapping
             (.make(url: req.url!, status: 200), wav)
         }
         let client = makeClient()
@@ -128,7 +122,6 @@ final class VoicePreviewServiceTests: XCTestCase {
     func test_cancel_restores_volume_immediately() async throws {
         let wav = try silenceWAV()
         MockURLProtocol.enqueue { req in
-            // swiftlint:disable:next force_unwrapping
             (.make(url: req.url!, status: 200), wav)
         }
         let client = makeClient()
@@ -141,5 +134,3 @@ final class VoicePreviewServiceTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(sink.restoreCount, 1)
     }
 }
-
-// swiftlint:enable identifier_name

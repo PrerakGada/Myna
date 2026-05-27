@@ -399,12 +399,21 @@ public final class MultitouchBridge {
 
     // MARK: - Test hooks (internal)
 
+    // Leading underscore is intentional on these two test hooks:
+    // signals "test-only API, not part of the public surface" without
+    // factoring them into a separate testing protocol.
+    // swiftlint:disable identifier_name
+
     /// Inject a touch frame synthetically — used by integration smoke
     /// tests that don't have a real trackpad. Bypasses the C callback.
     func _testInjectFrame(_ frame: GestureTouchFrame) {
         recognizer.onTouchFrame(frame)
     }
+
+    /// Inject a pressure event synthetically; companion to
+    /// `_testInjectFrame` for the click side of the state machine.
     func _testInjectPressure(_ event: GesturePressureEvent) {
         recognizer.onPressure(event)
     }
+    // swiftlint:enable identifier_name
 }

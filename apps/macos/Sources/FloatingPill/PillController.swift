@@ -375,7 +375,7 @@ public final class PillController: ObservableObject {
         window.layoutIfNeeded()
         let fitting = hostingView?.fittingSize ?? window.frame.size
         let width = max(80, fitting.width)
-        let height = max(Pill_minHeight, fitting.height)
+        let height = max(pillMinHeight, fitting.height)
 
         if window.hasUserPosition {
             // Resize in place around the current origin, but clamp
@@ -481,7 +481,7 @@ public final class PillController: ObservableObject {
     }
 }
 
-/// Lifted from the design tokens in PillView (which are file-private
-/// there). Keep small and out of view-model so the controller doesn't
-/// have to import SwiftUI just for a number.
-private let Pill_minHeight: CGFloat = 24
+/// Lifted from the design tokens in PillView (file-private there). Keep
+/// small and out of the view-model so the controller doesn't have to
+/// import SwiftUI just for a number.
+private let pillMinHeight: CGFloat = 24

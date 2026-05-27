@@ -1,7 +1,5 @@
 // RecentItemTests.swift — exercises display formatting + the ring-
 // buffer trim behaviour (S06 Recent submenu).
-//
-// swiftlint:disable force_unwrapping identifier_name
 import XCTest
 
 @testable import Myna
@@ -90,5 +88,3 @@ final class RecentItemTests: XCTestCase {
         XCTAssertEqual(store.load(), [])
     }
 }
-
-// swiftlint:enable force_unwrapping identifier_name
