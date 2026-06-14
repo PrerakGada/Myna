@@ -16,9 +16,17 @@ brew install --cask PrerakGada/myna/myna
 
 Or grab the signed, notarised DMG from [the latest release](https://github.com/PrerakGada/myna/releases/latest).
 
+Then finish the setup — this installs the on-device voice engine (mlx-audio + the Kokoro model), registers the Claude Code hook, and starts the background services:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PrerakGada/Myna/v0.3.0/dist/setup.sh | bash
+```
+
+It's idempotent, so it's safe to re-run; `myna doctor` checks that the daemon and engine are up.
+
 On first launch Myna walks you through a 60-second spoken intro, asks for Accessibility permission, and then sits quietly in your menu bar.
 
-**Requirements:** macOS 14 (Sonoma) or later · Apple Silicon (M1/M2/M3/M4).
+**Requirements:** macOS 14 (Sonoma) or later · Apple Silicon (M1/M2/M3/M4) — the voice engine (MLX) is Apple-Silicon-only.
 
 ---
 

@@ -1,6 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 PORT="${MYNA_PORT:-8766}"
+
+# Resolve this script through any symlink (install.sh symlinks it into
+# ~/.local/bin/myna) so subcommands can find sibling repo files.
+_src="${BASH_SOURCE[0]}"
+while [ -L "$_src" ]; do
+  _dir="$(cd -P "$(dirname "$_src")" && pwd)"
+  _src="$(readlink "$_src")"
+  [[ "$_src" != /* ]] && _src="$_dir/$_src"
+done
+SELF_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
+REPO_ROOT="$(cd "$SELF_DIR/.." && pwd)"
+
+# Subcommands (must come before the speak-text fast path).
+case "${1:-}" in
+  setup)
+    # Finish a fresh install: voice engine, model, CC hook, launchagent.
+    exec bash "$REPO_ROOT/dist/setup.sh" "${@:2}"
+    ;;
+  doctor)
+    # Quick health check of the two local services.
+    d=$(curl -sf -m 2 "http://127.0.0.1:${PORT}/v2/health" >/dev/null 2>&1 && echo up || echo DOWN)
+    e=$(curl -sf -m 2 "http://127.0.0.1:${MYNA_ENGINE_PORT:-8765}/v1/models" >/dev/null 2>&1 && echo up || echo DOWN)
+    printf 'daemon (127.0.0.1:%s): %s\nengine (127.0.0.1:%s): %s\n' \
+      "$PORT" "$d" "${MYNA_ENGINE_PORT:-8765}" "$e"
+    [ "$d" = up ] && [ "$e" = up ] && exit 0 || exit 1
+    ;;
+esac
+
 MODE="full"
 SPEED=""
 ARGS=()
