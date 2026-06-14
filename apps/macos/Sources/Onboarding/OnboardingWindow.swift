@@ -97,6 +97,11 @@ final class OnboardingWindow: NSWindow {
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         isMovableByWindowBackground = true
+        // OnboardingLauncher holds a strong reference and nils it on close;
+        // opt out of AppKit's release-on-close so the two don't double-free
+        // the window (crash on finishing/closing onboarding). Matches
+        // WhatsNewWindow + CCToastWindow + SetupWindow.
+        isReleasedWhenClosed = false
         // Match the WhatsNewWindow trick: standardWindowButton lookup
         // lets us hide the traffic-light buttons we don't want without
         // dropping the titled style entirely.

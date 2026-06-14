@@ -55,6 +55,12 @@ final class SetupWindow: NSWindow {
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         isMovableByWindowBackground = true
+        // SetupLauncher holds a strong reference and nils it on close. With
+        // the AppKit default (isReleasedWhenClosed = true) AppKit ALSO releases
+        // the window on close — a double-free that crashes the app the moment
+        // the user clicks Done / Not now / Close (or the title-bar ✕). Opt out
+        // so ARC is the sole owner. (Matches WhatsNewWindow + CCToastWindow.)
+        isReleasedWhenClosed = false
         standardWindowButton(.zoomButton)?.isHidden = true
         standardWindowButton(.miniaturizeButton)?.isHidden = true
 

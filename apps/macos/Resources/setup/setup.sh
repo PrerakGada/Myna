@@ -143,15 +143,25 @@ else:
 PY
 fi
 
-# 6. Warm the voice model (best-effort — triggers the one-time Kokoro download).
-say "Warming the voice model (first run downloads ~340 MB; this may take a minute)…"
-if curl -sf -m 180 -X POST "http://127.0.0.1:${DAEMON_PORT}/v2/synthesize" \
-     -H 'Content-Type: application/json' \
-     -d '{"text":"Myna is ready.","voice":"af_heart","speed":1.0,"mode":"full"}' \
-     -o /dev/null 2>/dev/null; then
+# 6. Pre-download the voice model so it's guaranteed cached before we finish.
+#    The old approach warmed via a timeout-bounded /v2/synthesize call, which
+#    "didn't finish" on slower networks and left users hitting 503s on first
+#    read. snapshot_download resumes partial downloads and has no synth/HTTP
+#    timeout to fight, so the model is fully cached when this returns.
+say "Downloading the voice model (~340 MB, one time; resumes if interrupted)…"
+MODEL_ID="${MYNA_VOICE_MODEL:-prince-canuma/Kokoro-82M}"
+if "$ENGINE_VENV/bin/python" -c \
+     'import sys; from huggingface_hub import snapshot_download; snapshot_download(sys.argv[1])' \
+     "$MODEL_ID"; then
   say "Voice model ready."
+  # Best-effort: prime the (now-cached) model into engine memory so the first
+  # real read is instant. Short timeout — the download already happened above.
+  curl -sf -m 60 -X POST "http://127.0.0.1:${DAEMON_PORT}/v2/synthesize" \
+       -H 'Content-Type: application/json' \
+       -d '{"text":"Myna is ready.","voice":"af_heart","speed":1.0,"mode":"full"}' \
+       -o /dev/null 2>/dev/null || true
 else
-  warn "warm-up didn't finish — the model will download on your first real read instead."
+  warn "model download didn't finish — it'll download on your first read instead."
 fi
 
 # 7. Status summary.
