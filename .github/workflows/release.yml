@@ -517,3 +517,105 @@ jobs:
           git add -A
           git commit -m "myna ${{ needs.preflight.outputs.version }}"
           git push origin HEAD
+
+  bottle-daemon:
+    # Build a prebuilt bottle for myna-daemon so users download a binary
+    # instead of compiling ~40 Python deps from source (5-15 min). Built on
+    # macos-15 (arm64_sequoia): Homebrew's find_older_compatible_tag pours that
+    # bottle on Sequoia AND newer arm64 macOS (Tahoe/26, etc.), so one build
+    # covers everyone on Apple Silicon >= macOS 15. Older/Intel users fall back
+    # to the source build (no regression). Runs LAST: needs the tap formula at
+    # the new version (tap-bump) and the GH release to attach the asset to.
+    name: Build + publish myna-daemon bottle
+    runs-on: macos-15
+    needs: [preflight, tap-bump]
+    if: needs.preflight.outputs.has_tap_key == 'true'
+    env:
+      HOMEBREW_NO_INSTALL_FROM_API: "1"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - name: Resolve tap repo
+        id: tap
+        env:
+          HOMEBREW_TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
+        run: |
+          owner="${GITHUB_REPOSITORY%%/*}"
+          repo="${HOMEBREW_TAP_REPO:-$owner/homebrew-tap}"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+      - name: Check out tap (deploy key, for the push-back)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.tap.outputs.repo }}
+          path: tap-repo
+          ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
+      - name: Build bottle + upload asset
+        id: bottle
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          TAP_REPO: ${{ steps.tap.outputs.repo }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ROOT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
+          # Tap the just-bumped formula from the remote (tap-bump already pushed
+          # it) and trust it — Homebrew 6 refuses untrusted third-party taps.
+          brew tap prerakgada/tap "https://github.com/${TAP_REPO}.git"
+          brew trust prerakgada/tap 2>/dev/null || true
+          # Build the venv ONCE here, then bottle the installed keg.
+          brew install --build-bottle prerakgada/tap/myna-daemon
+          brew bottle --no-rebuild --json --root-url="$ROOT_URL" prerakgada/tap/myna-daemon
+          JSON=$(ls myna-daemon--*.bottle.json)
+          TAG=$(jq -r '.[].bottle.tags | keys[0]' "$JSON")
+          SHA=$(jq -r ".[].bottle.tags.\"$TAG\".sha256" "$JSON")
+          CELLAR=$(jq -r '.[].bottle.cellar' "$JSON")
+          LOCAL=$(jq -r ".[].bottle.tags.\"$TAG\".local_filename" "$JSON")
+          ASSET=$(jq -r ".[].bottle.tags.\"$TAG\".filename" "$JSON")
+          echo "built bottle: tag=$TAG cellar=$CELLAR asset=$ASSET"
+          # brew writes a double-dash local file but fetches the single-dash
+          # url-encoded name; upload under the name brew will fetch.
+          mv "$LOCAL" "$ASSET"
+          gh release upload "v${VERSION}" "$ASSET" --clobber --repo "$GITHUB_REPOSITORY"
+          {
+            echo "tag=$TAG"; echo "sha=$SHA"; echo "cellar=$CELLAR"; echo "root_url=$ROOT_URL"
+          } >> "$GITHUB_OUTPUT"
+      - name: Inject bottle block into tap formula + push
+        env:
+          TAG: ${{ steps.bottle.outputs.tag }}
+          SHA: ${{ steps.bottle.outputs.sha }}
+          CELLAR: ${{ steps.bottle.outputs.cellar }}
+          ROOT_URL: ${{ steps.bottle.outputs.root_url }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd tap-repo
+          # Cellar token: a symbol (:any / :any_skip_relocation) stays bare; an
+          # absolute Cellar path is quoted. brew bottle decides which.
+          case "$CELLAR" in
+            :*) CELLAR_TOK="cellar: ${CELLAR}, " ;;
+            *)  CELLAR_TOK="cellar: \"${CELLAR}\", " ;;
+          esac
+          BLOCK_FILE="$(mktemp)"
+          cat > "$BLOCK_FILE" <<EOF
+            bottle do
+              root_url "${ROOT_URL}"
+              sha256 ${CELLAR_TOK}${TAG}: "${SHA}"
+            end
+          EOF
+          # Normalise the heredoc's leading indent to 2 spaces (formula style).
+          sed -i.bak -E 's/^ {6,12}/  /' "$BLOCK_FILE"; rm -f "$BLOCK_FILE.bak"
+          # Idempotent: drop any existing bottle block, then insert after `head`.
+          ruby -e '
+            f, bf = ARGV
+            block = File.read(bf)
+            s = File.read(f)
+            s = s.sub(/\n  bottle do\n.*?\n  end\n/m, "\n")
+            s = s.sub(/^(  head .*\n)/) { $1 + block }
+            File.write(f, s)
+          ' Formula/myna-daemon.rb "$BLOCK_FILE"
+          echo "--- formula head ---"; sed -n '1,25p' Formula/myna-daemon.rb
+          git config user.email "release-bot@myna.dev"
+          git config user.name  "Myna Release Bot"
+          if git diff --quiet; then echo "no formula change"; exit 0; fi
+          git add -A
+          git commit -m "myna-daemon ${VERSION}: add ${TAG} bottle"
+          git push origin HEAD

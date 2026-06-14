@@ -298,7 +298,7 @@ export default function Page() {
                     { prompt: true, text: "brew install --cask prerakgada/tap/myna" },
                     { comment: true, text: "" },
                     { comment: true, text: "Finish setup — voice engine, model, CC hook:" },
-                    { prompt: true, text: "curl -fsSL https://raw.githubusercontent.com/PrerakGada/Myna/v0.3.0/dist/setup.sh | bash" },
+                    { prompt: true, text: "curl -fsSL https://raw.githubusercontent.com/PrerakGada/Myna/v0.3.1/dist/setup.sh | bash" },
                     { comment: true, text: "" },
                     { comment: true, text: "Then launch Myna and grant Accessibility when asked." },
                   ]}

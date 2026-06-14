@@ -21,7 +21,7 @@ Or grab the signed, notarised DMG from [the latest release](https://github.com/P
 Then finish the setup — this installs the on-device voice engine (mlx-audio + the Kokoro model), registers the Claude Code hook, and starts the background services:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PrerakGada/Myna/v0.3.0/dist/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/PrerakGada/Myna/v0.3.1/dist/setup.sh | bash
 ```
 
 It's idempotent, so it's safe to re-run; `myna doctor` checks that the daemon and engine are up.
