@@ -51,8 +51,12 @@ if [ ! -d "$ENGINE_VENV" ]; then
 fi
 say "Installing the voice engine (mlx-audio) — this can take a few minutes…"
 "$ENGINE_VENV/bin/pip" install --quiet --upgrade pip
-"$ENGINE_VENV/bin/pip" install --quiet --upgrade mlx-audio \
-  || die "mlx-audio install failed. Re-run, or: $ENGINE_VENV/bin/pip install mlx-audio"
+# The `[server]` extra is REQUIRED — it pulls uvicorn + fastapi + webrtcvad,
+# which `mlx_audio.server` imports. Plain `mlx-audio` installs the library but
+# NOT the HTTP server deps, so the engine crashes on startup with
+# "ModuleNotFoundError: No module named 'uvicorn'" and the app stays offline.
+"$ENGINE_VENV/bin/pip" install --quiet --upgrade 'mlx-audio[server]' \
+  || die "mlx-audio install failed. Re-run, or: $ENGINE_VENV/bin/pip install 'mlx-audio[server]'"
 
 # 3. Engine LaunchAgent — keeps the engine on 127.0.0.1:$ENGINE_PORT across reboots.
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.cache/myna" "$HOME/Library/Logs"
