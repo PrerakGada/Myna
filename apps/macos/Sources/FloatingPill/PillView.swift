@@ -460,11 +460,8 @@ private struct PillIconButtonStyle: ButtonStyle {
                 Circle().fill(Color.white.opacity(configuration.isPressed ? 0.16 : 0.0))
             )
             .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
-            .opacity(isEnabledOpacity(configuration))
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
     }
-
-    private func isEnabledOpacity(_ configuration: Configuration) -> Double { 1.0 }
 }
 
 // MARK: - waveform (Core Animation, NOT TimelineView)

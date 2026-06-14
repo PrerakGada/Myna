@@ -421,9 +421,20 @@ public final class PillController: ObservableObject {
 
     // MARK: - Claude-output prompt
 
+    /// Pure selection of the prompt to surface: the newest CC item the user
+    /// hasn't handled this session, or nil when disabled / all handled.
+    /// Extracted so the dedup logic is unit-testable without a live registry.
+    nonisolated static func nextCCPrompt(
+        items: [RegistryV2Item], handled: Set<String>, enabled: Bool
+    ) -> RegistryV2Item? {
+        guard enabled else { return nil }
+        return items.first { !handled.contains($0.id) }
+    }
+
     private func handleCCPending(_ items: [RegistryV2Item]) {
-        let enabled = settings?.ccToastsEnabled ?? true
-        let next = enabled ? items.first { !ccHandledIds.contains($0.id) } : nil
+        let next = Self.nextCCPrompt(
+            items: items, handled: ccHandledIds,
+            enabled: settings?.ccToastsEnabled ?? true)
         guard next?.id != pendingPrompt?.id else { return }
         pendingPrompt = next
         viewModel?.setPrompt(next)
