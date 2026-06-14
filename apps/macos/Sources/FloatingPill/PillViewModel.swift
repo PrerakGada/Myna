@@ -1,98 +1,64 @@
 // PillViewModel.swift — the @MainActor ObservableObject that bridges
-// AudioPlayer state and the SwiftUI pill view.
+// AudioPlayer state to the SwiftUI pill.
 //
-// Owns:
-//   - derived `isSpeaking` (folds AudioPlayer's playing/paused into a
-//     single "the pill should be visible" boolean)
-//   - expand/collapse + pin state (hover, click-to-pin, dismiss)
-//   - "voice label" (sourced from PillBridge first, then SettingsViewModel)
-//   - "preview text" (sourced from PillBridge; nil otherwise)
+// Owns the orthogonal *inputs* (player playing/paused, pre-audio loading,
+// hover, pin, always-visible, and — from Step 8 — a pending Claude-output
+// prompt) and derives a single `layout` from them via the pure resolver in
+// PillState.swift. The view switches on `layout` instead of juggling a pile
+// of booleans.
 //
-// Does NOT own the NSPanel — that's PillController's job. The split
-// keeps the view model trivially previewable in SwiftUI (no AppKit
-// dependency in this file beyond `import AppKit` for nothing).
+// Hover *debounce* lives in PillController (it owns the NSTrackingArea); this
+// view-model just records the hover bool via `setHovering`. It does NOT own
+// the NSPanel — that's PillController's job — which keeps it previewable.
 import Combine
 import Foundation
 import SwiftUI
 
 @MainActor
 public final class PillViewModel: ObservableObject {
-    // MARK: - upstream sources
+    // MARK: - upstream
 
     private let player: AudioPlayer
     private let settings: SettingsViewModel
     private let bridge: PillBridge
 
-    // MARK: - published UI state
+    // MARK: - inputs (each change recomputes `layout`)
 
-    /// True when AudioPlayer.state is .playing or .paused. Pill is
-    /// visible iff this OR `isLoading` is true (and the user has not
-    /// turned the feature off in Settings). Pause keeps the pill on
-    /// screen so the user can hit play again — disappearing on pause
-    /// would be confusing.
+    /// AudioPlayer.state is .playing or .paused (the pill should be visible).
     @Published public private(set) var isSpeaking: Bool = false
-
-    /// True when the underlying player is paused (vs actively playing).
-    /// Drives the play/pause icon swap in the expanded view.
+    /// Player is paused (drives the play/pause icon swap).
     @Published public private(set) var isPaused: Bool = false
-
-    /// True from the moment AppDispatcher fires a speak request until
-    /// the first audio chunk lands (or the request fails). The pill
-    /// shows a tiny "Processing…" affordance with an indeterminate
-    /// spinner during this window so the user sees immediate feedback
-    /// — without it, the pill only appears 200-300ms after the hotkey,
-    /// which reads as "did the gesture register?"
+    /// Pre-audio loading window (drives "Processing…"). Set by the dispatcher
+    /// the instant a speak fires; cleared by AudioPlayer at first audio/stop.
     @Published public private(set) var isLoading: Bool = false
-
-    /// Convenience: pill should be on-screen when either we're loading
-    /// or we're actively speaking. Pulled out so PillController can
-    /// observe one flag instead of two.
-    public var shouldBeVisible: Bool { isLoading || isSpeaking }
-
-    /// True when the pill should render its expanded mini-player.
-    /// Driven by hover OR explicit pin (whichever is more permissive).
-    @Published public private(set) var isExpanded: Bool = false
-
-    /// User clicked the pill to keep it expanded. Cleared by the close
-    /// button or on stop.
-    @Published public var isPinned: Bool = false {
-        didSet { recomputeExpanded() }
-    }
-
-    /// Cursor is currently over the pill. Driven by SwiftUI .onHover.
-    @Published public var isHovering: Bool = false {
-        didSet { handleHoverChange() }
-    }
-
-    /// True when the pill is in "always visible" mode (user toggled
-    /// on in Settings). Surfaced so the view can render an idle
-    /// state (bird + "Myna" label, no waveform) when nothing is
-    /// playing but the pill is still on screen. Set by
-    /// PillController.syncVisibility — view-model does not read
-    /// UserDefaults directly to keep this file dependency-light.
+    /// "Always visible" setting — pill renders an idle chip when nothing plays.
     @Published public private(set) var isAlwaysVisible: Bool = false
+    /// Cursor is over the pill (set by PillController from the NSTrackingArea,
+    /// after the hover-out debounce).
+    @Published public private(set) var isHovering: Bool = false
+    /// User pinned the pill open (background tap).
+    @Published public private(set) var isPinned: Bool = false
+    /// A pending Claude-output prompt is awaiting the user (wired in Step 8).
+    @Published public private(set) var hasPrompt: Bool = false
 
-    // MARK: - derived display data
+    // MARK: - derived
 
-    /// What to show in the pill. May be nil — view falls back to
-    /// "Speaking…".
-    public var previewText: String? {
-        bridge.currentText
-    }
+    /// The single layout the pill renders, recomputed from the inputs by the
+    /// pure resolver whenever any input changes. PillView switches on this and
+    /// PillController observes it to resize/animate the panel.
+    @Published public private(set) var layout: PillLayout = .hidden
 
-    /// Voice label for the chip in expanded mode. Always non-nil.
-    public var voiceLabel: String {
-        bridge.currentVoice ?? settings.voice
-    }
+    // MARK: - display data
 
-    // MARK: - internals
+    /// Headline / preview text the dispatcher asked Myna to speak. May be nil.
+    public var previewText: String? { bridge.currentText }
 
-    private var hoverCollapseTask: Task<Void, Never>?
+    /// Voice label for the chip. Always non-nil.
+    public var voiceLabel: String { bridge.currentVoice ?? settings.voice }
+
+    // MARK: - init
+
     private var cancellables = Set<AnyCancellable>()
-
-    /// Hover-out grace period. Wispr Flow uses ~500ms; 600ms feels
-    /// forgiving on a small target without making the pill feel sticky.
-    private static let hoverCollapseDelay: TimeInterval = 0.6
 
     public init(player: AudioPlayer, settings: SettingsViewModel, bridge: PillBridge = .shared) {
         self.player = player
@@ -100,78 +66,91 @@ public final class PillViewModel: ObservableObject {
         self.bridge = bridge
 
         #if DEBUG
-        // Skip the live subscriptions in preview-only mode so the
-        // forced state in #Previews isn't immediately overwritten by
-        // the real player's idle state.
+        // In preview-only mode skip live subscriptions so the forced state in
+        // #Previews isn't immediately overwritten by the real idle player.
         if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
             applyPlayerState(player.state)
             isLoading = player.isLoading
+            refreshLayout()
             return
         }
         #endif
 
-        // Mirror AudioPlayer.state into our two simpler booleans.
         player.$state
             .receive(on: RunLoop.main)
-            .sink { [weak self] state in
-                self?.applyPlayerState(state)
-            }
+            .sink { [weak self] state in self?.applyPlayerState(state) }
             .store(in: &cancellables)
 
-        // Mirror the pre-audio loading flag — the dispatcher flips it
-        // true the instant a speak request fires (well before any
-        // chunk arrives), so this is how the pill achieves the ~50ms
-        // visibility budget the spec calls for.
         player.$isLoading
             .receive(on: RunLoop.main)
             .sink { [weak self] loading in
-                self?.applyLoading(loading)
+                self?.isLoading = loading
+                self?.refreshLayout()
             }
             .store(in: &cancellables)
 
-        // Bridge republishes (currentText / voice changing while the
-        // pill is up should refresh the view).
+        // Republish when the bridge (preview text / voice) or the settings
+        // voice changes while the pill is up.
         bridge.objectWillChange
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
+            .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
-
-        // Settings.voice changing while speaking should also refresh
-        // the voice label fallback.
         settings.$voice
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
+            .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
         applyPlayerState(player.state)
-        applyLoading(player.isLoading)
+        isLoading = player.isLoading
+        refreshLayout()
     }
 
-    private func applyLoading(_ loading: Bool) {
-        isLoading = loading
-    }
+    // MARK: - layout resolution
 
-    /// True when the pill is on screen but the player is idle. Drives
-    /// the "Myna" idle chip layout (no waveform, no Stop button).
-    public var isIdle: Bool {
-        !isSpeaking
+    private func refreshLayout() {
+        let next = resolvePillLayout(PillInputs(
+            enabled: true,            // PillController gates whether we're shown
+            alwaysVisible: isAlwaysVisible,
+            isLoading: isLoading,
+            isPlaying: isSpeaking,
+            isHovering: isHovering,
+            isPinned: isPinned,
+            hasPrompt: hasPrompt
+        ))
+        if next != layout { layout = next }
     }
 
     // MARK: - intents
 
-    /// Push the always-visible flag from PillController. Idempotent;
-    /// the @Published wrapper handles change notification.
+    /// Push the always-visible flag from PillController.
     public func setAlwaysVisible(_ value: Bool) {
-        if isAlwaysVisible != value {
-            isAlwaysVisible = value
-        }
+        guard isAlwaysVisible != value else { return }
+        isAlwaysVisible = value
+        refreshLayout()
     }
 
-    /// User clicked Play/Pause in the expanded view.
+    /// Record hover state. PillController calls this from the NSTrackingArea,
+    /// having already applied the 600ms hover-out debounce.
+    public func setHovering(_ value: Bool) {
+        guard isHovering != value else { return }
+        isHovering = value
+        refreshLayout()
+    }
+
+    /// Background tap → pin/unpin the expanded view.
+    public func togglePin() {
+        isPinned.toggle()
+        refreshLayout()
+    }
+
+    /// Close button → collapse and unpin.
+    public func dismiss() {
+        isPinned = false
+        isHovering = false
+        refreshLayout()
+    }
+
+    /// Play/Pause button.
     public func togglePlayPause() {
         switch player.state {
         case .playing: player.pause()
@@ -180,33 +159,17 @@ public final class PillViewModel: ObservableObject {
         }
     }
 
-    /// User clicked the Skip button. Advances to the next chunk by
-    /// seeking past the current chunk's duration. Best-effort — if
-    /// there's no further chunk, seeking past end is harmless
-    /// (AudioPlayer clamps).
+    /// Stop button — ends the session (player goes idle, pill collapses/hides).
+    public func stop() {
+        player.stop()
+    }
+
+    /// Skip forward. Replaced by an honest ±10s seek pair in Step 6.
     public func skipToNextChunk() {
-        // The simplest "skip chunk" we can express with the public
-        // AudioPlayer surface is to seek forward by the average chunk
-        // length. The audio engine schedules chunks contiguously, so
-        // jumping ~10s ahead almost always lands in (or past) the
-        // next chunk. Tuning this requires AudioPlayer to expose
-        // per-chunk durations, which is out of scope here.
         player.seek(delta: 10)
     }
 
-    /// User clicked the × button. Force-collapse and unpin.
-    public func dismiss() {
-        isPinned = false
-        isHovering = false
-        recomputeExpanded()
-    }
-
-    /// User clicked the pill body to pin/unpin.
-    public func togglePin() {
-        isPinned.toggle()
-    }
-
-    // MARK: - state plumbing
+    // MARK: - player → inputs
 
     private func applyPlayerState(_ state: AudioPlayer.State) {
         switch state {
@@ -219,55 +182,20 @@ public final class PillViewModel: ObservableObject {
         case .idle:
             isSpeaking = false
             isPaused = false
-            // Stopping clears pinned & hovering when the pill is
-            // going away. In always-visible mode the pill stays on
-            // screen, so keeping the user's pin choice would be
-            // surprising on the *next* speech session — clear it
-            // either way and let hover re-expand if the user wants.
+            // Stopping clears the user's pin/hover so the next session starts
+            // collapsed; clear the bridge so stale preview text doesn't show.
             isPinned = false
             isHovering = false
-            recomputeExpanded()
-            // Clear the bridge so the next session starts fresh.
             bridge.clear()
         }
-    }
-
-    private func handleHoverChange() {
-        if isHovering {
-            hoverCollapseTask?.cancel()
-            hoverCollapseTask = nil
-            recomputeExpanded()
-        } else {
-            // Defer collapse so a fast cursor wiggle doesn't flash
-            // the pill collapsed-then-expanded.
-            hoverCollapseTask?.cancel()
-            hoverCollapseTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(Self.hoverCollapseDelay * 1_000_000_000))
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    guard let self else { return }
-                    if !self.isHovering {
-                        self.recomputeExpanded()
-                    }
-                }
-            }
-        }
-    }
-
-    private func recomputeExpanded() {
-        let target = isPinned || isHovering
-        if target != isExpanded {
-            isExpanded = target
-        }
+        refreshLayout()
     }
 
     #if DEBUG
-    // Leading underscore on the next func deliberately signals
-    // "preview-only API, not for production code paths".
     // swiftlint:disable identifier_name
-    /// Preview-only escape hatch. Not for production code paths.
-    /// Forces published booleans so SwiftUI previews can render a
-    /// specific visual state without driving the real AudioPlayer.
+    /// Preview-only escape hatch. Forces the inputs so SwiftUI previews can
+    /// render a specific layout without driving the real AudioPlayer.
+    /// `isExpanded` maps to `isPinned` (pin forces the expanded layout).
     public func _previewForceState(
         isSpeaking: Bool,
         isExpanded: Bool,
@@ -276,10 +204,11 @@ public final class PillViewModel: ObservableObject {
         loading: Bool = false
     ) {
         self.isSpeaking = isSpeaking
-        self.isExpanded = isExpanded
         self.isPaused = paused
         self.isAlwaysVisible = alwaysVisible
         self.isLoading = loading
+        self.isPinned = isExpanded
+        refreshLayout()
     }
     // swiftlint:enable identifier_name
     #endif

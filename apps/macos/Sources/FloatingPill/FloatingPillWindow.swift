@@ -31,9 +31,12 @@
 //     we keep dragging at the AppKit layer. SwiftUI .onTapGesture
 //     on the pill body never fires once mouseDown is intercepted
 //     at the window — the tap is delivered via onBackgroundTap.
-//   - Persists frame across launches via setFrameAutosaveName; the
-//     autosave key is `dev.myna.app.pillFrame`. PillController also
-//     reads/writes this same key when "Reset pill position" fires.
+//   - Does NOT persist its own frame (no setFrameAutosaveName — that
+//     saves absolute origins and stranded the pill off-screen at
+//     -942,1144 when the saved display went away). Position is owned by
+//     PillController via PillAnchorStore (display id + fractional offset,
+//     clamped to the visible frame). The legacy `dev.myna.app.pillFrame`
+//     key is only cleared on "Reset pill position".
 //
 // Why NSPanel + .nonactivatingPanel:
 //   `NSWindow` would steal focus on click. `.nonactivatingPanel`
@@ -114,7 +117,7 @@ public final class FloatingPillWindow: NSPanel {
     public init(contentView: NSView) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 28),
-            styleMask: [.borderless, .nonactivatingPanel, .hudWindow],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -164,18 +167,13 @@ public final class FloatingPillWindow: NSPanel {
         self.alphaValue = 0
         self.orderOut(nil)
 
-        // Autosave frame — AppKit handles read/write of the panel's
-        // frame under UserDefaults key "NSWindow Frame <name>" on
-        // every move/resize. The call must happen AFTER the first
-        // setFrame*, otherwise AppKit attempts to read a stored frame
-        // for a panel that doesn't yet have a sane size. We trigger
-        // an explicit restore so `hasUserPosition` reflects whether
-        // anything was previously persisted.
-        let restored = self.setFrameUsingName(FloatingPillFrame.autosaveName)
-        self.setFrameAutosaveName(FloatingPillFrame.autosaveName)
-        if restored {
-            self.hasUserPosition = true
-        }
+        // Frame autosave is intentionally NOT used. setFrameAutosaveName
+        // persists an *absolute* origin, which strands the pill off-screen
+        // when the display it was saved on goes away (the real -942,1144
+        // bug). Position is owned by PillController via PillAnchorStore:
+        // it persists a display id + fractional offset and clamps to the
+        // visible frame on every restore. `hasUserPosition` stays false
+        // until the user actually drags the pill.
     }
 
     /// Locked to false. The pill must never accept keyboard focus —

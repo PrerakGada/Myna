@@ -36,6 +36,7 @@
 import AppKit
 import Combine
 import Foundation
+import QuartzCore
 import SwiftUI
 
 @MainActor
@@ -73,6 +74,13 @@ public final class PillController: ObservableObject {
     private var windowCancellables = Set<AnyCancellable>()
     private var notificationObservers: [NSObjectProtocol] = []
     private var didStart: Bool = false
+
+    /// Pending hover-out collapse work. Cancelled on re-entry so a fast
+    /// cursor wiggle out-and-back doesn't flash the pill collapsed.
+    private var hoverCollapseWork: DispatchWorkItem?
+    /// Hover-out grace period. Wispr ~500ms; 600ms feels forgiving on a small
+    /// target without making the pill feel sticky.
+    private static let hoverCollapseDelay: TimeInterval = 0.6
 
     /// Default initialiser: produces a controller that's inert until
     /// `attach(player:, settings:)` is called. This shape supports
@@ -225,6 +233,8 @@ public final class PillController: ObservableObject {
     public func stop() {
         cancellables.removeAll()
         windowCancellables.removeAll()
+        hoverCollapseWork?.cancel()
+        hoverCollapseWork = nil
         for token in notificationObservers {
             NotificationCenter.default.removeObserver(token)
             NSWorkspace.shared.notificationCenter.removeObserver(token)
@@ -285,7 +295,18 @@ public final class PillController: ObservableObject {
         // Let the hosting view size itself based on intrinsic content.
         hosting.frame = NSRect(x: 0, y: 0, width: 360, height: 64)
 
-        let panel = FloatingPillWindow(contentView: hosting)
+        // Wrap the SwiftUI host in an NSTrackingArea-owning view so hover is
+        // detected at the AppKit layer (reliable even though the panel is
+        // never key — SwiftUI .onHover drops mouseExited at speed). Tracking
+        // is enter/exit only and never consumes a click, so the window's
+        // mouseDown tap/drag path is unaffected.
+        let tracking = PillTrackingView(frame: hosting.frame)
+        tracking.addSubview(hosting)
+        tracking.onHoverChange = { [weak self] entered in
+            self?.handleHoverChange(entered)
+        }
+
+        let panel = FloatingPillWindow(contentView: tracking)
         // Route clicks on the pill background to the pin toggle. The
         // SwiftUI `.onTapGesture { togglePin() }` inside PillView never
         // fires once mouseDown is intercepted at the window — see the
@@ -298,15 +319,16 @@ public final class PillController: ObservableObject {
         self.hostingView = hosting
         self.viewModel = vm
 
-        // Track expand/collapse to resize the window frame to fit.
-        // When the user has positioned the pill we keep the origin
-        // fixed and only resize the size component. Stored in
-        // windowCancellables so resetPosition() (which recreates the
-        // window) drops the subscription cleanly.
-        vm.$isExpanded
+        // Resize/animate the panel whenever the layout footprint changes
+        // (collapsed ↔ expanded ↔ processing). dropFirst skips the initial
+        // value — showWindow() does the first placement. Stored in
+        // windowCancellables so it's torn down cleanly with the window.
+        vm.$layout
+            .removeDuplicates()
+            .dropFirst()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.repositionWindow() }
+                Task { @MainActor [weak self] in self?.repositionWindow(forLayoutChange: true) }
             }
             .store(in: &windowCancellables)
     }
@@ -325,6 +347,32 @@ public final class PillController: ObservableObject {
         guard let window else { return }
         window.alphaValue = 0
         window.orderOut(nil)
+    }
+
+    // MARK: - hover
+
+    /// Hover changed (from PillTrackingView's NSTrackingArea). Entering
+    /// cancels any pending collapse and expands immediately; exiting schedules
+    /// a collapse after a 600ms grace so a fast cursor wiggle out-and-back
+    /// doesn't flash the pill collapsed. Re-entry cancels the pending work.
+    /// (Pinned pills resolve to .expanded regardless, so a stray timer firing
+    /// is harmless.)
+    private func handleHoverChange(_ entered: Bool) {
+        guard let viewModel else { return }
+        if entered {
+            hoverCollapseWork?.cancel()
+            hoverCollapseWork = nil
+            viewModel.setHovering(true)
+        } else {
+            hoverCollapseWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.hoverCollapseWork = nil
+                self?.viewModel?.setHovering(false)
+            }
+            hoverCollapseWork = work
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + Self.hoverCollapseDelay, execute: work)
+        }
     }
 
     // MARK: - positioning
@@ -370,8 +418,8 @@ public final class PillController: ObservableObject {
         )
     }
 
-    private func repositionWindow() {
-        guard let window, let screen = targetScreen() else { return }
+    private func repositionWindow(forLayoutChange: Bool = false) {
+        guard let window, let cursorScreen = targetScreen() else { return }
         if window.isDragging {
             // Don't fight a live drag — AppKit owns the frame for the
             // duration. The drag-end notification will re-trigger us
@@ -382,26 +430,50 @@ public final class PillController: ObservableObject {
         // Size the panel to fit its content view.
         window.layoutIfNeeded()
         let fitting = hostingView?.fittingSize ?? window.frame.size
-        let width = max(80, fitting.width)
-        let height = max(pillMinHeight, fitting.height)
+        let size = CGSize(
+            width: max(80, fitting.width),
+            height: max(pillMinHeight, fitting.height)
+        )
 
-        if window.hasUserPosition {
-            // Resize in place around the current origin, but clamp
-            // the frame to stay on a visible screen (display unplug
-            // safety). If the saved origin lands off-screen, snap to
-            // bottom-centre of the screen-under-cursor.
-            var frame = window.frame
-            frame.size = CGSize(width: width, height: height)
-            if !isFrameOnAnyScreen(frame) {
-                frame = bottomCenterFrame(on: screen, width: width, height: height)
-            }
-            window.setFrame(frame, display: true, animate: false)
-            return
+        let origin: CGPoint
+        if forLayoutChange, window.frame.width > 1 {
+            // Expand/collapse in place: hold the bottom edge fixed and
+            // re-centre horizontally on the pill's current centre, so the
+            // panel grows upward (and symmetrically) with no anchor drift.
+            // Bottom-left origin → holding origin.y constant grows upward.
+            origin = CGPoint(x: window.frame.midX - size.width / 2, y: window.frame.minY)
+        } else if let anchor = PillAnchorStore.load() {
+            // User has positioned the pill: restore from the saved
+            // (display, fractional-offset) anchor at the current size. If the
+            // saved display is gone, restoredFrame falls back to the cursor
+            // screen — the clamp below guarantees it's never off-screen.
+            origin = PillAnchorStore.restoredFrame(
+                for: anchor, size: size,
+                screens: NSScreen.screens, fallback: cursorScreen
+            ).origin
+        } else {
+            // Default: bottom-centre of the screen under the cursor.
+            origin = bottomCenterFrame(
+                on: cursorScreen, width: size.width, height: size.height
+            ).origin
         }
 
-        // Default position: bottom-centre of the screen-under-cursor.
-        let target = bottomCenterFrame(on: screen, width: width, height: height)
-        window.setFrame(target, display: true, animate: false)
+        // Always clamp the final frame to the visible frame of the screen it
+        // sits on — the one guarantee the pill can never be stranded.
+        let centre = CGPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+        let screen = NSScreen.screens.first { $0.frame.contains(centre) } ?? cursorScreen
+        let target = PillAnchorStore.clamp(
+            NSRect(origin: origin, size: size), in: screen.visibleFrame)
+
+        if forLayoutChange {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.28
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                window.animator().setFrame(target, display: true)
+            }
+        } else {
+            window.setFrame(target, display: true, animate: false)
+        }
     }
 
     private func bottomCenterFrame(
@@ -439,10 +511,22 @@ public final class PillController: ObservableObject {
     }
 
     private func handleUserDrag() {
-        // Nothing to do beyond the side-effects AppKit already
-        // applied (autosaved frame + hasUserPosition=true). Send an
-        // objectWillChange so any UI bound to the controller (e.g.
-        // a future "pill is at custom position" indicator) refreshes.
+        // Persist the new position as a (display, fractional-offset)
+        // anchor — but only if the pill is genuinely on-screen. Never
+        // re-save an off-screen frame; that's exactly how the old
+        // absolute autosave stranded the pill at (-942, 1144). We save
+        // against the screen holding the pill's *centre* (the cursor may
+        // have drifted off the pill by drag-end).
+        if let window, isFrameOnAnyScreen(window.frame) {
+            let center = CGPoint(x: window.frame.midX, y: window.frame.midY)
+            let screen = NSScreen.screens.first { $0.frame.contains(center) }
+                ?? targetScreen()
+            if let screen {
+                PillAnchorStore.save(frame: window.frame, on: screen)
+            }
+        }
+        // Refresh any UI bound to the controller (e.g. a future
+        // "pill is at custom position" indicator).
         objectWillChange.send()
     }
 
@@ -452,40 +536,18 @@ public final class PillController: ObservableObject {
     /// bottom-centre of the screen-under-cursor. Wired to the
     /// "Reset pill position" action in the menu-bar popover.
     public func resetPosition() {
-        // Clear AppKit's autosaved frame from UserDefaults so the
-        // next launch also starts fresh.
+        // Forget the new (display, fractional-offset) anchor…
+        PillAnchorStore.clear()
+        // …and the legacy AppKit autosave keys, so a machine upgrading
+        // from a v0.2.x install (which used setFrameAutosaveName) also
+        // starts fresh rather than restoring a stale absolute origin.
         UserDefaults.standard.removeObject(forKey: FloatingPillFrame.defaultsKey)
-        // Also clear under the raw autosave name in case AppKit
-        // version changes its prefix scheme (defensive — currently
-        // a no-op).
         UserDefaults.standard.removeObject(forKey: FloatingPillFrame.autosaveName)
-        if let window {
-            // Calling setFrameAutosaveName("") then re-setting it is
-            // the documented way to drop AppKit's in-memory cache of
-            // the autosave name; without it AppKit will rewrite the
-            // key on the next move.
-            window.setFrameAutosaveName("")
-            // Reset our flag so the next reposition snaps to default.
-            // We have to clear `hasUserPosition` by recreating the
-            // window — there's no public setter. Cheap: tear down
-            // and let showWindow() rebuild lazily.
-            let wasVisible = window.alphaValue > 0
-            window.orderOut(nil)
-            self.window = nil
-            self.hostingView = nil
-            self.viewModel = nil
-            // Drop per-window subscriptions so ensureWindow() can
-            // re-install them against the fresh viewModel without
-            // accumulating dead sinks.
-            windowCancellables.removeAll()
-            if wasVisible {
-                showWindow()
-            } else {
-                // Build window in idle state so the next show uses
-                // the default frame and re-installs the autosave.
-                ensureWindow()
-            }
-        }
+        // With the anchor gone, repositionWindow snaps back to
+        // bottom-centre of the screen under the cursor. No window
+        // teardown needed any more — positioning keys off the anchor
+        // store, not a per-window flag.
+        repositionWindow()
     }
 }
 

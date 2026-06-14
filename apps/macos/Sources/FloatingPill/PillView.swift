@@ -1,311 +1,293 @@
-// PillView.swift — the SwiftUI pill UI.
+// PillView.swift — the SwiftUI floating-pill UI.
 //
-// Two states sharing one rounded-pill container:
-//   - collapsed: bird glyph + "Speaking…" + 3-dot waveform
-//   - expanded: preview text + voice chip + transport + close button
+// One root that switches on `viewModel.layout` (the FSM from PillState.swift):
+//   • collapsedIdle      → bird badge + "Myna"
+//   • processing         → bird badge + "Processing…" + mini spinner
+//   • collapsedPlaying   → bird badge + status + Core-Animation waveform
+//   • expanded           → mini-player: headline, voice chip, waveform, transport
+//   • promptCTA          → (Step 8) in-pill Claude-output call-to-action
 //
-// Transition: matchedGeometryEffect on the outer Capsule shape gives
-// a smooth grow/shrink without manual frame math.
+// matchedGeometryEffect on bird / status / waveform morphs the shared elements
+// between collapsed and expanded; the window-frame animation (PillController)
+// grows the panel upward in lock-step.
 //
-// CRITICAL: the waveform animation MUST NOT use TimelineView. A prior
-// implementation drove a TimelineView at 60Hz here and pegged a CPU
-// core at 99.5%. We use a CAReplicatorLayer driven by CABasicAnimation
-// instead — Core Animation runs the animation on the render server,
-// not the main thread, so app CPU stays at ~0% while the pill is
-// visible. See ../../Tests/* and the prompt for context.
+// CRITICAL: the waveform MUST NOT use TimelineView. A prior TimelineView
+// implementation pegged a CPU core at 99.5%. We drive it with a
+// CAReplicatorLayer + CABasicAnimation on the render server instead, so
+// main-thread CPU stays ~0% while the pill is visible.
 import AppKit
 import SwiftUI
 
 // MARK: - design tokens
 
-/// Local design tokens for the pill. Intentionally self-contained so
-/// the FloatingPill module stays independent of the (still-evolving)
-/// shared PopoverDesign module. Mirror values where they overlap so
-/// the pill reads as part of the same family as the menu-bar popover.
-private enum Pill {
+private enum PillStyle {
     // sizes
-    static let collapsedHeight: CGFloat = 28
-    static let collapsedHorizontalPadding: CGFloat = 12
-    static let expandedHeight: CGFloat = 64
-    static let expandedWidth: CGFloat = 360
-    static let cornerRadius: CGFloat = 14  // half of collapsed height
-    static let expandedCornerRadius: CGFloat = 18
+    static let collapsedHeight: CGFloat = 36
+    static let collapsedHPadding: CGFloat = 12
+    static let expandedWidth: CGFloat = 340
+    static let badgeCollapsed: CGFloat = 24
+    static let badgeExpanded: CGFloat = 30
+
+    // radii
+    static let collapsedRadius: CGFloat = 18      // half of collapsed height
+    static let expandedRadius: CGFloat = 20
 
     // typography
-    static let statusFont = Font.system(size: 12, weight: .medium, design: .rounded)
-    static let previewFont = Font.system(size: 13, weight: .regular, design: .rounded)
+    static let statusFont = Font.system(size: 13, weight: .semibold, design: .rounded)
+    static let headlineFont = Font.system(size: 13, weight: .medium, design: .rounded)
     static let chipFont = Font.system(size: 10, weight: .semibold, design: .rounded)
 
-    // animation
-    static let transition: Animation = .spring(response: 0.28, dampingFraction: 0.85)
-    static let visibilityTransition: Animation = .easeInOut(duration: 0.18)
-
-    // colors — these resolve light/dark mode automatically via NSColor.
-    static let background = Color(nsColor: .windowBackgroundColor).opacity(0.001) // placeholder; real fill is the material
-    static let foreground = Color.primary
-    static let secondaryForeground = Color.secondary
-    static let accent = Color.accentColor
+    // motion
+    static let morph: Animation = .spring(response: 0.30, dampingFraction: 0.82)
 
     // waveform
     static let waveformDotSize: CGFloat = 3.5
     static let waveformDotSpacing: CGFloat = 4
     static let waveformDotCount: Int = 3
+    static var dotsWidth: CGFloat {
+        let n = CGFloat(waveformDotCount)
+        return n * waveformDotSize + (n - 1) * waveformDotSpacing
+    }
 }
 
 // MARK: - root
 
 public struct PillView: View {
     @ObservedObject var viewModel: PillViewModel
-    @Namespace private var pillNamespace
+    @Namespace private var ns
 
     public init(viewModel: PillViewModel) {
         self.viewModel = viewModel
     }
 
     public var body: some View {
-        // Visibility tier: outer container always exists; alpha is 0
-        // when not speaking so the layout settles before the panel
-        // is shown by PillController.
-        Group {
-            if viewModel.isExpanded {
-                expanded
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
-            } else {
-                collapsed
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
-            }
-        }
-        .animation(Pill.transition, value: viewModel.isExpanded)
-        .onHover { hovering in
-            viewModel.isHovering = hovering
-        }
-        // Mouse click-to-pin is delivered by FloatingPillWindow's
-        // `onBackgroundTap` callback (wired in PillController.ensureWindow).
-        // A SwiftUI .onTapGesture here never fires — the window's mouseDown
-        // override intercepts events at the AppKit layer to disambiguate
-        // tap-vs-drag. We still need an accessibility action so VoiceOver
-        // and "Perform Default Action" reach togglePin().
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityAction {
-            viewModel.togglePin()
+        content
+            .animation(PillStyle.morph, value: viewModel.layout)
+            // Hover is driven by PillTrackingView (NSTrackingArea) via
+            // PillController, not SwiftUI .onHover. Tap-to-pin arrives via
+            // FloatingPillWindow.onBackgroundTap. We still expose an
+            // accessibility action so VoiceOver can reach togglePin().
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityAction { viewModel.togglePin() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch viewModel.layout {
+        case .hidden:
+            // The window is ordered out in this state; render nothing.
+            Color.clear.frame(width: 1, height: 1)
+        case .collapsedIdle:
+            collapsedChip(status: "Myna", trailing: .none)
+        case .processing:
+            collapsedChip(status: "Processing\u{2026}", trailing: .spinner)
+        case .collapsedPlaying:
+            collapsedChip(
+                status: viewModel.isPaused ? "Paused" : "Speaking",
+                trailing: .waveform(playing: !viewModel.isPaused)
+            )
+        case .expanded, .promptCTA:
+            // promptCTA falls back to the expanded mini-player until Step 8.
+            expanded
         }
     }
 
     private var accessibilityLabel: String {
         if viewModel.isPaused { return "Myna paused" }
         if viewModel.isSpeaking { return "Myna speaking" }
+        if viewModel.isLoading { return "Myna processing" }
         return "Myna"
     }
 
     // MARK: - collapsed
 
-    /// Status label shown next to the bird in the collapsed pill.
-    /// "Processing" during the pre-audio loading window (Lane 1 ~50ms
-    /// responsiveness), "Paused" when paused, "Speaking" while active,
-    /// "Myna" when idle (always-visible mode shows the brand chip).
-    /// Loading wins over speaking because it owns the leading edge of
-    /// the session — once a chunk arrives we flip to "Speaking" in the
-    /// same frame.
-    private var collapsedStatusText: String {
-        if viewModel.isLoading && !viewModel.isSpeaking { return "Processing" }
-        if viewModel.isPaused { return "Paused" }
-        if viewModel.isSpeaking { return "Speaking" }
-        return "Myna"
+    private enum Trailing: Equatable {
+        case none
+        case spinner
+        case waveform(playing: Bool)
     }
 
-    private var collapsed: some View {
+    private func collapsedChip(status: String, trailing: Trailing) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "bird")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Pill.foreground)
-                .matchedGeometryEffect(id: "bird", in: pillNamespace)
+            birdBadge(diameter: PillStyle.badgeCollapsed)
+                .matchedGeometryEffect(id: "bird", in: ns)
 
-            Text(collapsedStatusText)
-                .font(Pill.statusFont)
-                .foregroundStyle(Pill.foreground)
-                .matchedGeometryEffect(id: "status", in: pillNamespace)
+            Text(status)
+                .font(PillStyle.statusFont)
+                .foregroundStyle(.primary)
+                .fixedSize()
+                .matchedGeometryEffect(id: "status", in: ns)
 
-            // Three-way affordance:
-            //   • Loading (pre-audio window) → indeterminate spinner so
-            //     the user sees the trigger took effect before audio
-            //     arrives. Lane 1 / v0.2.x feature.
-            //   • Speaking → animated WaveformDots.
-            //   • Idle (only reachable in always-visible mode) → empty
-            //     placeholder. A pulsing chip while nothing is playing
-            //     reads as "loading" and is wrong UX. matchedGeometry
-            //     still needs the anchor so we hold a 0-width Color.
-            if viewModel.isLoading && !viewModel.isSpeaking {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .controlSize(.mini)
-                    .tint(Pill.foreground)
-                    .frame(width: dotsWidth, height: 12)
-                    .matchedGeometryEffect(id: "waveform", in: pillNamespace)
-            } else if viewModel.isSpeaking {
-                WaveformDots(isPlaying: !viewModel.isPaused)
-                    .frame(width: dotsWidth, height: 12)
-                    .matchedGeometryEffect(id: "waveform", in: pillNamespace)
-            } else {
-                Color.clear
-                    .frame(width: 0, height: 12)
-                    .matchedGeometryEffect(id: "waveform", in: pillNamespace)
-            }
+            trailingIndicator(trailing, height: 12)
+                .matchedGeometryEffect(id: "waveform", in: ns)
         }
-        .padding(.horizontal, Pill.collapsedHorizontalPadding)
-        .frame(height: Pill.collapsedHeight)
-        .background(pillBackground(cornerRadius: Pill.cornerRadius))
+        .padding(.horizontal, PillStyle.collapsedHPadding)
+        .frame(height: PillStyle.collapsedHeight)
+        .background(pillBackground(cornerRadius: PillStyle.collapsedRadius))
         .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+            Capsule().stroke(Color.white.opacity(0.07), lineWidth: 0.5)
         )
     }
 
-    private var dotsWidth: CGFloat {
-        let n = CGFloat(Pill.waveformDotCount)
-        return n * Pill.waveformDotSize + (n - 1) * Pill.waveformDotSpacing
+    @ViewBuilder
+    private func trailingIndicator(_ trailing: Trailing, height: CGFloat) -> some View {
+        switch trailing {
+        case .none:
+            Color.clear.frame(width: 0, height: height)
+        case .spinner:
+            ProgressView()
+                .progressViewStyle(.circular)
+                .controlSize(.mini)
+                .tint(.secondary)
+                .frame(width: PillStyle.dotsWidth, height: height)
+        case .waveform(let playing):
+            WaveformDots(isPlaying: playing)
+                .frame(width: PillStyle.dotsWidth, height: height)
+        }
     }
 
-    // MARK: - expanded
+    // MARK: - expanded mini-player
 
-    /// Headline shown in the expanded pill. Falls back through:
-    /// loading (with preview text if available) → bridge preview text →
-    /// "Paused" → "Speaking…" → "Myna" (idle). Loading prefers the
-    /// dispatcher's preview text so the user can confirm the right
-    /// thing is queued before audio starts.
     private var expandedHeadline: String {
-        if viewModel.isLoading && !viewModel.isSpeaking {
-            return viewModel.previewText ?? "Processing\u{2026}"
-        }
-        if let text = viewModel.previewText { return text }
+        if let text = viewModel.previewText, !text.isEmpty { return text }
+        if viewModel.isLoading && !viewModel.isSpeaking { return "Processing\u{2026}" }
         if viewModel.isPaused { return "Paused" }
         if viewModel.isSpeaking { return "Speaking\u{2026}" }
         return "Myna"
     }
 
     private var expanded: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "bird")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Pill.foreground)
-                .matchedGeometryEffect(id: "bird", in: pillNamespace)
+        VStack(alignment: .leading, spacing: 10) {
+            // Row 1 — badge + headline + close
+            HStack(spacing: 10) {
+                birdBadge(diameter: PillStyle.badgeExpanded)
+                    .matchedGeometryEffect(id: "bird", in: ns)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(expandedHeadline)
-                    .font(Pill.previewFont)
-                    .foregroundStyle(Pill.foreground)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .matchedGeometryEffect(id: "status", in: pillNamespace)
-                HStack(spacing: 6) {
-                    voiceChip
-                    // Same three-way affordance as the collapsed view:
-                    //   loading → mini spinner
-                    //   speaking with preview text → waveform
-                    //   else → zero-width placeholder
-                    if viewModel.isLoading && !viewModel.isSpeaking {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .controlSize(.mini)
-                            .tint(Pill.foreground)
-                            .frame(width: dotsWidth, height: 10)
-                            .matchedGeometryEffect(id: "waveform", in: pillNamespace)
-                    } else if viewModel.isSpeaking && viewModel.previewText != nil {
-                        WaveformDots(isPlaying: !viewModel.isPaused)
-                            .frame(width: dotsWidth, height: 10)
-                            .matchedGeometryEffect(id: "waveform", in: pillNamespace)
-                    } else {
-                        Color.clear
-                            .frame(width: 0, height: 10)
-                            .matchedGeometryEffect(id: "waveform", in: pillNamespace)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(expandedHeadline)
+                        .font(PillStyle.headlineFont)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .matchedGeometryEffect(id: "status", in: ns)
+                    HStack(spacing: 6) {
+                        voiceChip
+                        if viewModel.isLoading && !viewModel.isSpeaking {
+                            trailingIndicator(.spinner, height: 10)
+                                .matchedGeometryEffect(id: "waveform", in: ns)
+                        } else if viewModel.isSpeaking {
+                            trailingIndicator(.waveform(playing: !viewModel.isPaused), height: 10)
+                                .matchedGeometryEffect(id: "waveform", in: ns)
+                        } else {
+                            Color.clear.frame(width: 0, height: 10)
+                                .matchedGeometryEffect(id: "waveform", in: ns)
+                        }
                     }
                 }
+
+                Spacer(minLength: 8)
+
+                closeButton
             }
 
-            Spacer(minLength: 4)
-
-            // Transport controls only when there's something to
-            // control. In always-visible idle mode the right side of
-            // the pill is just the close button.
-            if viewModel.isSpeaking {
-                transportControls
+            // Row 2 — transport (only when there's a session to control)
+            if viewModel.isSpeaking || viewModel.isLoading {
+                transportRow
             }
-            closeButton
         }
         .padding(.horizontal, 14)
-        .frame(width: Pill.expandedWidth, height: Pill.expandedHeight)
-        .background(pillBackground(cornerRadius: Pill.expandedCornerRadius))
+        .padding(.vertical, 12)
+        .frame(width: PillStyle.expandedWidth, alignment: .leading)
+        .background(pillBackground(cornerRadius: PillStyle.expandedRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: Pill.expandedCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: PillStyle.expandedRadius, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
         )
     }
 
     private var voiceChip: some View {
         Text(viewModel.voiceLabel)
-            .font(Pill.chipFont)
-            .foregroundStyle(Pill.secondaryForeground)
-            .padding(.horizontal, 6)
+            .font(PillStyle.chipFont)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .background(
-                Capsule().fill(Color.white.opacity(0.08))
-            )
+            .background(Capsule().fill(Color.white.opacity(0.09)))
     }
 
-    private var transportControls: some View {
-        HStack(spacing: 6) {
-            Button {
-                viewModel.togglePlayPause()
-            } label: {
-                Image(systemName: viewModel.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(PillIconButtonStyle())
-            .help(viewModel.isPaused ? "Resume" : "Pause")
+    private var transportRow: some View {
+        HStack(spacing: 14) {
+            transportButton(
+                system: viewModel.isPaused ? "play.fill" : "pause.fill",
+                size: 15,
+                help: viewModel.isPaused ? "Resume" : "Pause"
+            ) { viewModel.togglePlayPause() }
+            .disabled(!viewModel.isSpeaking)
 
-            Button {
+            transportButton(system: "forward.fill", size: 12, help: "Skip ahead") {
                 viewModel.skipToNextChunk()
-            } label: {
-                Image(systemName: "forward.fill")
-                    .font(.system(size: 11, weight: .medium))
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(PillIconButtonStyle())
-            .help("Next chunk")
+            .disabled(!viewModel.isSpeaking)
+
+            transportButton(system: "stop.fill", size: 12, help: "Stop") {
+                viewModel.stop()
+            }
+            .disabled(!viewModel.isSpeaking)
+
+            Spacer(minLength: 0)
         }
+        .padding(.leading, PillStyle.badgeExpanded + 10) // align under the headline
     }
 
-    private var closeButton: some View {
-        // In always-visible idle mode the pill can't actually be
-        // "closed" (it stays on screen by user preference) — the
-        // button collapses the expanded view instead. Use the
-        // chevron-down glyph to make that obvious. In any active
-        // session the xmark continues to mean "hide pill UI".
-        let glyph = (viewModel.isAlwaysVisible && !viewModel.isSpeaking)
-            ? "chevron.down"
-            : "xmark"
-        let helpText = (viewModel.isAlwaysVisible && !viewModel.isSpeaking)
-            ? "Collapse"
-            : "Hide pill"
-        return Button {
-            viewModel.dismiss()
-        } label: {
-            Image(systemName: glyph)
-                .font(.system(size: 10, weight: .bold))
-                .frame(width: 20, height: 20)
+    private func transportButton(
+        system: String, size: CGFloat, help: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: system)
+                .font(.system(size: size, weight: .medium))
+                .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PillIconButtonStyle())
-        .help(helpText)
-        // Swallow the parent tap-to-pin gesture so dismissing doesn't
-        // also toggle the pin.
+        .help(help)
+        // Swallow the parent tap-to-pin so transport taps don't toggle pin.
         .simultaneousGesture(TapGesture().onEnded {})
     }
 
-    // MARK: - shared bg
+    private var closeButton: some View {
+        let collapsing = viewModel.isAlwaysVisible && !viewModel.isSpeaking && !viewModel.isLoading
+        return Button { viewModel.dismiss() } label: {
+            Image(systemName: collapsing ? "chevron.down" : "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(PillIconButtonStyle())
+        .help(collapsing ? "Collapse" : "Hide")
+        .simultaneousGesture(TapGesture().onEnded {})
+    }
+
+    // MARK: - bird badge
+
+    private func birdBadge(diameter: CGFloat) -> some View {
+        Image(systemName: "bird.fill")
+            .font(.system(size: diameter * 0.58, weight: .medium))
+            .foregroundStyle(.white)
+            .frame(width: diameter, height: diameter)
+            .background(
+                Circle().fill(
+                    LinearGradient(
+                        colors: [Color.accentColor, Color.accentColor.opacity(0.68)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+            )
+            .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 0.5))
+            .shadow(color: Color.accentColor.opacity(0.35), radius: 4, y: 1)
+    }
+
+    // MARK: - background
 
     @ViewBuilder
     private func pillBackground(cornerRadius: CGFloat) -> some View {
@@ -313,10 +295,10 @@ public struct PillView: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.black.opacity(0.30))
+                .fill(Color.black.opacity(0.28))
         }
         .compositingGroup()
-        .shadow(color: .black.opacity(0.35), radius: 16, x: 0, y: 6)
+        .shadow(color: .black.opacity(0.34), radius: 16, x: 0, y: 6)
     }
 }
 
@@ -327,24 +309,21 @@ private struct PillIconButtonStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(.primary)
             .background(
-                Circle()
-                    .fill(Color.white.opacity(configuration.isPressed ? 0.16 : 0.0))
+                Circle().fill(Color.white.opacity(configuration.isPressed ? 0.16 : 0.0))
             )
             .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
+            .opacity(isEnabledOpacity(configuration))
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
     }
+
+    private func isEnabledOpacity(_ configuration: Configuration) -> Double { 1.0 }
 }
 
 // MARK: - waveform (Core Animation, NOT TimelineView)
 
-/// Three dots that scale up/down in a staggered loop, driven by
-/// CABasicAnimation on a CAReplicatorLayer. The replicator pattern
-/// lets us write one animation and replicate the dot N times with a
-/// per-dot phase delay — Core Animation handles the rest on the
-/// render server, so main-thread CPU stays at ~0%.
-///
-/// Why not TimelineView: it caused 99.5% CPU pegging in an earlier
-/// pill implementation. See the prompt and SC-debug notes.
+/// Three dots that scale in a staggered loop via CABasicAnimation on a
+/// CAReplicatorLayer — Core Animation runs it on the render server, so
+/// main-thread CPU stays ~0%. (TimelineView here once pegged a core at 99.5%.)
 private struct WaveformDots: NSViewRepresentable {
     let isPlaying: Bool
 
@@ -362,9 +341,9 @@ private struct WaveformDots: NSViewRepresentable {
 private final class WaveformDotsView: NSView {
     private let replicator = CAReplicatorLayer()
     private let dot = CALayer()
-    private static let dotCount = Pill.waveformDotCount
-    private static let dotSize = Pill.waveformDotSize
-    private static let dotSpacing = Pill.waveformDotSpacing
+    private static let dotCount = PillStyle.waveformDotCount
+    private static let dotSize = PillStyle.waveformDotSize
+    private static let dotSpacing = PillStyle.waveformDotSpacing
     private static let cycleDuration: CFTimeInterval = 1.2
 
     var isPlaying: Bool = true {
@@ -384,26 +363,19 @@ private final class WaveformDotsView: NSView {
     private func setup() {
         wantsLayer = true
         layer = CALayer()
-
         dot.backgroundColor = NSColor.white.cgColor
         dot.frame = CGRect(x: 0, y: 0, width: Self.dotSize, height: Self.dotSize)
         dot.cornerRadius = Self.dotSize / 2
-        // Anchor at centre so the scale animation grows symmetrically.
         dot.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-
         replicator.instanceCount = Self.dotCount
         replicator.instanceTransform = CATransform3DMakeTranslation(Self.dotSize + Self.dotSpacing, 0, 0)
         replicator.instanceDelay = Self.cycleDuration / Double(Self.dotCount * 2)
         replicator.addSublayer(dot)
-
         layer?.addSublayer(replicator)
     }
 
     override func layout() {
         super.layout()
-        // Vertically centre the row of dots inside our bounds; anchor
-        // the first dot so the centres are at (size/2, height/2),
-        // (size/2 + size + spacing, height/2), …
         let centreY = bounds.midY
         let totalWidth = CGFloat(Self.dotCount) * Self.dotSize
             + CGFloat(Self.dotCount - 1) * Self.dotSpacing
@@ -416,8 +388,6 @@ private final class WaveformDotsView: NSView {
     private func syncAnimation() {
         dot.removeAnimation(forKey: "pulse")
         guard isPlaying else {
-            // Snap to a stable mid-scale so the dots remain visible
-            // (paused state should look static, not invisible).
             dot.transform = CATransform3DMakeScale(0.8, 0.8, 1)
             return
         }
@@ -445,12 +415,10 @@ struct PillView_PreviewModel {
         isExpanded: Bool,
         withText: Bool = false,
         paused: Bool = false,
-        alwaysVisible: Bool = false
+        alwaysVisible: Bool = false,
+        loading: Bool = false
     ) -> PillViewModel {
-        // Build a real AudioPlayer + Settings — they're cheap to construct.
         let player = AudioPlayer()
-        // Use an in-memory defaults suite so the preview never writes
-        // to ~/Library/Preferences.
         let suite = UserDefaults(suiteName: "preview-\(UUID().uuidString)")!
         let store = SettingsStore(defaults: suite)
         let settings = SettingsViewModel(store: store)
@@ -463,12 +431,12 @@ struct PillView_PreviewModel {
             )
         }
         let vm = PillViewModel(player: player, settings: settings, bridge: bridge)
-        // Force state for the preview without driving the audio engine.
         vm._previewForceState(
             isSpeaking: isSpeaking,
             isExpanded: isExpanded,
             paused: paused,
-            alwaysVisible: alwaysVisible
+            alwaysVisible: alwaysVisible,
+            loading: loading
         )
         return vm
     }
@@ -476,45 +444,21 @@ struct PillView_PreviewModel {
 
 #Preview("Collapsed — speaking") {
     PillView(viewModel: PillView_PreviewModel.make(isSpeaking: true, isExpanded: false))
-        .padding(40)
-        .background(Color.gray.opacity(0.2))
+        .padding(40).background(Color.gray.opacity(0.2))
 }
 
-#Preview("Collapsed — paused") {
-    PillView(viewModel: PillView_PreviewModel.make(isSpeaking: true, isExpanded: false, paused: true))
-        .padding(40)
-        .background(Color.gray.opacity(0.2))
+#Preview("Collapsed — processing") {
+    PillView(viewModel: PillView_PreviewModel.make(isSpeaking: false, isExpanded: false, loading: true))
+        .padding(40).background(Color.gray.opacity(0.2))
 }
 
 #Preview("Expanded — with text") {
     PillView(viewModel: PillView_PreviewModel.make(isSpeaking: true, isExpanded: true, withText: true))
-        .padding(40)
-        .background(Color.gray.opacity(0.2))
-}
-
-#Preview("Expanded — no text") {
-    PillView(viewModel: PillView_PreviewModel.make(isSpeaking: true, isExpanded: true, withText: false))
-        .padding(40)
-        .background(Color.gray.opacity(0.2))
+        .padding(40).background(Color.gray.opacity(0.2))
 }
 
 #Preview("Collapsed — idle (always visible)") {
-    PillView(viewModel: PillView_PreviewModel.make(
-        isSpeaking: false,
-        isExpanded: false,
-        alwaysVisible: true
-    ))
-        .padding(40)
-        .background(Color.gray.opacity(0.2))
-}
-
-#Preview("Expanded — idle (always visible)") {
-    PillView(viewModel: PillView_PreviewModel.make(
-        isSpeaking: false,
-        isExpanded: true,
-        alwaysVisible: true
-    ))
-        .padding(40)
-        .background(Color.gray.opacity(0.2))
+    PillView(viewModel: PillView_PreviewModel.make(isSpeaking: false, isExpanded: false, alwaysVisible: true))
+        .padding(40).background(Color.gray.opacity(0.2))
 }
 #endif
