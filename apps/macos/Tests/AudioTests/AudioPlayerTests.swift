@@ -179,6 +179,70 @@ final class AudioPlayerTests: XCTestCase {
         XCTAssertEqual(player.position, player.duration, accuracy: 0.2)
     }
 
+    // MARK: enqueueAll (one-shot batch playback)
+
+    /// One-shot mode buffers the whole clip and hands it to the player at
+    /// once via enqueueAll. All chunks must be scheduled up front so they
+    /// play gap-free, and the player must run through every one to the end.
+    func test_enqueueAll_plays_all_chunks_to_end() async throws {
+        let player = AudioPlayer()
+        let buffers = [
+            SineBuffer.make(duration: 0.2),
+            SineBuffer.make(duration: 0.2),
+            SineBuffer.make(duration: 0.2),
+        ]
+        player.enqueueAll(buffers)
+        // Begins playback synchronously (idle + first batch → beginSession).
+        XCTAssertEqual(player.state, .playing)
+        XCTAssertEqual(player.duration, 0.6, accuracy: 0.05)
+        // Plays through every chunk to the end without stranding any.
+        try await waitForState(player, .idle, timeout: 3.0)
+        XCTAssertEqual(player.position, player.duration, accuracy: 0.2)
+    }
+
+    /// enqueueAll on an empty array is a no-op — covers the one-shot case
+    /// where zero chunks decoded (empty text or all decodes failed).
+    func test_enqueueAll_empty_is_noop() {
+        let player = AudioPlayer()
+        player.enqueueAll([])
+        XCTAssertEqual(player.state, .idle)
+        XCTAssertEqual(player.duration, 0, accuracy: 0.001)
+    }
+
+    /// One-shot keeps the "Processing…" spinner up through buffering (the
+    /// caller holds isLoading while collecting) and clears it the instant
+    /// playback begins — same contract as the streaming path.
+    func test_enqueueAll_clears_isLoading_on_play() async throws {
+        let player = AudioPlayer()
+        player.isLoading = true
+        player.enqueueAll([
+            SineBuffer.make(duration: 0.2),
+            SineBuffer.make(duration: 0.2),
+        ])
+        XCTAssertFalse(player.isLoading)
+        XCTAssertEqual(player.state, .playing)
+        try await waitForState(player, .idle, timeout: 3.0)
+    }
+
+    /// enqueueAll on a player that's already mid-session must NOT silently
+    /// drop the buffers. beginSession() only fires when idle, so the
+    /// non-idle path falls back to per-chunk scheduling — the new chunks
+    /// must still join the timeline and play through.
+    func test_enqueueAll_while_playing_appends_and_plays() async throws {
+        let player = AudioPlayer()
+        player.enqueue(buffer: SineBuffer.make(duration: 0.5))
+        try await waitUntil(timeout: 1.0) { player.state == .playing }
+        player.enqueueAll([
+            SineBuffer.make(duration: 0.2),
+            SineBuffer.make(duration: 0.2),
+        ])
+        XCTAssertEqual(player.duration, 0.9, accuracy: 0.05)
+        XCTAssertEqual(player.state, .playing)
+        // All three chunks must play to the end (none stranded).
+        try await waitForState(player, .idle, timeout: 3.0)
+        XCTAssertEqual(player.position, player.duration, accuracy: 0.2)
+    }
+
     // MARK: late-arriving chunk after queue drain (priority-first regression)
 
     /// Regression test for the v0.2.0 paragraph-cutoff bug.

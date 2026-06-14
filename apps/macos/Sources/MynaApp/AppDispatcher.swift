@@ -25,6 +25,21 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
     /// dispatcher without a full menu bar.
     private weak var menuController: MenuBarController?
     private let log = Log(.app)
+    /// The in-flight speak operation (capture → synthesize → enqueue).
+    /// Tracked so a superseding speak or an explicit stop can cancel it.
+    /// This matters most in one-shot mode, where synthesizeAndPlay spends
+    /// several seconds buffering before any audio plays: without
+    /// cancellation, the old buffering would finish and shove a stale
+    /// clip into the fresh session that player.stop() just cleared.
+    private var speakTask: Task<Void, Never>?
+    /// Monotonic id bumped at the start of each synthesizeAndPlay. Lets
+    /// that method's `defer` tell whether *this* invocation still owns the
+    /// "Processing…" indicator: a superseding speak bumps it, so an older
+    /// (cancelled) invocation won't clear the new session's spinner — and,
+    /// because it's bumped only once synthesis actually begins, a speak
+    /// that aborts before synthesis (e.g. no text selected) can't strand
+    /// the flag ON either.
+    private var speakGeneration = 0
 
     public init(
         client: DaemonClient,
@@ -49,7 +64,8 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
     // MARK: - URLSchemeDispatching
 
     public func speakSelection(mode: SynthesizeMode) {
-        Task {
+        speakTask?.cancel()
+        speakTask = Task {
             guard let text = await selection.captureSelectedText() else {
                 log.warn("speak-selection: no text captured")
                 return
@@ -59,7 +75,8 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
     }
 
     public func readChrome() {
-        Task {
+        speakTask?.cancel()
+        speakTask = Task {
             guard let url = chrome.frontTabURL() else {
                 log.warn("read-chrome: no Chrome tab URL")
                 return
@@ -77,6 +94,9 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
     }
 
     public func stop() {
+        // Cancel any in-flight buffering first so a one-shot clip that's
+        // still synthesizing doesn't start playing right after we stop.
+        speakTask?.cancel()
         player.stop()
     }
 
@@ -102,11 +122,18 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
         // not 200-300ms later when the first chunk lands. AudioPlayer
         // auto-clears the flag inside beginSession() the moment real
         // audio starts, and also on stop().
+        speakGeneration &+= 1
+        let myGeneration = speakGeneration
         player.isLoading = true
         // Belt-and-braces: if synthesis throws before any chunk arrives,
-        // we still need to drop the flag so the UI doesn't get stuck
-        // showing "Processing…".
-        defer { player.isLoading = false }
+        // drop the flag so the UI doesn't get stuck showing "Processing…".
+        // But only if no newer speak has superseded us: a superseding speak
+        // bumps speakGeneration and now owns the indicator, so clearing here
+        // would wrongly retract its spinner. Keying off the generation (not
+        // Task.isCancelled) also avoids stranding the flag ON when a
+        // superseding speak aborts before synthesis. Normal success already
+        // cleared it in beginSession(), so this is a no-op there.
+        defer { if speakGeneration == myGeneration { player.isLoading = false } }
         // Capture frontmost app bundle id at request time so the daemon
         // can apply the voice wardrobe. nil if there's no foreground
         // app (rare — usually Finder or our own process).
@@ -138,11 +165,43 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
                     LangMismatchToastCenter.shared.surface(metadata)
                 }
             }
-            for try await chunk in stream {
-                if let buffer = await decodeWAV(chunk.wavData) {
-                    player.enqueue(buffer: buffer)
-                } else {
-                    log.error("failed to decode WAV chunk \(chunk.index)")
+            if settings.oneShotPlayback {
+                // One-shot: buffer the whole clip while the "Processing…"
+                // spinner stays up (we never enqueue mid-collection, so
+                // isLoading holds), then hand it all to the player at once.
+                // enqueueAll → beginSession schedules every chunk up front,
+                // so playback runs gap-free with no inter-chunk stall.
+                var buffers: [AVAudioPCMBuffer] = []
+                do {
+                    for try await chunk in stream {
+                        if Task.isCancelled { break }
+                        if let buffer = await decodeWAV(chunk.wavData) {
+                            // Re-check after the decode await: if we were
+                            // cancelled mid-decode, stop collecting now.
+                            if Task.isCancelled { break }
+                            buffers.append(buffer)
+                        } else {
+                            log.error("failed to decode WAV chunk \(chunk.index)")
+                        }
+                    }
+                } catch {
+                    // Partial mid-stream failure: play what we collected
+                    // rather than dropping the whole clip.
+                    log.error("synthesize failed (one-shot, partial): \(error)")
+                }
+                // A superseding speak or an explicit stop cancelled us mid-
+                // buffer — don't shove a stale clip into the fresh session.
+                guard !Task.isCancelled else { return }
+                player.enqueueAll(buffers)
+            } else {
+                // Streaming: play each chunk the instant it decodes (fast
+                // first-audio, but can stall between chunks on slow synth).
+                for try await chunk in stream {
+                    if let buffer = await decodeWAV(chunk.wavData) {
+                        player.enqueue(buffer: buffer)
+                    } else {
+                        log.error("failed to decode WAV chunk \(chunk.index)")
+                    }
                 }
             }
         } catch {

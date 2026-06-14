@@ -35,6 +35,11 @@ public enum SettingsKey: String, CaseIterable, Sendable {
     /// running, not just while speaking. Default OFF — Wispr-Flow-style
     /// always-visible chip is a power-user opt-in.
     case pillAlwaysVisible = "dev.myna.app.pillAlwaysVisible"
+    /// v0.2.x: one-shot playback — buffer the whole clip before playing
+    /// so playback is gap-free (no mid-clip stall while the daemon
+    /// synthesizes later chunks). Default ON. OFF restores streaming
+    /// (fast first-audio, chunks play as they arrive).
+    case oneShotPlayback = "dev.myna.app.oneShotPlayback"
 }
 
 /// Built-in defaults — must mirror the daemon's config defaults so the
@@ -61,6 +66,10 @@ public enum SettingsDefaults {
     /// still gates everything; this only widens *when* the pill
     /// appears, never overrides the master kill switch.
     public static let pillAlwaysVisible: Bool = false
+    /// v0.2.x: one-shot playback default ON. Most users prefer the
+    /// whole clip ready and gap-free over fast-but-stuttering first
+    /// audio. Power users can flip it off for streaming.
+    public static let oneShotPlayback: Bool = true
 }
 
 /// Thin wrapper over UserDefaults so tests can inject an ephemeral
@@ -149,6 +158,12 @@ public final class SettingsViewModel: ObservableObject {
     @Published public var pillAlwaysVisible: Bool {
         didSet { store.set(.pillAlwaysVisible, pillAlwaysVisible) }
     }
+    /// v0.2.x: one-shot playback. Read by AppDispatcher.synthesizeAndPlay
+    /// to decide whether to buffer all chunks before playing (gap-free)
+    /// or stream them as they arrive.
+    @Published public var oneShotPlayback: Bool {
+        didSet { store.set(.oneShotPlayback, oneShotPlayback) }
+    }
 
     /// Most recent validation error for the daemon URL field. Settings
     /// UI displays this inline. Nil = currently valid.
@@ -172,6 +187,8 @@ public final class SettingsViewModel: ObservableObject {
             store.bool(.trackpadGesturesEnabled) ?? SettingsDefaults.trackpadGesturesEnabled
         self.pillAlwaysVisible =
             store.bool(.pillAlwaysVisible) ?? SettingsDefaults.pillAlwaysVisible
+        self.oneShotPlayback =
+            store.bool(.oneShotPlayback) ?? SettingsDefaults.oneShotPlayback
     }
 
     /// Validate that the given URL string is localhost-only (we never
@@ -236,6 +253,7 @@ public final class SettingsViewModel: ObservableObject {
         ccToastsEnabled = SettingsDefaults.ccToastsEnabled
         trackpadGesturesEnabled = SettingsDefaults.trackpadGesturesEnabled
         pillAlwaysVisible = SettingsDefaults.pillAlwaysVisible
+        oneShotPlayback = SettingsDefaults.oneShotPlayback
         daemonURLError = nil
     }
 

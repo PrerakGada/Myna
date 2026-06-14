@@ -142,6 +142,38 @@ public final class AudioPlayer: ObservableObject {
         }
     }
 
+    /// Enqueue an entire clip at once and play it gap-free (one-shot
+    /// playback mode). The caller (AppDispatcher) buffers every chunk
+    /// from the daemon before calling this, so we already hold all the
+    /// audio — there is no network/synth wait left to stall on.
+    ///
+    /// Gap-free falls straight out of `beginSession()`: it schedules
+    /// *every* chunk currently in the queue contiguously on the player
+    /// node up front, so the engine renders them back-to-back. By
+    /// appending all buffers before the single `beginSession()` call we
+    /// guarantee none of them is missing when scheduling happens — no
+    /// inter-chunk gap, unlike the streaming path where chunk N+1 may
+    /// arrive after chunk N has already drained.
+    ///
+    /// Expects an idle player (AppDispatcher calls `player.stop()` before
+    /// synthesis, so the player is idle by the time the clip is ready).
+    public func enqueueAll(_ buffers: [AVAudioPCMBuffer]) {
+        guard !buffers.isEmpty else { return }
+        // Defensive: if somehow called while a session is live (playing/
+        // paused), do NOT just append — beginSession() won't fire, and the
+        // buffers would sit unscheduled and never play. Route them through
+        // the per-chunk path, which schedules each onto the active session.
+        guard state == .idle else {
+            for buffer in buffers { enqueue(buffer: buffer) }
+            return
+        }
+        for buffer in buffers {
+            queue.append(QueuedChunk(index: queue.chunks.count, buffer: buffer))
+        }
+        duration = queue.totalDuration
+        beginSession()
+    }
+
     /// Reconnect the audio graph for the late chunk's format (Kokoro
     /// always emits the same sample rate / channel count, so this is
     /// almost always a no-op, but we cover the rare format change),
