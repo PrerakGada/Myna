@@ -45,6 +45,23 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
     /// AudioPlayer / PillController, which also keep observers for process life.
     private var replayObserver: NSObjectProtocol?
 
+    // MARK: - seamless-playback tuning
+    //
+    // Measured on this engine: ~0.5s to first chunk, synthesis ~12× realtime,
+    // total gen ≈ 4.6s per 1000 chars. So the limiter for gap-free playback
+    // is the FIRST inter-chunk boundary: the tiny priority-first chunk can
+    // drain before a large second chunk is ready. Asking for ~500-char "rest"
+    // chunks means each one synthesizes in ~2-3s but plays for ~25-30s, so the
+    // producer can't fall behind; a ~6s audio lead absorbs the startup
+    // variance. Net: seamless, first audio in ~2-3s, any length.
+
+    /// `chunk_chars` requested in seamless mode (small enough that each chunk
+    /// is produced faster than it plays).
+    private static let seamlessChunkChars = 500
+    /// Seconds of decoded audio to buffer before starting playback. Above the
+    /// largest single chunk's synth time, so the player never underruns.
+    private static let leadBufferSeconds = 6.0
+
     public init(
         client: DaemonClient,
         player: AudioPlayer,
@@ -163,6 +180,13 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
             voice: settings.voice,
             speed: settings.defaultSpeed,
             mode: mode,
+            // Seamless mode asks the daemon for smaller "rest" chunks so each
+            // one synthesizes faster than it plays (synthesis runs ~12×
+            // realtime). That keeps the producer ahead of the player after a
+            // short lead-buffer, so playback never stalls mid-clip — the whole
+            // point of the rewrite below. Streaming mode keeps the daemon
+            // default (larger chunks, fewer parts).
+            chunkChars: settings.oneShotPlayback ? Self.seamlessChunkChars : nil,
             sessionId: UUID().uuidString,
             bundleId: bundleId
         )
@@ -185,33 +209,67 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
                 }
             }
             if settings.oneShotPlayback {
-                // One-shot: buffer the whole clip while the "Processing…"
-                // spinner stays up (we never enqueue mid-collection, so
-                // isLoading holds), then hand it all to the player at once.
-                // enqueueAll → beginSession schedules every chunk up front,
-                // so playback runs gap-free with no inter-chunk stall.
-                var buffers: [AVAudioPCMBuffer] = []
+                // Seamless (lead-buffered streaming): collect a short head
+                // start of audio, start playing it, then keep appending the
+                // remaining chunks gap-free. Because synthesis runs ~12×
+                // realtime and we asked for small chunks, the producer stays
+                // far ahead of the player once it starts — so there is no
+                // mid-clip stall AND first audio lands in ~2-3s, instead of
+                // waiting for the WHOLE clip to synthesize (the old buffer-
+                // everything one-shot made a 2000-char reply wait ~9s, a
+                // 4000-char one ~19s). enqueueAll schedules the lead
+                // contiguously; subsequent enqueue() calls append onto the
+                // live session, which the player schedules back-to-back.
+                let startTime = DispatchTime.now()
+                var lead: [AVAudioPCMBuffer] = []
+                var leadSeconds = 0.0
+                var started = false
+                var chunkCount = 0
+                func elapsed() -> Double {
+                    Double(DispatchTime.now().uptimeNanoseconds - startTime.uptimeNanoseconds) / 1e9
+                }
                 do {
                     for try await chunk in stream {
                         if Task.isCancelled { break }
-                        if let buffer = await decodeWAV(chunk.wavData) {
-                            // Re-check after the decode await: if we were
-                            // cancelled mid-decode, stop collecting now.
-                            if Task.isCancelled { break }
-                            buffers.append(buffer)
-                        } else {
+                        guard let buffer = await decodeWAV(chunk.wavData) else {
                             log.error("failed to decode WAV chunk \(chunk.index)")
+                            continue
+                        }
+                        if Task.isCancelled { break }
+                        chunkCount += 1
+                        if started {
+                            // Lead already playing — append; the player
+                            // schedules this onto the live node gap-free.
+                            player.enqueue(buffer: buffer)
+                        } else {
+                            lead.append(buffer)
+                            leadSeconds += Double(buffer.frameLength) / buffer.format.sampleRate
+                            if leadSeconds >= Self.leadBufferSeconds {
+                                player.enqueueAll(lead)
+                                lead.removeAll()
+                                started = true
+                                log.info(
+                                    "seamless: first audio after \(String(format: "%.2f", elapsed()))s "
+                                    + "(lead \(String(format: "%.1f", leadSeconds))s, \(chunkCount) chunks)")
+                            }
                         }
                     }
                 } catch {
                     // Partial mid-stream failure: play what we collected
                     // rather than dropping the whole clip.
-                    log.error("synthesize failed (one-shot, partial): \(error)")
+                    log.error("synthesize failed (seamless, partial): \(error)")
                 }
                 // A superseding speak or an explicit stop cancelled us mid-
-                // buffer — don't shove a stale clip into the fresh session.
+                // stream — don't shove a stale clip into the fresh session.
                 guard !Task.isCancelled else { return }
-                player.enqueueAll(buffers)
+                // Stream ended before the lead filled (a short reply) — play
+                // whatever we gathered.
+                if !started, !lead.isEmpty {
+                    player.enqueueAll(lead)
+                }
+                log.info(
+                    "seamless: synthesis complete in \(String(format: "%.2f", elapsed()))s "
+                    + "(\(chunkCount) chunks)")
             } else {
                 // Streaming: play each chunk the instant it decodes (fast
                 // first-audio, but can stall between chunks on slow synth).

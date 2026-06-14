@@ -55,8 +55,12 @@ public final class PillController: ObservableObject {
     )
 
     /// Margin from the bottom edge of the screen (above the Dock if
-    /// it's pinned to bottom). 28pt mirrors typical macOS HUD spacing.
-    private static let bottomMargin: CGFloat = 28
+    /// it's pinned to bottom — positioning is in `visibleFrame`, which
+    /// already excludes the Dock). Kept small (6pt) so the collapsed
+    /// thin bar hugs the very bottom and stays clear of chat-app input
+    /// fields. The expanded pill grows upward from this same bottom
+    /// edge, so a low margin doesn't push the mini-player off-screen.
+    private static let bottomMargin: CGFloat = 6
 
     private var player: AudioPlayer?
     private var settings: SettingsViewModel?
@@ -371,10 +375,34 @@ public final class PillController: ObservableObject {
             .removeDuplicates()
             .dropFirst()
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.repositionWindow(forLayoutChange: true) }
-            }
+            .sink { [weak self] _ in self?.repositionForFootprintChange() }
             .store(in: &windowCancellables)
+
+        // Resize when the rendered *height* changes WITHOUT the layout enum
+        // changing. The classic case: the pill is already `.expanded` from a
+        // hover, then a click pins it — `isPinned` flips but `layout` stays
+        // `.expanded`, so the line above never fires and the panel keeps its
+        // pre-pin size, clipping the freshly-revealed recents until some other
+        // event (e.g. a display change) forces a re-measure. Pinning, a Claude
+        // prompt banner appearing, and playback starting/stopping while
+        // expanded all grow/shrink the content the same way. Debounced one
+        // frame to coalesce the pin+recents burst into a single animation.
+        Publishers.MergeMany(
+            vm.$isPinned.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            vm.$recents.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            vm.$pendingPrompt.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            vm.$isSpeaking.dropFirst().map { _ in () }.eraseToAnyPublisher()
+        )
+        .debounce(for: .milliseconds(16), scheduler: RunLoop.main)
+        .sink { [weak self] _ in self?.repositionForFootprintChange() }
+        .store(in: &windowCancellables)
+    }
+
+    /// Re-measure the hosting view and animate the panel to fit. Hops to the
+    /// main actor because the Combine sinks above aren't actor-isolated even
+    /// though they're delivered on the main RunLoop.
+    private func repositionForFootprintChange() {
+        Task { @MainActor [weak self] in self?.repositionWindow(forLayoutChange: true) }
     }
 
     private func showWindow() {
@@ -399,8 +427,15 @@ public final class PillController: ObservableObject {
     /// cancels any pending collapse and expands immediately; exiting schedules
     /// a collapse after a 600ms grace so a fast cursor wiggle out-and-back
     /// doesn't flash the pill collapsed. Re-entry cancels the pending work.
-    /// (Pinned pills resolve to .expanded regardless, so a stray timer firing
-    /// is harmless.)
+    ///
+    /// The exit path collapses via `viewModel.collapse()`, which clears the
+    /// PIN as well as the hover flag. That's deliberate: a background click
+    /// pins the pill (`pinned || hovering → expanded`), and without clearing
+    /// the pin here the hover-out debounce would fire but the pill would stay
+    /// stuck open until the user manually minimised it. Clearing the pin on
+    /// hover-out means moving the cursor away always collapses the pill after
+    /// the grace period — pinned or not — so the user never has to minimise it
+    /// by hand to re-arm the auto-collapse.
     private func handleHoverChange(_ entered: Bool) {
         guard let viewModel else { return }
         if entered {
@@ -411,7 +446,7 @@ public final class PillController: ObservableObject {
             hoverCollapseWork?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 self?.hoverCollapseWork = nil
-                self?.viewModel?.setHovering(false)
+                self?.viewModel?.collapse()
             }
             hoverCollapseWork = work
             DispatchQueue.main.asyncAfter(
@@ -455,8 +490,11 @@ public final class PillController: ObservableObject {
     /// Play the prompt through the IN-PROCESS player (so the pill's transport
     /// controls it), reusing the .mynaReplayRecent → AppDispatcher synth wire.
     private func playPrompt(_ item: RegistryV2Item) {
+        // Speak the FULL reply (item.text), not the 80-char title preview —
+        // otherwise only the opening sentence is read. spokenText falls back
+        // to title for entries announced before the daemon carried the body.
         NotificationCenter.default.post(
-            name: .mynaReplayRecent, object: nil, userInfo: ["title": item.title])
+            name: .mynaReplayRecent, object: nil, userInfo: ["title": item.spokenText])
         markPromptHandled(item)
     }
 
@@ -661,5 +699,7 @@ public final class PillController: ObservableObject {
 
 /// Lifted from the design tokens in PillView (file-private there). Keep
 /// small and out of the view-model so the controller doesn't have to
-/// import SwiftUI just for a number.
-private let pillMinHeight: CGFloat = 24
+/// import SwiftUI just for a number. 16pt is the collapsed thin-bar's hit
+/// height (CollapsedBar.hitHeight) — the floor only bites for that state;
+/// the expanded mini-player always measures much taller.
+private let pillMinHeight: CGFloat = 16

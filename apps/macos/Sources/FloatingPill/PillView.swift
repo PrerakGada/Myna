@@ -22,18 +22,13 @@ import SwiftUI
 
 private enum PillStyle {
     // sizes
-    static let collapsedHeight: CGFloat = 36
-    static let collapsedHPadding: CGFloat = 12
     static let expandedWidth: CGFloat = 340
-    static let badgeCollapsed: CGFloat = 24
     static let badgeExpanded: CGFloat = 30
 
     // radii
-    static let collapsedRadius: CGFloat = 18      // half of collapsed height
     static let expandedRadius: CGFloat = 20
 
     // typography
-    static let statusFont = Font.system(size: 13, weight: .semibold, design: .rounded)
     static let headlineFont = Font.system(size: 13, weight: .medium, design: .rounded)
     static let chipFont = Font.system(size: 10, weight: .semibold, design: .rounded)
 
@@ -83,14 +78,13 @@ public struct PillView: View {
             // The window is ordered out in this state; render nothing.
             Color.clear.frame(width: 1, height: 1)
         case .collapsedIdle:
-            collapsedChip(status: "Myna", trailing: .none)
+            // Minimal footprint: a thin bar, no icon/text, so it never
+            // blocks the apps behind it. Hover expands to the full pill.
+            CollapsedBar(kind: .idle)
         case .processing:
-            collapsedChip(status: "Processing\u{2026}", trailing: .spinner)
+            CollapsedBar(kind: .processing)
         case .collapsedPlaying:
-            collapsedChip(
-                status: viewModel.isPaused ? "Paused" : "Speaking",
-                trailing: .waveform(playing: !viewModel.isPaused)
-            )
+            CollapsedBar(kind: viewModel.isPaused ? .paused : .playing)
         case .expanded, .promptCTA:
             // promptCTA falls back to the expanded mini-player until Step 8.
             expanded
@@ -110,28 +104,6 @@ public struct PillView: View {
         case none
         case spinner
         case waveform(playing: Bool)
-    }
-
-    private func collapsedChip(status: String, trailing: Trailing) -> some View {
-        HStack(spacing: 8) {
-            birdBadge(diameter: PillStyle.badgeCollapsed)
-                .matchedGeometryEffect(id: "bird", in: ns)
-
-            Text(status)
-                .font(PillStyle.statusFont)
-                .foregroundStyle(.primary)
-                .fixedSize()
-                .matchedGeometryEffect(id: "status", in: ns)
-
-            trailingIndicator(trailing, height: 12)
-                .matchedGeometryEffect(id: "waveform", in: ns)
-        }
-        .padding(.horizontal, PillStyle.collapsedHPadding)
-        .frame(height: PillStyle.collapsedHeight)
-        .background(pillBackground(cornerRadius: PillStyle.collapsedRadius))
-        .overlay(
-            Capsule().stroke(Color.white.opacity(0.07), lineWidth: 0.5)
-        )
     }
 
     @ViewBuilder
@@ -305,31 +277,21 @@ public struct PillView: View {
     }
 
     private var transcriptList: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Divider().overlay(Color.white.opacity(0.08)).padding(.vertical, 1)
+        VStack(alignment: .leading, spacing: 2) {
             Text("RECENT")
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .foregroundStyle(.tertiary)
+                .kerning(0.6)
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+                .padding(.bottom, 3)
             ForEach(viewModel.recents) { item in
-                Button { viewModel.replay(item) } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        Text(item.displayLine())
-                            .font(.system(size: 11, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                    .padding(.vertical, 2)
-                }
-                .buttonStyle(.plain)
-                .help("Re-speak")
-                .simultaneousGesture(TapGesture().onEnded {})
+                PillRecentRow(item: item) { viewModel.replay(item) }
             }
+        }
+        // Hairline separates the transport block above from the recents.
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 0.5)
         }
     }
 
@@ -447,6 +409,110 @@ public struct PillView: View {
             .compositingGroup()
             .shadow(color: .black.opacity(0.34), radius: 16, x: 0, y: 6)
         }
+    }
+}
+
+// MARK: - collapsed bar
+
+/// The collapsed pill is a thin, contentless bar — no bird, no text — so it
+/// stays out of the way of whatever's behind it. State reads purely from tint
+/// (a frosted neutral when idle; accent while working/playing, with a soft
+/// pulse) and hovering expands it to the full mini-player. PillController
+/// shrinks the panel to this bar's footprint, so the hover/click target is
+/// just this strip at the bottom-centre of the screen.
+private struct CollapsedBar: View {
+    enum Kind: Equatable { case idle, processing, playing, paused }
+    let kind: Kind
+    @State private var pulse = false
+
+    // Visible bar.
+    private static let barWidth: CGFloat = 64
+    private static let barHeight: CGFloat = 6
+    // Transparent padding around the bar — a comfortably larger hover/click
+    // target than the 6pt-tall bar itself.
+    private static let hitWidth: CGFloat = 84
+    private static let hitHeight: CGFloat = 18
+
+    /// Accent wash opacity over the frosted base. Idle stays pure frost.
+    private var tintOpacity: Double {
+        switch kind {
+        case .idle: return 0.0
+        case .processing, .playing: return 0.85
+        case .paused: return 0.4
+        }
+    }
+
+    private var animates: Bool { kind == .processing || kind == .playing }
+
+    var body: some View {
+        let cap = Capsule(style: .continuous)
+        return cap
+            .fill(.ultraThinMaterial)
+            .overlay(cap.fill(Color.accentColor.opacity(tintOpacity)))
+            .overlay(cap.strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5))
+            .frame(width: Self.barWidth, height: Self.barHeight)
+            .opacity(animates && pulse ? 0.5 : 1.0)
+            .shadow(color: .black.opacity(0.22), radius: 3, y: 1)
+            .frame(width: Self.hitWidth, height: Self.hitHeight)
+            .contentShape(Rectangle())
+            .onAppear {
+                guard animates else { return }
+                withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
+                    pulse = true
+                }
+            }
+            // Remount on kind change so the pulse restarts (or stops) cleanly
+            // across idle↔processing↔playing with no stale animation lingering.
+            .id(kind)
+    }
+}
+
+// MARK: - recent row
+
+/// One tappable "recent read" row in the expanded pill. The *title* gets the
+/// full width (single line, tail-truncated); the relative age sits in a
+/// de-emphasised trailing slot. The leading glyph flips replay→play and the
+/// row lights up on hover so it reads as a tap target. (We deliberately drop
+/// the voice prefix that `RecentItem.displayLine()` carries for the menu —
+/// the pill already shows the active voice, so repeating it per row just ate
+/// the horizontal room the title needs.)
+private struct PillRecentRow: View {
+    let item: RecentItem
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: hovering ? "play.fill" : "arrow.counterclockwise")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(hovering ? Color.accentColor : Color.secondary)
+                    .frame(width: 14, height: 14)
+                Text(item.title)
+                    .font(.system(size: 11.5, design: .rounded))
+                    .foregroundStyle(hovering ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 6)
+                Text(item.ageString())
+                    .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.secondary.opacity(0.7))
+                    .fixedSize()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(hovering ? 0.07 : 0))
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Re-speak")
+        // Swallow the parent tap-to-pin so a row tap doesn't toggle the pin.
+        .simultaneousGesture(TapGesture().onEnded {})
     }
 }
 

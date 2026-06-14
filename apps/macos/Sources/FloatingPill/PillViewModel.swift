@@ -197,12 +197,20 @@ public final class PillViewModel: ObservableObject {
         refreshLayout()
     }
 
-    /// Close button → collapse and unpin.
-    public func dismiss() {
+    /// Collapse the expanded pill back to the bar: clear BOTH the pin and the
+    /// hover flag so `resolvePillLayout` falls through to a collapsed state.
+    /// Shared by the close button and the hover-out auto-collapse — the latter
+    /// relies on the pin being cleared here so a click-pinned pill still
+    /// collapses when the cursor leaves, instead of staying stuck open until
+    /// the user minimises it by hand.
+    public func collapse() {
         isPinned = false
         isHovering = false
         refreshLayout()
     }
+
+    /// Close button → collapse and unpin.
+    public func dismiss() { collapse() }
 
     /// Re-speak a recent item (transcript-row tap). Routes through
     /// MenuBarController.replayRecent → .mynaReplayRecent → AppDispatcher,

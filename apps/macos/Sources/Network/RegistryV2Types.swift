@@ -29,6 +29,11 @@ public struct RegistryV2Item: Codable, Sendable, Identifiable, Equatable, Hashab
     public let source: String  // "claude-code" | "manual" | ...
     public let projectId: String  // stable project key for the palette hash
     public let title: String  // preview text (≤ ~80 chars)
+    /// Full reply body. `title` is only the first-line preview; play this so
+    /// the WHOLE output is read, not just the opening sentence. Optional —
+    /// nil for entries announced before the daemon carried it (callers fall
+    /// back to `title`). See `spokenText`.
+    public let text: String?
     public let announcedAtMs: Int  // unix ms timestamp
     public let ttlS: Int  // suggested time-to-live in seconds
 
@@ -37,6 +42,7 @@ public struct RegistryV2Item: Codable, Sendable, Identifiable, Equatable, Hashab
         case source
         case projectId = "project_id"
         case title
+        case text
         case announcedAtMs = "announced_at_ms"
         case ttlS = "ttl_s"
     }
@@ -46,6 +52,7 @@ public struct RegistryV2Item: Codable, Sendable, Identifiable, Equatable, Hashab
         source: String,
         projectId: String,
         title: String,
+        text: String? = nil,
         announcedAtMs: Int,
         ttlS: Int
     ) {
@@ -53,8 +60,16 @@ public struct RegistryV2Item: Codable, Sendable, Identifiable, Equatable, Hashab
         self.source = source
         self.projectId = projectId
         self.title = title
+        self.text = text
         self.announcedAtMs = announcedAtMs
         self.ttlS = ttlS
+    }
+
+    /// The text to actually speak: the full body when present, else the
+    /// first-line preview. Never empty-coalesces away a real title.
+    public var spokenText: String {
+        if let text = text, !text.isEmpty { return text }
+        return title
     }
 }
 
