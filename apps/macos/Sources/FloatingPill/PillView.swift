@@ -394,6 +394,14 @@ public struct PillView: View {
     @ViewBuilder
     private func pillBackground(cornerRadius: CGFloat) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        // `glassEffect` only EXISTS in the macOS 26 SDK (Xcode 26 / Swift 6.2+).
+        // A runtime `#available(macOS 26.0, *)` check is not enough: on an older
+        // SDK the symbol is absent and the file won't compile at all. Release CI
+        // builds on Xcode 16 / macOS 15 SDK, so the glass path must be excluded
+        // at COMPILE time there — hence the `#if compiler(>=6.2)` gate. On a
+        // macOS 26 toolchain we still fall back to the material below at runtime
+        // on pre-26 systems.
+        #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             // Liquid Glass: a tinted regular glass so the dark chrome reads
             // over bright desktops while still refracting what's behind it.
@@ -402,13 +410,24 @@ public struct PillView: View {
                 .glassEffect(.regular.tint(Color.black.opacity(0.18)), in: shape)
                 .shadow(color: .black.opacity(0.30), radius: 16, x: 0, y: 6)
         } else {
-            ZStack {
-                shape.fill(.ultraThinMaterial)
-                shape.fill(Color.black.opacity(0.28))
-            }
-            .compositingGroup()
-            .shadow(color: .black.opacity(0.34), radius: 16, x: 0, y: 6)
+            pillMaterialBackground(shape)
         }
+        #else
+        pillMaterialBackground(shape)
+        #endif
+    }
+
+    /// Pre-Liquid-Glass background: stacked ultra-thin material + dark wash.
+    /// Used on macOS < 26 at runtime, and as the sole path when built against
+    /// an SDK that predates `glassEffect`.
+    @ViewBuilder
+    private func pillMaterialBackground(_ shape: RoundedRectangle) -> some View {
+        ZStack {
+            shape.fill(.ultraThinMaterial)
+            shape.fill(Color.black.opacity(0.28))
+        }
+        .compositingGroup()
+        .shadow(color: .black.opacity(0.34), radius: 16, x: 0, y: 6)
     }
 }
 
