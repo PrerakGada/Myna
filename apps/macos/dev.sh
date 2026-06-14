@@ -37,7 +37,10 @@ cd "$HERE"
 pkill -f "Myna.app/Contents/MacOS/Myna" 2>/dev/null || true
 sleep 1
 
-# 2. Regenerate Xcode project from project.yml (cheap; ~1-2s)
+# 2. Refresh the bundled setup script (the in-app "Finish setup" flow runs it),
+#    then regenerate the Xcode project from project.yml (cheap; ~1-2s).
+mkdir -p "$HERE/Resources/setup"
+cp "$REPO/dist/setup.sh" "$HERE/Resources/setup/setup.sh"
 xcodegen generate >/dev/null
 
 # 3. Debug build (Xcode doesn't sign; we'll do it ourselves in step 5)

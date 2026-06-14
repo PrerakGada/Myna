@@ -141,22 +141,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         //     dialog show as before. No cinematic for upgraders.
         let priorState = WhatsNewStateStore.shared.load()
         let isTrulyFresh = !priorState.firstRunComplete && priorState.lastSeenVersion == "0.0.0"
-        if isTrulyFresh {
-            // Cinematic owns the first_run_complete slot per S10 AC #7.
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
+        // Upgraders are first-run-complete already; mark idempotently up front.
+        if !isTrulyFresh {
+            WhatsNewLauncher.shared.markFirstRunComplete()
+        }
+        // Engine-aware launch UX: if the voice engine isn't installed/running,
+        // the cinematic would have no audio and nothing could be read — so show
+        // the in-app "Finish setup" flow instead (it installs the engine + model
+        // + Claude hook, then prompts for Accessibility). Setup takes priority;
+        // the cinematic / What's New run on a later launch once the engine is up.
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            if await SetupController.engineIsDown(client: self.client) {
+                _ = SetupLauncher.shared.present(client: self.client)
+                return
+            }
+            if isTrulyFresh {
                 _ = OnboardingLauncher.shared.present(
                     client: self.client,
                     player: self.player,
                     settings: self.settings
                 )
-            }
-        } else {
-            // Upgrader path — mark complete (idempotent) and show
-            // What's New if a minor bump landed.
-            WhatsNewLauncher.shared.markFirstRunComplete()
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            } else {
                 _ = WhatsNewLauncher.shared.showIfDue()
             }
         }

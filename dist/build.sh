@@ -47,6 +47,9 @@ fi
 run "mkdir -p '$BUILD_DIR' '$EXPORT_DIR'"
 run "rm -rf '$ARCHIVE_PATH' '$EXPORT_DIR/Myna.app'"
 
+# 0) Refresh the bundled setup script (the in-app "Finish setup" flow runs it).
+run "mkdir -p '$APP_DIR/Resources/setup' && cp '$ROOT/dist/setup.sh' '$APP_DIR/Resources/setup/setup.sh'"
+
 # 1) Regenerate the Xcode project from project.yml (declarative source of truth).
 run "cd '$APP_DIR' && xcodegen generate"
 

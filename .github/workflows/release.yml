@@ -478,10 +478,14 @@ jobs:
         run: |
           set -euo pipefail
           FORMULA="tap-repo/Formula/myna-daemon.rb"
-          if [ ! -f "$FORMULA" ]; then
-            mkdir -p tap-repo/Formula
-            cp source/tap/Formula/myna-daemon.rb "$FORMULA"
-          fi
+          # ALWAYS copy the in-repo formula — it's the source of truth for the
+          # install method AND the resource list. (This used to only copy when
+          # the file was missing, so in-repo changes — install logic, the `myna`
+          # CLI, resource updates — never reached the deployed tap; the formula
+          # silently diverged. The top-level url/sha get bumped just below; the
+          # bottle-daemon job re-adds the bottle block afterward.)
+          mkdir -p tap-repo/Formula
+          cp source/tap/Formula/myna-daemon.rb "$FORMULA"
           TARBALL_URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/v${VERSION}.tar.gz"
           echo "fetching $TARBALL_URL …"
           # Retry a few times — GitHub sometimes lags generating the tarball

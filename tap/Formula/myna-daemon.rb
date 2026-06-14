@@ -250,6 +250,16 @@ class MynaDaemon < Formula
     SH
     chmod 0755, bin/"myna-daemon"
 
+    # The `myna` CLI: `myna setup` finishes the install (voice engine + model +
+    # Claude hook), `myna doctor` health-checks, and `myna "text"` speaks. Ship
+    # the script plus the files its subcommands resolve relatively (dist/setup.sh
+    # and the hook) so it works from libexec, then symlink it onto PATH.
+    (libexec/"cli").install buildpath/"cli/myna"
+    (libexec/"dist").install buildpath/"dist/setup.sh"
+    (libexec/"hooks").install buildpath/"hooks/myna-cc-announce.py"
+    chmod 0755, libexec/"cli/myna"
+    bin.install_symlink libexec/"cli/myna" => "myna"
+
     # Default config (only written if not present — install logic mirrors install.sh).
     (etc/"myna").mkpath
     keybindings = etc/"myna/keybindings.json"
