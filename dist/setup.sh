@@ -51,12 +51,24 @@ if [ ! -d "$ENGINE_VENV" ]; then
 fi
 say "Installing the voice engine (mlx-audio) — this can take a few minutes…"
 "$ENGINE_VENV/bin/pip" install --quiet --upgrade pip
-# The `[server]` extra is REQUIRED — it pulls uvicorn + fastapi + webrtcvad,
-# which `mlx_audio.server` imports. Plain `mlx-audio` installs the library but
-# NOT the HTTP server deps, so the engine crashes on startup with
-# "ModuleNotFoundError: No module named 'uvicorn'" and the app stays offline.
-"$ENGINE_VENV/bin/pip" install --quiet --upgrade 'mlx-audio[server]' \
-  || die "mlx-audio install failed. Re-run, or: $ENGINE_VENV/bin/pip install 'mlx-audio[server]'"
+# The full engine stack. `mlx-audio` alone is NOT enough to actually synthesize:
+#   • [server]  → uvicorn + fastapi + webrtcvad (mlx_audio.server imports these;
+#                 without it the engine crashes on startup, app shows "offline")
+#   • misaki + num2words + spacy + phonemizer + espeakng-loader → Kokoro's text
+#                 processing / G2P. Without these /v1/models works but real TTS
+#                 dies with "Kokoro requires the optional 'misaki' package".
+# NB: we install spacy/etc. DIRECTLY (not via `misaki[en]`) because that extra
+# pins old spacy/blis versions that have no cp313 wheel and fail to compile.
+"$ENGINE_VENV/bin/pip" install --quiet --upgrade \
+  'mlx-audio[server]' misaki num2words spacy phonemizer espeakng-loader \
+  || die "engine install failed. Re-run, or install the packages above manually."
+
+# espeak-ng library, bundled by espeakng-loader so we don't depend on a brew
+# install (misaki only finds a brew espeak at a hard-coded version path). We
+# pass these to the engine via env vars below; phonemizer honours
+# PHONEMIZER_ESPEAK_LIBRARY, and espeak-ng reads ESPEAK_DATA_PATH.
+ESPEAK_LIB="$("$ENGINE_VENV/bin/python" -c 'import espeakng_loader; print(espeakng_loader.get_library_path())' 2>/dev/null)"
+ESPEAK_DATA="$("$ENGINE_VENV/bin/python" -c 'import espeakng_loader; print(espeakng_loader.get_data_path())' 2>/dev/null)"
 
 # 3. Engine LaunchAgent — keeps the engine on 127.0.0.1:$ENGINE_PORT across reboots.
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.cache/myna" "$HOME/Library/Logs"
@@ -76,6 +88,11 @@ cat > "$ENGINE_PLIST" <<EOF
     <string>--port</string><string>$ENGINE_PORT</string>
   </array>
   <key>WorkingDirectory</key><string>$HOME/.cache/myna</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PHONEMIZER_ESPEAK_LIBRARY</key><string>$ESPEAK_LIB</string>
+    <key>ESPEAK_DATA_PATH</key><string>$ESPEAK_DATA</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>$HOME/Library/Logs/myna-engine.log</string>
