@@ -60,6 +60,8 @@ public final class PillController: ObservableObject {
 
     private var player: AudioPlayer?
     private var settings: SettingsViewModel?
+    /// Weak — app-lifetime singleton supplying recents + the replay hook.
+    private weak var menuController: MenuBarController?
     private let bridge: PillBridge
 
     private var window: FloatingPillWindow?
@@ -82,6 +84,22 @@ public final class PillController: ObservableObject {
     /// target without making the pill feel sticky.
     private static let hoverCollapseDelay: TimeInterval = 0.6
 
+    /// Pending Claude-output prompt (the newest unhandled CC item). The pill
+    /// owns this — the top-right toast is suppressed while the pill is on.
+    private var pendingPrompt: RegistryV2Item?
+    /// CC ids the user has played/dismissed this session, filtered so a handled
+    /// item doesn't re-prompt on the next registry poll.
+    private var ccHandledIds: Set<String> = []
+    /// Auto-dismiss the in-pill prompt after a grace period.
+    private var promptAutoDismissWork: DispatchWorkItem?
+    private static let promptAutoDismissDelay: TimeInterval = 8
+
+    /// Debounce for display-configuration changes — sleep/wake and plug/unplug
+    /// emit storms of screen-params notifications, sometimes with a transient
+    /// degenerate screen set.
+    private var screenChangeWork: DispatchWorkItem?
+    private static let screenChangeDebounce: TimeInterval = 0.2
+
     /// Default initialiser: produces a controller that's inert until
     /// `attach(player:, settings:)` is called. This shape supports
     /// being declared as @StateObject in MynaApp before AppDelegate
@@ -103,10 +121,15 @@ public final class PillController: ObservableObject {
 
     /// Inject the dependencies once AppDelegate has bootstrapped them.
     /// Safe to call multiple times; first call wins.
-    public func attach(player: AudioPlayer, settings: SettingsViewModel) {
+    public func attach(
+        player: AudioPlayer,
+        settings: SettingsViewModel,
+        menuController: MenuBarController? = nil
+    ) {
         guard self.player == nil else { return }
         self.player = player
         self.settings = settings
+        self.menuController = menuController
         if didStart {
             // start() was called before attach — kick observers now.
             beginObserving()
@@ -163,6 +186,14 @@ public final class PillController: ObservableObject {
             .sink { [weak self] _ in
                 self?.syncVisibility()
             }
+            .store(in: &cancellables)
+
+        // Claude-output prompts — the pill owns these (the top-right toast is
+        // suppressed when the pill is enabled). Observe the menu bar's pending
+        // CC registry and surface the newest unhandled item in-pill.
+        menuController?.$ccPending
+            .receive(on: RunLoop.main)
+            .sink { [weak self] items in self?.handleCCPending(items) }
             .store(in: &cancellables)
 
         // Screen / front-app changes re-position the pill (only when
@@ -235,6 +266,10 @@ public final class PillController: ObservableObject {
         windowCancellables.removeAll()
         hoverCollapseWork?.cancel()
         hoverCollapseWork = nil
+        promptAutoDismissWork?.cancel()
+        promptAutoDismissWork = nil
+        screenChangeWork?.cancel()
+        screenChangeWork = nil
         for token in notificationObservers {
             NotificationCenter.default.removeObserver(token)
             NSWorkspace.shared.notificationCenter.removeObserver(token)
@@ -270,7 +305,7 @@ public final class PillController: ObservableObject {
         //     ~50ms responsiveness — AudioPlayer.isLoading clears in
         //     stop() and at first-chunk arrival).
         let shouldBeVisible = isEnabledInDefaults
-            && (alwaysVisible || isPlayingOrPaused || player.isLoading)
+            && (alwaysVisible || isPlayingOrPaused || player.isLoading || pendingPrompt != nil)
         if shouldBeVisible {
             showWindow()
         } else {
@@ -285,7 +320,10 @@ public final class PillController: ObservableObject {
     private func ensureWindow() {
         if window != nil { return }
         guard let player, let settings else { return }
-        let vm = PillViewModel(player: player, settings: settings, bridge: bridge)
+        let vm = PillViewModel(
+            player: player, settings: settings, bridge: bridge,
+            menuController: menuController
+        )
         // Initialise the always-visible flag before SwiftUI first renders
         // so the idle layout doesn't flash on first show.
         vm.setAlwaysVisible(settings.pillAlwaysVisible)
@@ -318,6 +356,12 @@ public final class PillController: ObservableObject {
         self.window = panel
         self.hostingView = hosting
         self.viewModel = vm
+
+        // Push any pending Claude-output prompt into the fresh view-model and
+        // wire its buttons back to the controller's handled-id bookkeeping.
+        vm.setPrompt(pendingPrompt)
+        vm.onPlayPrompt = { [weak self] item in self?.playPrompt(item) }
+        vm.onDismissPrompt = { [weak self] item in self?.dismissPrompt(item) }
 
         // Resize/animate the panel whenever the layout footprint changes
         // (collapsed ↔ expanded ↔ processing). dropFirst skips the initial
@@ -373,6 +417,50 @@ public final class PillController: ObservableObject {
             DispatchQueue.main.asyncAfter(
                 deadline: .now() + Self.hoverCollapseDelay, execute: work)
         }
+    }
+
+    // MARK: - Claude-output prompt
+
+    private func handleCCPending(_ items: [RegistryV2Item]) {
+        let enabled = settings?.ccToastsEnabled ?? true
+        let next = enabled ? items.first { !ccHandledIds.contains($0.id) } : nil
+        guard next?.id != pendingPrompt?.id else { return }
+        pendingPrompt = next
+        viewModel?.setPrompt(next)
+        schedulePromptAutoDismiss()
+        syncVisibility()
+    }
+
+    private func schedulePromptAutoDismiss() {
+        promptAutoDismissWork?.cancel()
+        promptAutoDismissWork = nil
+        guard let item = pendingPrompt else { return }
+        let work = DispatchWorkItem { [weak self] in self?.markPromptHandled(item) }
+        promptAutoDismissWork = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.promptAutoDismissDelay, execute: work)
+    }
+
+    /// Play the prompt through the IN-PROCESS player (so the pill's transport
+    /// controls it), reusing the .mynaReplayRecent → AppDispatcher synth wire.
+    private func playPrompt(_ item: RegistryV2Item) {
+        NotificationCenter.default.post(
+            name: .mynaReplayRecent, object: nil, userInfo: ["title": item.title])
+        markPromptHandled(item)
+    }
+
+    private func dismissPrompt(_ item: RegistryV2Item) {
+        markPromptHandled(item)
+    }
+
+    private func markPromptHandled(_ item: RegistryV2Item) {
+        ccHandledIds.insert(item.id)
+        promptAutoDismissWork?.cancel()
+        promptAutoDismissWork = nil
+        guard pendingPrompt?.id == item.id else { return }
+        pendingPrompt = nil
+        viewModel?.setPrompt(nil)
+        syncVisibility()
     }
 
     // MARK: - positioning
@@ -504,10 +592,19 @@ public final class PillController: ObservableObject {
     }
 
     private func handleScreenChange() {
-        // Display arrangement changed (plug/unplug). If the user had
-        // a custom position that's now off-screen we'll re-snap to a
-        // visible screen via the off-screen check in repositionWindow.
-        repositionWindow()
+        // Display arrangement changed (plug/unplug, sleep/wake). These arrive
+        // in storms, sometimes with a transient empty/degenerate screen set.
+        // Debounce so we reposition once things settle, and skip ticks where
+        // no screens are reported. The clamp in repositionWindow then re-snaps
+        // any now-off-screen custom position back onto a visible display.
+        screenChangeWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !NSScreen.screens.isEmpty else { return }
+            self.repositionWindow()
+        }
+        screenChangeWork = work
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.screenChangeDebounce, execute: work)
     }
 
     private func handleUserDrag() {

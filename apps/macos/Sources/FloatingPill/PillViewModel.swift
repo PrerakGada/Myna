@@ -21,6 +21,10 @@ public final class PillViewModel: ObservableObject {
     private let player: AudioPlayer
     private let settings: SettingsViewModel
     private let bridge: PillBridge
+    /// MenuBarController supplies the recents ring + the replay hook. Weak —
+    /// it's an app-lifetime singleton the pill doesn't own. Optional so tests
+    /// and previews can construct the view-model without a menu bar.
+    private weak var menuController: MenuBarController?
 
     // MARK: - inputs (each change recomputes `layout`)
 
@@ -48,6 +52,26 @@ public final class PillViewModel: ObservableObject {
     /// PillController observes it to resize/animate the panel.
     @Published public private(set) var layout: PillLayout = .hidden
 
+    // MARK: - playback progress (drives the expanded scrubber + speed)
+
+    @Published public private(set) var position: TimeInterval = 0
+    @Published public private(set) var duration: TimeInterval = 0
+    @Published public private(set) var speed: Double = 1.0
+
+    /// Last few reads (newest first), mirrored from MenuBarController. Shown
+    /// in the expanded+pinned view; tap a row to re-speak it.
+    @Published public private(set) var recents: [RecentItem] = []
+
+    /// Pending Claude-output prompt to surface in-pill (the newest unhandled
+    /// CC registry item). PillController owns the dedup/handled bookkeeping
+    /// and pushes the current value here via setPrompt.
+    @Published public private(set) var pendingPrompt: RegistryV2Item?
+
+    /// Set by PillController so the prompt buttons route through its handled-id
+    /// bookkeeping (and the in-process synth for Play).
+    public var onPlayPrompt: ((RegistryV2Item) -> Void)?
+    public var onDismissPrompt: ((RegistryV2Item) -> Void)?
+
     // MARK: - display data
 
     /// Headline / preview text the dispatcher asked Myna to speak. May be nil.
@@ -60,10 +84,16 @@ public final class PillViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
-    public init(player: AudioPlayer, settings: SettingsViewModel, bridge: PillBridge = .shared) {
+    public init(
+        player: AudioPlayer,
+        settings: SettingsViewModel,
+        bridge: PillBridge = .shared,
+        menuController: MenuBarController? = nil
+    ) {
         self.player = player
         self.settings = settings
         self.bridge = bridge
+        self.menuController = menuController
 
         #if DEBUG
         // In preview-only mode skip live subscriptions so the forced state in
@@ -88,6 +118,30 @@ public final class PillViewModel: ObservableObject {
                 self?.refreshLayout()
             }
             .store(in: &cancellables)
+
+        // Playback progress for the scrubber. These don't affect `layout`,
+        // so they don't call refreshLayout — they just refresh the slider.
+        player.$position
+            .receive(on: RunLoop.main)
+            .sink { [weak self] p in self?.position = p }
+            .store(in: &cancellables)
+        player.$duration
+            .receive(on: RunLoop.main)
+            .sink { [weak self] d in self?.duration = d }
+            .store(in: &cancellables)
+        player.$speed
+            .receive(on: RunLoop.main)
+            .sink { [weak self] s in self?.speed = s }
+            .store(in: &cancellables)
+
+        // Recents ring from the menu bar — drives the pinned transcript list.
+        if let menuController {
+            recents = menuController.recents
+            menuController.$recents
+                .receive(on: RunLoop.main)
+                .sink { [weak self] r in self?.recents = r }
+                .store(in: &cancellables)
+        }
 
         // Republish when the bridge (preview text / voice) or the settings
         // voice changes while the pill is up.
@@ -150,6 +204,32 @@ public final class PillViewModel: ObservableObject {
         refreshLayout()
     }
 
+    /// Re-speak a recent item (transcript-row tap). Routes through
+    /// MenuBarController.replayRecent → .mynaReplayRecent → AppDispatcher,
+    /// which re-synthesises through the in-process player.
+    public func replay(_ item: RecentItem) {
+        menuController?.replayRecent(item)
+    }
+
+    /// PillController pushes the current Claude-output prompt (or nil to clear).
+    public func setPrompt(_ item: RegistryV2Item?) {
+        guard pendingPrompt?.id != item?.id else { return }
+        pendingPrompt = item
+        hasPrompt = (item != nil)
+        refreshLayout()
+    }
+
+    /// In-pill prompt buttons — defer to the controller's handlers.
+    public func playPrompt() {
+        guard let item = pendingPrompt else { return }
+        onPlayPrompt?(item)
+    }
+
+    public func dismissPrompt() {
+        guard let item = pendingPrompt else { return }
+        onDismissPrompt?(item)
+    }
+
     /// Play/Pause button.
     public func togglePlayPause() {
         switch player.state {
@@ -164,10 +244,28 @@ public final class PillViewModel: ObservableObject {
         player.stop()
     }
 
-    /// Skip forward. Replaced by an honest ±10s seek pair in Step 6.
-    public func skipToNextChunk() {
-        player.seek(delta: 10)
+    /// Seek to an absolute position in seconds (scrubber commit).
+    public func seek(toSeconds seconds: TimeInterval) {
+        player.seek(to: seconds)
     }
+
+    /// Skip by a delta in seconds (the ±10s buttons). Positive = forward.
+    public func seekBy(_ delta: TimeInterval) {
+        player.seek(delta: delta)
+    }
+
+    /// Cycle through the playback-speed presets.
+    public func cycleSpeed() {
+        let idx = Self.speedSteps.firstIndex { abs($0 - speed) < 0.01 } ?? 0
+        player.setSpeed(Self.speedSteps[(idx + 1) % Self.speedSteps.count])
+    }
+
+    /// Label for the current speed, e.g. "1×", "1.25×", "2×".
+    public var speedLabel: String {
+        String(format: "%g\u{00D7}", speed)
+    }
+
+    private static let speedSteps: [Double] = [1.0, 1.25, 1.5, 2.0]
 
     // MARK: - player → inputs
 

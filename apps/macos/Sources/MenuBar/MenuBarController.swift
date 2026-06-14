@@ -147,7 +147,12 @@ public final class MenuBarController: ObservableObject, CCToastActions {
             self.ccPending = []
         }
         let chime = settings?.toastChimeEnabled ?? true
-        if settings?.ccToastsEnabled ?? true {
+        // The floating pill owns the Claude-output prompt when it's enabled —
+        // we render it IN the pill (auto-expanding) instead of a top-right
+        // toast. Only fall back to the top-right toast when the pill is off.
+        let pillEnabled = (UserDefaults.standard.object(
+            forKey: PillController.enabledDefaultsKey) as? Bool) ?? true
+        if (settings?.ccToastsEnabled ?? true) && !pillEnabled {
             toasts.ingest(registry: ccPending, chimeEnabled: chime)
         } else {
             toasts.dismissAll()

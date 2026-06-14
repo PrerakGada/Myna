@@ -55,6 +55,10 @@ private enum PillStyle {
 public struct PillView: View {
     @ObservedObject var viewModel: PillViewModel
     @Namespace private var ns
+    // Scrubber drag state: while the user drags, the slider follows their
+    // pointer (scrubValue) instead of the live player position.
+    @State private var isScrubbing = false
+    @State private var scrubValue: Double = 0
 
     public init(viewModel: PillViewModel) {
         self.viewModel = viewModel
@@ -159,6 +163,10 @@ public struct PillView: View {
 
     private var expanded: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // In-pill Claude-output prompt (auto-expands; never a top-right toast)
+            if let prompt = viewModel.pendingPrompt {
+                promptBanner(prompt)
+            }
             // Row 1 — badge + headline + close
             HStack(spacing: 10) {
                 birdBadge(diameter: PillStyle.badgeExpanded)
@@ -191,9 +199,15 @@ public struct PillView: View {
                 closeButton
             }
 
-            // Row 2 — transport (only when there's a session to control)
-            if viewModel.isSpeaking || viewModel.isLoading {
-                transportRow
+            // Scrubber + transport (only with a live session to control)
+            if viewModel.isSpeaking {
+                scrubberRow
+                controlsRow
+            }
+
+            // Recent reads — pinned only (keeps the hover footprint small).
+            if viewModel.isPinned && !viewModel.recents.isEmpty {
+                transcriptList
             }
         }
         .padding(.horizontal, 14)
@@ -215,28 +229,154 @@ public struct PillView: View {
             .background(Capsule().fill(Color.white.opacity(0.09)))
     }
 
-    private var transportRow: some View {
-        HStack(spacing: 14) {
+    private var scrubberRow: some View {
+        HStack(spacing: 8) {
+            Text(timeLabel(viewModel.position))
+                .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 34, alignment: .leading)
+            Slider(
+                value: Binding(
+                    get: { isScrubbing ? scrubValue : viewModel.position },
+                    set: { scrubValue = $0 }
+                ),
+                in: 0...max(viewModel.duration, 0.01),
+                onEditingChanged: { editing in
+                    if editing {
+                        isScrubbing = true
+                        scrubValue = viewModel.position
+                    } else {
+                        viewModel.seek(toSeconds: scrubValue)
+                        isScrubbing = false
+                    }
+                }
+            )
+            .controlSize(.mini)
+            .tint(.accentColor)
+            // Don't let a slider interaction bubble up to tap-to-pin.
+            .simultaneousGesture(TapGesture().onEnded {})
+            Text(timeLabel(viewModel.duration))
+                .font(.system(size: 10, weight: .medium, design: .rounded).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 34, alignment: .trailing)
+        }
+    }
+
+    private var controlsRow: some View {
+        HStack(spacing: 12) {
+            transportButton(system: "gobackward.10", size: 13, help: "Back 10s") {
+                viewModel.seekBy(-10)
+            }
             transportButton(
                 system: viewModel.isPaused ? "play.fill" : "pause.fill",
-                size: 15,
+                size: 16,
                 help: viewModel.isPaused ? "Resume" : "Pause"
             ) { viewModel.togglePlayPause() }
-            .disabled(!viewModel.isSpeaking)
-
-            transportButton(system: "forward.fill", size: 12, help: "Skip ahead") {
-                viewModel.skipToNextChunk()
+            transportButton(system: "goforward.10", size: 13, help: "Forward 10s") {
+                viewModel.seekBy(10)
             }
-            .disabled(!viewModel.isSpeaking)
-
             transportButton(system: "stop.fill", size: 12, help: "Stop") {
                 viewModel.stop()
             }
-            .disabled(!viewModel.isSpeaking)
-
             Spacer(minLength: 0)
+            speedButton
         }
-        .padding(.leading, PillStyle.badgeExpanded + 10) // align under the headline
+    }
+
+    private var speedButton: some View {
+        Button { viewModel.cycleSpeed() } label: {
+            Text(viewModel.speedLabel)
+                .font(.system(size: 11, weight: .semibold, design: .rounded).monospacedDigit())
+                .foregroundStyle(.primary)
+                .frame(minWidth: 30, minHeight: 22)
+                .padding(.horizontal, 6)
+                .background(Capsule().fill(Color.white.opacity(0.10)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("Playback speed")
+        .simultaneousGesture(TapGesture().onEnded {})
+    }
+
+    private func timeLabel(_ t: TimeInterval) -> String {
+        guard t.isFinite, t >= 0 else { return "0:00" }
+        let total = Int(t.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private var transcriptList: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Divider().overlay(Color.white.opacity(0.08)).padding(.vertical, 1)
+            Text("RECENT")
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.tertiary)
+            ForEach(viewModel.recents) { item in
+                Button { viewModel.replay(item) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Text(item.displayLine())
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+                .help("Re-speak")
+                .simultaneousGesture(TapGesture().onEnded {})
+            }
+        }
+    }
+
+    private func promptBanner(_ item: RegistryV2Item) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                Text("New output ready")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+            }
+            Text(item.preview(maxLength: 80))
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button { viewModel.playPrompt() } label: {
+                    Label("Play", systemImage: "play.fill")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.accentColor))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded {})
+
+                Button { viewModel.dismissPrompt() } label: {
+                    Text("Dismiss")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.10)))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded {})
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.bottom, 8)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.white.opacity(0.08)).frame(height: 0.5)
+        }
     }
 
     private func transportButton(
@@ -291,14 +431,22 @@ public struct PillView: View {
 
     @ViewBuilder
     private func pillBackground(cornerRadius: CGFloat) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.ultraThinMaterial)
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.black.opacity(0.28))
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(macOS 26.0, *) {
+            // Liquid Glass: a tinted regular glass so the dark chrome reads
+            // over bright desktops while still refracting what's behind it.
+            shape
+                .fill(.clear)
+                .glassEffect(.regular.tint(Color.black.opacity(0.18)), in: shape)
+                .shadow(color: .black.opacity(0.30), radius: 16, x: 0, y: 6)
+        } else {
+            ZStack {
+                shape.fill(.ultraThinMaterial)
+                shape.fill(Color.black.opacity(0.28))
+            }
+            .compositingGroup()
+            .shadow(color: .black.opacity(0.34), radius: 16, x: 0, y: 6)
         }
-        .compositingGroup()
-        .shadow(color: .black.opacity(0.34), radius: 16, x: 0, y: 6)
     }
 }
 

@@ -40,6 +40,10 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
     /// that aborts before synthesis (e.g. no text selected) can't strand
     /// the flag ON either.
     private var speakGeneration = 0
+    /// Block-based observer for .mynaReplayRecent (Recent-submenu tap or the
+    /// pill's transcript-row tap). App-lifetime; never removed — matches
+    /// AudioPlayer / PillController, which also keep observers for process life.
+    private var replayObserver: NSObjectProtocol?
 
     public init(
         client: DaemonClient,
@@ -55,6 +59,21 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
         self.chrome = chrome
         self.settings = settings
         self.menuController = menuController
+
+        // Re-speak a Recent item when its row is tapped (menu submenu or the
+        // pill's transcript list). MenuBarController.replayRecent posts this;
+        // we own the in-process player, so the replay flows through the same
+        // synth+play pipeline as a hotkey — transport, pill, recents all apply.
+        replayObserver = NotificationCenter.default.addObserver(
+            forName: .mynaReplayRecent, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let title = note.userInfo?["title"] as? String, !title.isEmpty else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.speakTask?.cancel()
+                self.speakTask = Task { await self.synthesizeAndPlay(text: title, url: nil, mode: .full) }
+            }
+        }
     }
 
     public func attach(menuController: MenuBarController) {

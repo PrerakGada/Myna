@@ -94,7 +94,7 @@ private struct RootMenuBarLabel: View {
         let player: AudioPlayer? = appDelegate.player
         let settings: SettingsViewModel? = appDelegate.settings
         guard let player, let settings else { return }
-        pillController.attach(player: player, settings: settings)
+        pillController.attach(player: player, settings: settings, menuController: appDelegate.menuController)
         pillController.start()
     }
 }
@@ -151,7 +151,7 @@ private struct RootMenuBarView: View {
         let player: AudioPlayer? = appDelegate.player
         let settings: SettingsViewModel? = appDelegate.settings
         guard let player, let settings else { return }
-        pillController.attach(player: player, settings: settings)
+        pillController.attach(player: player, settings: settings, menuController: appDelegate.menuController)
         pillController.start()
     }
 }
