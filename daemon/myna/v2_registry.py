@@ -128,6 +128,7 @@ class V2Registry:
         project_id: str,
         title: str,
         ttl_s: int,
+        text: Optional[str] = None,
     ) -> dict:
         with self._lock:
             # Replace any existing entry with the same id (latest write wins).
@@ -137,6 +138,10 @@ class V2Registry:
                 "source": source,
                 "project_id": project_id,
                 "title": title[:200],
+                # Full reply body for /play (capped to keep registry.json
+                # bounded). None when the caller didn't supply it — /play
+                # then falls back to `title`.
+                "text": (text[:8000] if text else None),
                 "announced_at_ms": self._clock(),
                 "ttl_s": int(ttl_s),
                 "played_at_ms": None,

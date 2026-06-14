@@ -39,6 +39,22 @@ def test_registry_round_trip_persistence(tmp_path):
     assert snap["pending"][0]["id"] == "u_1"
 
 
+def test_registry_announce_stores_full_text(tmp_path):
+    """`text` (full reply) is persisted alongside the `title` preview, and
+    omitting it stores None so old callers fall back to `title` on play."""
+    r = V2Registry(path=tmp_path / "registry.json")
+    e = r.announce(
+        id="u_t", source="claude-code", project_id="p",
+        title="Preview", text="Preview\nfull body", ttl_s=600,
+    )
+    assert e["text"] == "Preview\nfull body"
+    e2 = r.announce(
+        id="u_n", source="claude-code", project_id="p",
+        title="Just a title", ttl_s=600,
+    )
+    assert e2["text"] is None
+
+
 def test_registry_corrupt_file_resets(tmp_path):
     path = tmp_path / "registry.json"
     path.write_text("not json at all")
@@ -135,6 +151,28 @@ def test_announce_route_persists(tmp_path):
     body = r.json()
     assert body["ok"] is True
     assert body["announced_at_ms"] > 0
+
+
+def test_announce_carries_full_text_through_list(tmp_path):
+    """The full reply `text` survives announce → list so the app/pill can
+    speak the whole output instead of only the 80-char title preview."""
+    client, fp, app = make_client(registry_path=tmp_path / "r.json")
+    full = "First line preview.\nSecond paragraph with the rest of the reply."
+    client.post(
+        "/v2/registry/announce",
+        json={
+            "id": "u_full",
+            "source": "claude-code",
+            "project_id": "myna",
+            "title": "First line preview.",
+            "text": full,
+            "ttl_s": 600,
+        },
+    )
+    pending = client.get("/v2/registry/list").json()["pending"]
+    item = next(e for e in pending if e["id"] == "u_full")
+    assert item["text"] == full
+    assert item["title"] == "First line preview."
 
 
 def test_list_route_partitions_pending_and_played(tmp_path):

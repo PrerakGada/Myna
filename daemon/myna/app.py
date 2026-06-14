@@ -826,6 +826,7 @@ def create_app(config: dict | None = None) -> FastAPI:
             project_id=req.project_id,
             title=req.title,
             ttl_s=req.ttl_s,
+            text=req.text,
         )
         return V2RegistryAnnounceResp(
             ok=True,
@@ -854,19 +855,21 @@ def create_app(config: dict | None = None) -> FastAPI:
             )
         # S08 user flow: clicking Play on the CC toast must actually play
         # the agent's reply. Registry entries from the Stop hook carry
-        # only metadata (no audio file), so we synthesise from `title`
-        # on-demand. This re-enters the same producer + player.play()
-        # pipeline as v1 /speak so:
+        # only metadata (no audio file), so we synthesise on-demand. Prefer
+        # the full `text` body and fall back to `title` (the first-line
+        # preview) for entries announced before `text` existed — otherwise
+        # only the opening sentence is read. This re-enters the same
+        # producer + player.play() pipeline as v1 /speak so:
         #   * pause/resume/stop on the v1 player still apply
         #   * the player is the single audio sink (no competing afplay)
         #   * synth/play is async — the request returns as soon as the
         #     player thread is queued.
-        title = (entry.get("title") or "").strip()
-        if title:
+        speak_text = (entry.get("text") or entry.get("title") or "").strip()
+        if speak_text:
             try:
                 _speak(
                     SpeakReq(
-                        text=title,
+                        text=speak_text,
                         mode="full",
                         source=f"cc:{entry.get('project_id') or 'claude'}",
                     )

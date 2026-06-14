@@ -125,6 +125,12 @@ class V2RegistryAnnounceReq(BaseModel):
     source: str = "claude-code"
     project_id: str
     title: str
+    # Full reply body. `title` is only the first-line preview; `text` is what
+    # /play/{id} (and the Swift pill) actually speak so the whole output is
+    # read, not just the opening sentence. Optional for back-compat with
+    # callers (and persisted entries) that predate it — those fall back to
+    # `title`.
+    text: Optional[str] = None
     ttl_s: int = 600
     # Note: `audio_path` was intentionally dropped — it allowed an
     # unauthenticated arbitrary-file delete via /dismiss. Pydantic
@@ -142,6 +148,9 @@ class V2RegistryEntry(BaseModel):
     source: str
     project_id: str
     title: str
+    # Full reply body (see V2RegistryAnnounceReq.text). Optional so /list
+    # stays valid for entries persisted before this field existed.
+    text: Optional[str] = None
     announced_at_ms: int
     ttl_s: int
     played_at_ms: Optional[int] = None

@@ -111,6 +111,10 @@ def test_main_v2_announce_body_shape(tmp_path, monkeypatch):
     assert body["project_id"] == "myna"
     # Title is the first non-empty line, truncated to 80 chars.
     assert body["title"] == "Multi line."
+    # ...but `text` carries the FULL reply so Play reads the whole output,
+    # not just the first line. (Regression guard for the "first sentence
+    # only" bug.)
+    assert body["text"] == "Multi line.\nSecond line."
     assert body["ttl_s"] == 600
     assert body["id"].startswith("u_")
 

@@ -102,9 +102,13 @@ def main():
         },
     )
 
-    # v2: metadata-only announce for the Swift menu-bar toast + CC submenu.
-    # Daemon stores the entry with its own ttl + audio_path bookkeeping;
-    # audio is synthesized lazily on /v2/registry/play/{id}.
+    # v2: announce for the Swift menu-bar toast + CC submenu + floating pill.
+    # `title` stays the first-line preview (drives the toast/pill banner text);
+    # `text` carries the FULL reply so that clicking Play reads the whole
+    # output, not just the first line. Without `text`, the pill and the
+    # daemon's /play/{id} both fall back to `title` and you hear only the
+    # opening sentence — the "first sentence only" bug. Daemon stores the
+    # entry; audio is synthesized lazily on play.
     _post_json(
         "/v2/registry/announce",
         {
@@ -112,6 +116,7 @@ def main():
             "source": "claude-code",
             "project_id": label,
             "title": text.strip().splitlines()[0][:80] if text.strip() else label,
+            "text": text[:8000],
             "ttl_s": DEFAULT_TTL_S,
         },
     )
