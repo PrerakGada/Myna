@@ -40,6 +40,20 @@ public struct FooterBar: View {
                         FooterIcon(systemImage: "gearshape", label: "Settings")
                     }
                     .buttonStyle(FooterIconButtonStyle())
+                    // SettingsLink reliably *opens* Settings from an
+                    // accessory app, but does not reliably activate it or
+                    // make the window key. Run the activator alongside the
+                    // link's own tap so the window comes to the front (and
+                    // the shortcut recorder can receive keystrokes). A
+                    // zero-distance drag (not TapGesture) fires on every
+                    // press+release — including the micro-drag clicks a
+                    // TapGesture ignores — and runs concurrently with
+                    // SettingsLink's own action without swallowing it.
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 0).onEnded { _ in
+                            SettingsWindowActivator.activate()
+                        }
+                    )
                 } else {
                     FooterIconButton(
                         systemImage: "gearshape",

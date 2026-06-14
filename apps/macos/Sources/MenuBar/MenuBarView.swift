@@ -17,6 +17,7 @@
 // handlers and AppDispatcher hooks work unchanged. The data model
 // (PopoverModel + PopoverModelBuilder) is preserved verbatim — only the
 // rendering changes.
+import AppKit
 import SwiftUI
 
 public struct MenuBarView: View {
@@ -49,6 +50,13 @@ public struct MenuBarView: View {
 
     public var body: some View {
         let model = controller.popoverModel()
+        // The popover is wrapped in a ScrollView so a fully-expanded set
+        // of accordions scrolls instead of clipping off the bottom of the
+        // screen. The content is measured (see GeometryReader below) and
+        // the outer frame is sized to min(content, usable screen height):
+        // short content sizes the popover to fit (no scrollbar); tall
+        // content caps at the screen and scrolls.
+        ScrollView(.vertical, showsIndicators: true) {
         VStack(alignment: .leading, spacing: PopoverDesign.sectionSpacing) {
             PopoverHeader(iconState: controller.iconState)
             // Transient lang-mismatch hint (only when langid signalled a
@@ -74,7 +82,7 @@ public struct MenuBarView: View {
             FooterBar(
                 updates: controller.updates,
                 onSettings: controller.openSettings,
-                onWhatsNew: { WhatsNewLauncher.shared.show() },
+                onWhatsNew: Self.openWhatsNew,
                 onRestartDaemon: controller.restartDaemon,
                 onOpenLogs: controller.openLogs
             )
@@ -82,8 +90,49 @@ public struct MenuBarView: View {
         .padding(.horizontal, PopoverDesign.popoverHorizontalPadding)
         .padding(.vertical, PopoverDesign.popoverVerticalPadding)
         .frame(width: PopoverDesign.popoverWidth, alignment: .leading)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: PopoverContentHeightKey.self,
+                    value: geo.size.height
+                )
+            }
+        )
+        }
+        .frame(width: PopoverDesign.popoverWidth, height: resolvedPopoverHeight)
         .background(PopoverDesign.surface)
+        .onPreferenceChange(PopoverContentHeightKey.self) { measuredContentHeight = $0 }
         .task { await loadVoices() }
+    }
+
+    // MARK: - popover sizing
+
+    /// Natural content height, measured by the GeometryReader behind the
+    /// content VStack. 0 until the first layout pass completes.
+    @State private var measuredContentHeight: CGFloat = 0
+
+    /// Resolved outer height: nil (size-to-content) until measured, then
+    /// clamped to the usable screen height so a fully-expanded popover
+    /// scrolls instead of running off the bottom of the screen.
+    private var resolvedPopoverHeight: CGFloat? {
+        guard measuredContentHeight > 0 else { return nil }
+        return min(measuredContentHeight, Self.maxPopoverHeight)
+    }
+
+    /// Usable vertical space for the popover. `visibleFrame` already
+    /// excludes the menu bar and Dock; we leave a small margin so the
+    /// popover never butts against the screen edge.
+    private static var maxPopoverHeight: CGFloat {
+        let usable = NSScreen.main?.visibleFrame.height ?? 800
+        return max(320, usable - 24)
+    }
+
+    /// Open the public changelog / release notes on the website. The
+    /// in-app "What's New" window is reserved for the auto-shown
+    /// upgrade dialog; the footer button points at the site instead.
+    static func openWhatsNew() {
+        guard let url = URL(string: "https://myna.prerakgada.in") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     // MARK: - lang-mismatch chip
@@ -324,5 +373,14 @@ public struct MenuBarView: View {
         } catch {
             // Quietly leave empty — user can hit "Refresh voice list".
         }
+    }
+}
+
+/// Carries the popover's natural content height up from the inner
+/// GeometryReader so the outer frame can clamp it to the screen.
+private struct PopoverContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

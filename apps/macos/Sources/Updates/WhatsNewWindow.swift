@@ -151,6 +151,12 @@ final class WhatsNewWindow: NSWindow {
         title = "What's New in Myna \(version.displayString)"
         titlebarAppearsTransparent = true
         isMovableByWindowBackground = true
+        // The launcher holds a strong reference to this window and clears
+        // it on close. With the AppKit default (isReleasedWhenClosed=true)
+        // the window is *also* released by AppKit on close, double-freeing
+        // it and crashing the app. Opt out so ARC is the sole owner.
+        // (Matches CCToastWindow.)
+        isReleasedWhenClosed = false
         let host = NSHostingView(
             rootView: WhatsNewContent(
                 version: version,

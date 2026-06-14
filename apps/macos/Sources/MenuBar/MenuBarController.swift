@@ -292,6 +292,10 @@ public final class MenuBarController: ObservableObject, CCToastActions {
         if !NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
             _ = NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
         }
+        // Force the window key + frontmost. Without this an accessory app's
+        // Settings window can open behind other apps — and a non-key window
+        // means the shortcut recorder never receives keystrokes.
+        SettingsWindowActivator.activate()
     }
 
     public func openLogs() {
