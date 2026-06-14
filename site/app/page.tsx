@@ -293,10 +293,14 @@ export default function Page() {
                   label="01 · homebrew"
                   lines={[
                     { comment: true, text: "Installs the app + the local daemon." },
-                    { prompt: true, text: "brew install --cask PrerakGada/myna/myna" },
+                    { prompt: true, text: "brew tap prerakgada/tap" },
+                    { prompt: true, text: "brew trust prerakgada/tap" },
+                    { prompt: true, text: "brew install --cask prerakgada/tap/myna" },
                     { comment: true, text: "" },
-                    { comment: true, text: "Then launch it once and grant Accessibility" },
-                    { comment: true, text: "when macOS asks. That's the whole setup." },
+                    { comment: true, text: "Finish setup — voice engine, model, CC hook:" },
+                    { prompt: true, text: "curl -fsSL https://raw.githubusercontent.com/PrerakGada/Myna/v0.3.0/dist/setup.sh | bash" },
+                    { comment: true, text: "" },
+                    { comment: true, text: "Then launch Myna and grant Accessibility when asked." },
                   ]}
                 />
               </div>

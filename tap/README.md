@@ -8,8 +8,9 @@ workflow (`.github/workflows/release.yml`) mirrors `Casks/myna.rb` into the
 ## Installing Myna
 
 ```bash
-brew tap PrerakGada/tap        # adds the tap (repo: github.com/PrerakGada/homebrew-tap)
-brew install --cask myna       # installs Myna.app + the daemon as a dep
+brew tap prerakgada/tap        # adds the tap (repo: github.com/PrerakGada/homebrew-tap)
+brew trust prerakgada/tap      # Homebrew 6+ requires trusting third-party taps
+brew install --cask prerakgada/tap/myna   # installs Myna.app + the daemon as a dep
 brew services start myna-daemon
 ```
 

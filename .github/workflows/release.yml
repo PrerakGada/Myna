@@ -492,8 +492,15 @@ jobs:
           done
           DAEMON_SHA=$(shasum -a 256 /tmp/source.tar.gz | awk '{print $1}')
           echo "computed sha256: $DAEMON_SHA"
-          /usr/bin/sed -i.bak -E "s|^( *url )\"[^\"]+\"|\1\"$TARBALL_URL\"|" "$FORMULA"
-          /usr/bin/sed -i.bak -E "s/^( *sha256 )\"[^\"]+\"/\1\"$DAEMON_SHA\"/" "$FORMULA"
+          # Bump ONLY the top-level package url/sha. These are indented with
+          # exactly TWO spaces (class body); the 40 `resource` blocks indent
+          # their url/sha with FOUR spaces and MUST keep their PyPI sdist
+          # urls/shas. The old pattern `^( *url )` matched any indent and so
+          # rewrote every resource to the source tarball — which broke
+          # `pip_install resources` ("Neither setup.py nor pyproject.toml").
+          # Anchoring to exactly two leading spaces fixes that.
+          /usr/bin/sed -i.bak -E "s|^(  url )\"[^\"]+\"|\1\"$TARBALL_URL\"|" "$FORMULA"
+          /usr/bin/sed -i.bak -E "s/^(  sha256 )\"[^\"]+\"/\1\"$DAEMON_SHA\"/" "$FORMULA"
           rm -f "$FORMULA.bak"
           echo "--- updated formula ---"
           head -20 "$FORMULA"

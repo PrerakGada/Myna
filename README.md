@@ -11,7 +11,9 @@ Myna lives in your menu bar and reads any selection, any web article, or any Cla
 ## Install
 
 ```sh
-brew install --cask PrerakGada/myna/myna
+brew tap prerakgada/tap
+brew trust prerakgada/tap          # Homebrew 6+ requires trusting third-party taps
+brew install --cask prerakgada/tap/myna
 ```
 
 Or grab the signed, notarised DMG from [the latest release](https://github.com/PrerakGada/myna/releases/latest).
