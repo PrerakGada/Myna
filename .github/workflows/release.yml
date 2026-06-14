@@ -588,11 +588,16 @@ jobs:
         run: |
           set -euo pipefail
           cd tap-repo
-          # Cellar token: a symbol (:any / :any_skip_relocation) stays bare; an
-          # absolute Cellar path is quoted. brew bottle decides which.
+          # Cellar token. brew bottle --json reports cellar as a bare word
+          # ("any" / "any_skip_relocation"), an already-colon'd symbol, or an
+          # absolute path. Homebrew's DSL needs a SYMBOL for the relocatable
+          # markers (cellar: :any) — quoting it ("any") makes brew read it as a
+          # path that never matches the user's Cellar, so the bottle is rejected
+          # and it source-builds. Only an absolute path gets quoted.
           case "$CELLAR" in
+            /*) CELLAR_TOK="cellar: \"${CELLAR}\", " ;;
             :*) CELLAR_TOK="cellar: ${CELLAR}, " ;;
-            *)  CELLAR_TOK="cellar: \"${CELLAR}\", " ;;
+            *)  CELLAR_TOK="cellar: :${CELLAR}, " ;;
           esac
           BLOCK_FILE="$(mktemp)"
           cat > "$BLOCK_FILE" <<EOF
