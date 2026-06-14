@@ -8,9 +8,9 @@
 #   • the Claude Code Stop hook (so Claude outputs surface in the floating pill)
 #   • making sure the daemon service is actually running
 #
-# Run after `brew install --cask PrerakGada/myna/myna`:
+# Run after `brew install --cask prerakgada/tap/myna`:
 #
-#   curl -fsSL https://raw.githubusercontent.com/PrerakGada/Myna/v0.3.1/dist/setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/PrerakGada/Myna/v0.3.2/dist/setup.sh | bash
 #
 # or, on a checkout / dev install:  ./dist/setup.sh   (also `myna setup`)
 #
@@ -19,7 +19,7 @@ set -euo pipefail
 
 # The git ref to pull the CC hook from. The curl one-liner pins this to the
 # release tag; a local checkout falls back to the working tree (see step 5).
-MYNA_REF="${MYNA_REF:-v0.3.1}"
+MYNA_REF="${MYNA_REF:-v0.3.2}"
 RAW="https://raw.githubusercontent.com/PrerakGada/Myna/${MYNA_REF}"
 DAEMON_PORT="${MYNA_PORT:-8766}"
 ENGINE_PORT="${MYNA_ENGINE_PORT:-8765}"
