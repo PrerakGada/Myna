@@ -79,13 +79,17 @@ public struct PillView: View {
         .onHover { hovering in
             viewModel.isHovering = hovering
         }
-        // Click anywhere on the collapsed/expanded body (except the
-        // close button) to pin/unpin.
-        .onTapGesture {
-            viewModel.togglePin()
-        }
+        // Mouse click-to-pin is delivered by FloatingPillWindow's
+        // `onBackgroundTap` callback (wired in PillController.ensureWindow).
+        // A SwiftUI .onTapGesture here never fires — the window's mouseDown
+        // override intercepts events at the AppKit layer to disambiguate
+        // tap-vs-drag. We still need an accessibility action so VoiceOver
+        // and "Perform Default Action" reach togglePin().
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityAction {
+            viewModel.togglePin()
+        }
     }
 
     private var accessibilityLabel: String {

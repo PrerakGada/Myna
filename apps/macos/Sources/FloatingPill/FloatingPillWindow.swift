@@ -12,12 +12,25 @@
 //   - Has no shadow at the window level (SwiftUI will apply its own
 //     subtle shadow inside the pill shape — a window-level shadow
 //     gives away the rectangular bounds and looks wrong on a pill).
-//   - Draggable from anywhere on the surface (we override mouseDown
-//     and call performDrag(with:)) — the AppKit-native pattern gives
-//     us proper drag feedback, edge-snap, and multi-display behaviour
-//     for free. SwiftUI DragGesture inside a borderless panel is
-//     fragile (the gesture races SwiftUI's own hit-test for the
-//     transport buttons), so we keep dragging at the AppKit layer.
+//   - Click-or-drag from anywhere on the surface. We override
+//     mouseDown(with:) and disambiguate between a tap and a drag
+//     by tracking subsequent events ourselves: if the cursor moves
+//     more than `dragThreshold` points before mouseUp we hand off
+//     to performDrag(with:); otherwise we fire `onBackgroundTap`
+//     (PillController wires it to viewModel.togglePin()). This
+//     gives us:
+//       • clean tap-to-pin without accidental window nudges (the
+//         old code called performDrag on every mouseDown, so any
+//         single click that happened to land outside a SwiftUI
+//         button would drag the pill — and any cursor twitch
+//         during a click would shove it to the cursor)
+//       • AppKit-native drag (correct cursor, edge snap, multi-
+//         display geometry) without us touching frame math
+//     SwiftUI DragGesture inside a borderless panel is fragile (it
+//     races SwiftUI's own hit-test for the transport buttons), so
+//     we keep dragging at the AppKit layer. SwiftUI .onTapGesture
+//     on the pill body never fires once mouseDown is intercepted
+//     at the window — the tap is delivered via onBackgroundTap.
 //   - Persists frame across launches via setFrameAutosaveName; the
 //     autosave key is `dev.myna.app.pillFrame`. PillController also
 //     reads/writes this same key when "Reset pill position" fires.
@@ -43,34 +56,60 @@ public enum FloatingPillFrame {
 }
 
 /// Subclass primarily so we can lock `canBecomeKey` / `canBecomeMain`
-/// to false. The default NSPanel implementation returns `true` for
+/// to false (the default NSPanel implementation returns `true` for
 /// canBecomeKey when the panel has any focusable subview — our SwiftUI
-/// buttons would activate that path.
+/// buttons would activate that path).
 ///
-/// Also adds AppKit-native click-drag from anywhere on the panel
-/// background via `mouseDown(with:)` → `performDrag(with:)`. SwiftUI
-/// child controls (buttons) consume their own mouseDown first, so the
-/// transport controls still work — only mouseDowns that reach the
-/// panel itself initiate a drag.
+/// Also handles AppKit-native click-and-drag on the panel background:
+/// `mouseDown(with:)` tracks events and decides — based on whether the
+/// cursor moves more than `dragThreshold` points before mouseUp —
+/// whether to start a window drag (via `performDrag(with:)`) or fire
+/// the `onBackgroundTap` callback (which PillController routes to
+/// viewModel.togglePin()). SwiftUI child controls (transport buttons,
+/// close button) consume their own mouseDown first, so they're
+/// unaffected — only mouseDowns that reach the panel surface enter
+/// this disambiguation path.
 public final class FloatingPillWindow: NSPanel {
-    /// Notification posted when the user finishes a drag and the
-    /// panel comes to rest. PillController listens for this so it can
-    /// stop auto-repositioning the pill (the user has expressed a
-    /// position preference).
+    /// Notification posted when the user finishes a drag *that actually
+    /// moved the window*. PillController listens for this so it can stop
+    /// auto-repositioning the pill (the user has expressed a position
+    /// preference). Not posted on a bare click or a sub-threshold twitch
+    /// — those are taps, not position changes.
     public static let didMoveByUserNotification = Notification.Name(
         "dev.myna.app.FloatingPillWindow.didMoveByUser"
     )
 
+    /// Minimum cursor travel (in points, from the mouseDown location)
+    /// required before we treat a press-and-move as a window drag.
+    /// Below this we treat the gesture as a tap and forward to the
+    /// `onBackgroundTap` callback — keeps single-clicks from nudging
+    /// the pill and resurrects the click-to-pin gesture that the
+    /// previous "always performDrag" code path silently swallowed.
+    /// 4pt is roughly what AppKit uses internally for window-drag
+    /// detection on isMovableByWindowBackground.
+    public static let dragThreshold: CGFloat = 4
+
     /// True while the user has explicitly positioned the pill. Until
-    /// the first user-drag (or a successful autosave restore),
-    /// PillController owns positioning. After, PillController defers
-    /// to the saved frame.
+    /// the first user-drag *that moved the origin* (or a successful
+    /// autosave restore), PillController owns positioning. After,
+    /// PillController defers to the saved frame.
     public private(set) var hasUserPosition: Bool = false
 
     /// True only for the brief window between mouseDown and mouseUp
     /// while a user drag is in flight. Read by PillController so it
     /// doesn't fight the drag with a reposition.
     public private(set) var isDragging: Bool = false
+
+    /// Callback fired when the user clicks (no drag) anywhere on the
+    /// panel background. PillController sets this to route to
+    /// viewModel.togglePin(). nil-by-default so tests can omit it
+    /// without wiring; in production it's always set in
+    /// PillController.ensureWindow().
+    ///
+    /// Typed @MainActor because the invocation site (`mouseDown`) is
+    /// AppKit-isolated to the main actor, and the natural callback
+    /// body touches the view model directly without a Task hop.
+    public var onBackgroundTap: (@MainActor () -> Void)?
 
     public init(contentView: NSView) {
         super.init(
@@ -149,31 +188,121 @@ public final class FloatingPillWindow: NSPanel {
     /// Required by NSWindow but we never use it.
     public override var acceptsFirstResponder: Bool { false }
 
-    // MARK: - drag handling
+    // MARK: - click / drag handling
     //
-    // mouseDown on a borderless panel does not start a drag by
-    // default. We forward to performDrag(with:), which is the
-    // AppKit-supported API for moving a window from a code-driven
-    // drag: it shows the correct cursor, snaps to display edges if
-    // configured, and crucially handles multi-display geometry
-    // (drag from one monitor to another) without us touching frame
-    // math.
+    // mouseDown on a borderless panel doesn't start a drag by
+    // default — we have to opt in. AppKit's
+    // `isMovableByWindowBackground = true` would also work, but it
+    // drags on *any* background mouseDown (no movement threshold),
+    // so click-to-pin can't coexist with it. We instead run our
+    // own tracking loop:
     //
-    // SwiftUI buttons inside the panel intercept mouseDown via their
-    // own NSResponder and return without forwarding here, so the
-    // transport controls still work. Only background hits land
-    // here.
+    //   1. Capture press location and current frame.origin.
+    //   2. Pull subsequent leftMouseDragged / leftMouseUp events
+    //      until one of:
+    //        (a) cumulative travel from the press point exceeds
+    //            `dragThreshold` → hand that event to
+    //            performDrag(with:), which then takes over until
+    //            mouseUp.
+    //        (b) leftMouseUp arrives first → it was a tap; fire
+    //            `onBackgroundTap` so PillController.togglePin()
+    //            runs.
+    //   3. After performDrag returns, only set hasUserPosition
+    //      (and post didMoveByUserNotification) if frame.origin
+    //      actually changed. A drag the user instantly cancels
+    //      should not lock the pill in place — that's the bug
+    //      that left Prerak's pill stuck at (-942, 1144) until
+    //      the v0.2.x reset path was wired up.
+    //
+    // SwiftUI buttons inside the panel intercept mouseDown via
+    // their own NSResponder and don't forward here — transport /
+    // close controls are unaffected. Only mouseDowns that reach
+    // the panel surface itself enter this disambiguation path.
+    //
+    // The event-tracking step is extracted to a pure static helper
+    // (`trackDragOrTap`) so tests can verify the click/drag
+    // boundary with synthetic NSEvents — no event loop required.
     public override func mouseDown(with event: NSEvent) {
-        isDragging = true
-        defer { isDragging = false }
-        self.performDrag(with: event)
-        hasUserPosition = true
-        // The autosave already fires from AppKit on mouseUp, but
-        // post our own notification so PillController knows the
-        // user has expressed a position preference.
-        NotificationCenter.default.post(
-            name: Self.didMoveByUserNotification,
-            object: self
+        let startLocation = event.locationInWindow
+        let originBefore = frame.origin
+
+        let result = Self.trackDragOrTap(
+            startLocation: startLocation,
+            threshold: Self.dragThreshold,
+            nextEvent: {
+                NSApp.nextEvent(
+                    matching: [.leftMouseUp, .leftMouseDragged],
+                    until: .distantFuture,
+                    inMode: .eventTracking,
+                    dequeue: true
+                )
+            }
         )
+
+        switch result {
+        case .drag(let initiator):
+            isDragging = true
+            performDrag(with: initiator)
+            isDragging = false
+            // performDrag returns immediately on mouseUp; even
+            // after we passed the threshold the frame can end
+            // unchanged in degenerate cases (user moved exactly
+            // threshold pts and back). Only commit
+            // hasUserPosition if the origin actually shifted.
+            if frame.origin != originBefore {
+                hasUserPosition = true
+                NotificationCenter.default.post(
+                    name: Self.didMoveByUserNotification,
+                    object: self
+                )
+            }
+        case .tap:
+            onBackgroundTap?()
+        }
+    }
+
+    // MARK: - testable disambiguator
+
+    /// Outcome of `trackDragOrTap`. `.tap` means the user released
+    /// without dragging; `.drag` carries the first mouseDragged
+    /// event past `dragThreshold` so the caller can hand it
+    /// straight to `performDrag(with:)`.
+    internal enum MouseTrackResult {
+        case tap
+        case drag(NSEvent)
+    }
+
+    /// Pull events from `nextEvent` and classify the gesture.
+    ///
+    /// Pure with respect to the injected event source — tests pass
+    /// a closure that returns synthetic NSEvents from a fixed
+    /// sequence, so we can verify the click/drag boundary without
+    /// pumping a real event loop.
+    ///
+    /// Returns `.tap` if the stream is exhausted before a
+    /// past-threshold mouseDragged arrives — defensive only;
+    /// production's NSApp.nextEvent waits forever and only ever
+    /// returns a real event.
+    @MainActor
+    internal static func trackDragOrTap(
+        startLocation: NSPoint,
+        threshold: CGFloat,
+        nextEvent: () -> NSEvent?
+    ) -> MouseTrackResult {
+        while let event = nextEvent() {
+            switch event.type {
+            case .leftMouseUp:
+                return .tap
+            case .leftMouseDragged:
+                let dx = event.locationInWindow.x - startLocation.x
+                let dy = event.locationInWindow.y - startLocation.y
+                if hypot(dx, dy) >= threshold {
+                    return .drag(event)
+                }
+            default:
+                continue
+            }
+        }
+        return .tap
     }
 }

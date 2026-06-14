@@ -23,7 +23,16 @@ struct MynaApp: App {
         MenuBarExtra {
             RootMenuBarView(appDelegate: appDelegate, pillController: pillController)
         } label: {
-            RootMenuBarLabel(appDelegate: appDelegate)
+            // RootMenuBarLabel is the menu-bar icon — always rendered
+            // from app launch onward. We hand it pillController so it
+            // can attach the controller as soon as bootstrap completes,
+            // *without* waiting for the popover to open. The popover-
+            // side RootMenuBarView also calls attach() defensively;
+            // attach() is idempotent.
+            RootMenuBarLabel(
+                appDelegate: appDelegate,
+                pillController: pillController
+            )
         }
         // .window hosts the popover as a free SwiftUI surface (no NSMenu
         // chrome). v0.2.1 redesign: lets us render the custom dark
@@ -41,15 +50,52 @@ struct MynaApp: App {
 /// Bird label for the MenuBarExtra. Renders the state-driven SwiftUI
 /// bird while bootstrap is complete; falls back to the static SF Symbol
 /// during launch / test-host.
+///
+/// Also the place we attach the floating-pill controller. The label
+/// (unlike the popover content) is rendered from app launch onward —
+/// so wiring attach() here means the always-visible pill becomes
+/// visible the moment AppDelegate.bootstrap() flips didBootstrap=true,
+/// rather than waiting for the user to click the menu-bar icon.
+/// Without this, the "always visible" Setting was effectively "visible
+/// after first menu interaction", which was a real UX bug (and the
+/// reason the original pill-position bug was hard to reproduce: the
+/// pill only ever showed *after* the user had clicked the icon, so
+/// the un-positioned default-frame state was invisible to QA).
 private struct RootMenuBarLabel: View {
     @ObservedObject var appDelegate: AppDelegate
+    @ObservedObject var pillController: PillController
 
     var body: some View {
-        if appDelegate.didBootstrap, let controller = appDelegate.menuController {
-            BootedLabel(controller: controller)
-        } else {
-            BirdIcon.image
+        Group {
+            if appDelegate.didBootstrap, let controller = appDelegate.menuController {
+                BootedLabel(controller: controller)
+            } else {
+                BirdIcon.image
+            }
         }
+        // Covers two cases:
+        //   • didBootstrap is already true when the label first appears
+        //     (e.g. SwiftUI re-installed the view after a scene rebuild)
+        //   • the slower normal path where bootstrap completes
+        //     asynchronously a beat after launch — onChange catches the
+        //     false→true transition. attach() is idempotent so it's safe
+        //     to call from both triggers.
+        .onAppear { attachPillIfNeeded() }
+        .onChange(of: appDelegate.didBootstrap) { _ in attachPillIfNeeded() }
+    }
+
+    /// Bootstrap the pill controller once AppDelegate's singletons
+    /// exist. Mirrors RootMenuBarView.attachPillIfNeeded — kept here
+    /// (instead of factored to a shared helper) because the two
+    /// callers want slightly different defensive postures and the
+    /// duplication is six lines.
+    private func attachPillIfNeeded() {
+        guard appDelegate.didBootstrap else { return }
+        let player: AudioPlayer? = appDelegate.player
+        let settings: SettingsViewModel? = appDelegate.settings
+        guard let player, let settings else { return }
+        pillController.attach(player: player, settings: settings)
+        pillController.start()
     }
 }
 

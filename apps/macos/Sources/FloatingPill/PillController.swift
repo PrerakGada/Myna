@@ -286,6 +286,14 @@ public final class PillController: ObservableObject {
         hosting.frame = NSRect(x: 0, y: 0, width: 360, height: 64)
 
         let panel = FloatingPillWindow(contentView: hosting)
+        // Route clicks on the pill background to the pin toggle. The
+        // SwiftUI `.onTapGesture { togglePin() }` inside PillView never
+        // fires once mouseDown is intercepted at the window — see the
+        // mouseDown comment block in FloatingPillWindow.swift — so we
+        // hand the tap off here.
+        panel.onBackgroundTap = { [weak vm] in
+            vm?.togglePin()
+        }
         self.window = panel
         self.hostingView = hosting
         self.viewModel = vm
