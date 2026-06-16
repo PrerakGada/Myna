@@ -155,8 +155,11 @@ if "$ENGINE_VENV/bin/python" -c \
      "$MODEL_ID"; then
   say "Voice model ready."
   # Best-effort: prime the (now-cached) model into engine memory so the first
-  # real read is instant. Short timeout — the download already happened above.
-  curl -sf -m 60 -X POST "http://127.0.0.1:${DAEMON_PORT}/v2/synthesize" \
+  # real read is instant. Generous timeout — the FIRST synth also pays the
+  # one-time cold model load (can be tens of seconds); too short a timeout
+  # makes curl disconnect mid-load. (The daemon now resets cleanly on such a
+  # disconnect, but we still give it room so the prime actually succeeds.)
+  curl -sf -m 180 -X POST "http://127.0.0.1:${DAEMON_PORT}/v2/synthesize" \
        -H 'Content-Type: application/json' \
        -d '{"text":"Myna is ready.","voice":"af_heart","speed":1.0,"mode":"full"}' \
        -o /dev/null 2>/dev/null || true

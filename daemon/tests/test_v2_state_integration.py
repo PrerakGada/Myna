@@ -110,3 +110,31 @@ def test_since_ms_is_present_and_non_negative():
     body = client.get("/v2/status").json()
     assert "since_ms" in body
     assert body["since_ms"] >= 0
+
+
+def test_synthesize_client_disconnect_resets_off_thinking():
+    """A client that disconnects mid-stream must not leave the machine wedged
+    in thinking/speaking. Without the disconnect-safe reset in the synth
+    generator, an interrupted read 503s every later voice preview
+    (reason=engine_thinking) and freezes the menu-bar 'thinking' icon until the
+    daemon is restarted — the recurring 'audio stopped working' bug."""
+    import time
+
+    client, fp, app = make_client(config_overrides={"chunk_chars": 15})
+    app.state.synthesize = lambda text, **kw: b"RIFFfake"
+    text = "One two three. Four five six. Seven eight nine. Ten eleven twelve."
+    # Open the stream, take the first bytes, then disconnect (leave the block).
+    with client.stream(
+        "POST", "/v2/synthesize", json={"text": text, "session_id": "rid_dc"}
+    ) as r:
+        for _ in r.iter_bytes():
+            break
+    # The generator's finally must have transitioned us off the in-flight
+    # states. Poll briefly — the reset runs on the server task after close.
+    state = None
+    for _ in range(100):
+        state = client.get("/v2/status").json()["state"]
+        if state not in ("thinking", "speaking"):
+            break
+        time.sleep(0.02)
+    assert state == "idle", f"machine wedged in {state!r} after client disconnect"

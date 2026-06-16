@@ -113,6 +113,22 @@ def test_preview_503_when_thinking(tmp_path):
     assert body["reason"] == "engine_thinking"
 
 
+def test_preview_ignores_stale_thinking(tmp_path):
+    """A wedged 'thinking' older than the warming window must NOT block
+    previews forever. Regression guard for the daemon getting stuck after an
+    interrupted synth whose state never reset (root cause of recurring
+    'audio stopped working' reports)."""
+    client, fp, app = _route_client(tmp_path)
+    app.state.synthesize = lambda text, **kw: b"RIFFfresh"
+    app.state.machine.force("thinking", request_id="r")
+    # Simulate the state having been entered ~100s ago — well past the 45s
+    # STALE_THINKING_MS window the preview gate honours.
+    app.state.machine._entered_at -= 100
+    r = client.get("/v2/voices/preview/af_heart")
+    assert r.status_code == 200
+    assert r.content == b"RIFFfresh"
+
+
 def test_preview_503_when_engine_down(tmp_path):
     client, fp, app = _route_client(tmp_path)
     app.state.engine_up = lambda base_url, **kw: False

@@ -555,73 +555,84 @@ def create_app(config: dict | None = None) -> FastAPI:
         def _generator():
             # First chunk (already synthesized eagerly) — this is the
             # "first audio chunk written" edge per the state spec.
-            app.state.machine.transition_to("speaking", request_id=session_id)
-            last_utt_id = _emit_chunk_karaoke(0, chunks[0], first_wav)
-            yield _part_headers(0, total, chunks[0])
-            yield first_wav
-            yield b"\r\n"
-            yielded = 1
+            last_utt_id = None
             truncated = False
-
-            # Rolling buffer (YouTube-style): while the client is consuming
-            # chunk N's bytes, we already have chunk N+1 synthesizing on a
-            # worker thread. Single-slot prefetch is enough — Kokoro on
-            # Apple Silicon synthesizes faster than realtime, so one chunk
-            # ahead reliably keeps the buffer ahead of playback.
-            if total > 1:
-                executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix="myna-prefetch"
-                )
-                # Kick off prefetch of chunk 1 immediately (we're about to
-                # spend time yielding chunk 0 bytes to the network).
-                next_future = executor.submit(_synthesize_one, chunks[1])
-            else:
-                executor = None
-                next_future = None
-
             try:
-                for idx in range(1, total):
-                    # Await the chunk we previously kicked off.
-                    try:
-                        wav = next_future.result()
-                    except Exception:
-                        # Engine died mid-stream — terminate cleanly with the
-                        # closing JSON part reporting the actual count.
-                        truncated = True
-                        break
+                app.state.machine.transition_to("speaking", request_id=session_id)
+                last_utt_id = _emit_chunk_karaoke(0, chunks[0], first_wav)
+                yield _part_headers(0, total, chunks[0])
+                yield first_wav
+                yield b"\r\n"
+                yielded = 1
 
-                    # Immediately kick off the NEXT prefetch (if any) so we
-                    # overlap network-yield time with synthesis time.
-                    if idx + 1 < total:
-                        next_future = executor.submit(
-                            _synthesize_one, chunks[idx + 1]
-                        )
-                    else:
-                        next_future = None
+                # Rolling buffer (YouTube-style): while the client is consuming
+                # chunk N's bytes, we already have chunk N+1 synthesizing on a
+                # worker thread. Single-slot prefetch is enough — Kokoro on
+                # Apple Silicon synthesizes faster than realtime, so one chunk
+                # ahead reliably keeps the buffer ahead of playback.
+                if total > 1:
+                    executor = concurrent.futures.ThreadPoolExecutor(
+                        max_workers=1, thread_name_prefix="myna-prefetch"
+                    )
+                    # Kick off prefetch of chunk 1 immediately (we're about to
+                    # spend time yielding chunk 0 bytes to the network).
+                    next_future = executor.submit(_synthesize_one, chunks[1])
+                else:
+                    executor = None
+                    next_future = None
 
-                    last_utt_id = _emit_chunk_karaoke(idx, chunks[idx], wav)
-                    yield _part_headers(idx, total, chunks[idx])
-                    yield wav
-                    yield b"\r\n"
-                    yielded += 1
+                try:
+                    for idx in range(1, total):
+                        # Await the chunk we previously kicked off.
+                        try:
+                            wav = next_future.result()
+                        except Exception:
+                            # Engine died mid-stream — terminate cleanly with the
+                            # closing JSON part reporting the actual count.
+                            truncated = True
+                            break
+
+                        # Immediately kick off the NEXT prefetch (if any) so we
+                        # overlap network-yield time with synthesis time.
+                        if idx + 1 < total:
+                            next_future = executor.submit(
+                                _synthesize_one, chunks[idx + 1]
+                            )
+                        else:
+                            next_future = None
+
+                        last_utt_id = _emit_chunk_karaoke(idx, chunks[idx], wav)
+                        yield _part_headers(idx, total, chunks[idx])
+                        yield wav
+                        yield b"\r\n"
+                        yielded += 1
+                finally:
+                    if next_future is not None:
+                        next_future.cancel()
+                    if executor is not None:
+                        executor.shutdown(wait=False, cancel_futures=True)
+
+                yield _final_part(yielded)
             finally:
-                if next_future is not None:
-                    next_future.cancel()
-                if executor is not None:
-                    executor.shutdown(wait=False, cancel_futures=True)
-
-            yield _final_part(yielded)
-            # Stream done. Truncation -> error (so the UI can show it);
-            # clean drain -> back to idle.
-            if last_utt_id is not None:
-                karaoke.stop(last_utt_id)
-            if truncated:
-                app.state.machine.transition_to("error")
-            else:
-                # speaking -> idle is the documented "last chunk played"
-                # transition. Daemon doesn't track player time; we treat
-                # "wrote the last chunk" as "done speaking" for status.
-                app.state.machine.transition_to("idle")
+                # Runs on normal completion AND on abnormal exit: when the
+                # client disconnects mid-stream, Starlette closes the generator,
+                # raising GeneratorExit into this frame. WITHOUT this reset, an
+                # interrupted synth leaves the machine stuck in thinking/speaking
+                # forever — which 503s every later voice preview
+                # (reason=engine_thinking) and freezes the menu-bar "thinking"
+                # icon until the daemon is restarted. (Root cause of the
+                # recurring "audio stopped working" reports.)
+                if last_utt_id is not None:
+                    karaoke.stop(last_utt_id)
+                # Only reset if this request still owns the machine — a newer
+                # request may already have transitioned it into its own
+                # thinking/speaking, and we must not clobber that.
+                if app.state.machine.request_id == session_id:
+                    # truncation -> error (so the UI can show it); a clean drain
+                    # OR a mid-stream client disconnect -> idle.
+                    app.state.machine.transition_to(
+                        "error" if truncated else "idle"
+                    )
 
         return StreamingResponse(
             _generator(),
@@ -706,7 +717,18 @@ def create_app(config: dict | None = None) -> FastAPI:
     def v2_voice_preview(voice_id: str):
         # While engine is warming (machine state == thinking) or the engine
         # is reported down, bounce the client with a 503 + Retry-After.
-        if app.state.machine.state == "thinking":
+        #
+        # Only honour a *recent* "thinking" — a real in-flight request warms
+        # for at most a cold model load (~tens of seconds). A "thinking" older
+        # than this window is stale (an interrupted synth whose reset didn't
+        # run before the generator existed), and must NOT block previews
+        # forever. Belt-and-braces alongside the disconnect-safe reset in the
+        # synth generator.
+        STALE_THINKING_MS = 45_000
+        if (
+            app.state.machine.state == "thinking"
+            and app.state.machine.since_ms() < STALE_THINKING_MS
+        ):
             return JSONResponse(
                 status_code=503,
                 content={"ok": False, "reason": "engine_thinking"},
