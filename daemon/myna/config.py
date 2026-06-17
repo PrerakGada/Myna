@@ -7,6 +7,17 @@ CONFIG_PATH = CONFIG_DIR / "config.json"
 
 DEFAULTS = {
     "engine_url": "http://127.0.0.1:8765",
+    # The daemon supervises the mlx-audio engine as a CHILD process so the
+    # whole voice stack is managed by one brew service (myna-daemon) instead
+    # of a separate dev.myna.engine LaunchAgent. `engine_venv` is the
+    # setup.sh-built venv holding mlx-audio + the Kokoro G2P stack. Set
+    # `engine_autostart` false to run the engine yourself (dev) — the daemon
+    # then just proxies to `engine_url`. Autostart is additionally gated on the
+    # MYNA_ENGINE_AUTOSTART env var (set only by `python -m myna`) so test
+    # harnesses that build the app in-process never spawn a real engine.
+    "engine_venv": "~/.venvs/mlx-audio",
+    "engine_autostart": True,
+    "engine_log": "~/Library/Logs/myna-engine.log",
     "ollama_url": "http://127.0.0.1:11434",
     "voice": "af_heart",
     "lang_code": "a",

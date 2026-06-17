@@ -142,6 +142,25 @@ async def _warm_voice_previews(app) -> None:
 def create_app(config: dict | None = None) -> FastAPI:
     @contextlib.asynccontextmanager
     async def _lifespan(app: FastAPI):
+        # The daemon supervises the mlx-audio engine as a child process so the
+        # whole voice stack is one brew service. Gated on MYNA_ENGINE_AUTOSTART
+        # (set only by `python -m myna`, never by in-process test harnesses) and
+        # the engine_autostart config flag (so dev/users can opt out).
+        engine_sup = None
+        cfg = app.state.cfg
+        if (
+            os.environ.get("MYNA_ENGINE_AUTOSTART") == "1"
+            and cfg.get("engine_autostart", True)
+        ):
+            from .engine_supervisor import EngineSupervisor
+
+            engine_sup = EngineSupervisor(
+                engine_url=cfg["engine_url"],
+                venv_dir=cfg.get("engine_venv", "~/.venvs/mlx-audio"),
+                log_path=cfg.get("engine_log", "~/Library/Logs/myna-engine.log"),
+            )
+            engine_sup.start()
+
         # Opt-in voice preview warming. Default off so test runners and dev
         # shells don't fire warming. The deployed launchagent sets
         # MYNA_WARM_VOICES=1.
@@ -155,6 +174,10 @@ def create_app(config: dict | None = None) -> FastAPI:
                 warm_task.cancel()
                 with contextlib.suppress(BaseException):
                     await warm_task
+            # Stop the engine with the daemon — stopping the brew service stops
+            # the whole voice stack.
+            if engine_sup is not None:
+                engine_sup.stop()
 
     app = FastAPI(title="Myna", lifespan=_lifespan)
     # DNS-rebinding defence: the daemon is reachable only on 127.0.0.1

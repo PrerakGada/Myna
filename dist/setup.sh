@@ -63,54 +63,33 @@ say "Installing the voice engine (mlx-audio) — this can take a few minutes…"
   'mlx-audio[server]' misaki num2words spacy phonemizer espeakng-loader \
   || die "engine install failed. Re-run, or install the packages above manually."
 
-# espeak-ng library, bundled by espeakng-loader so we don't depend on a brew
-# install (misaki only finds a brew espeak at a hard-coded version path). We
-# pass these to the engine via env vars below; phonemizer honours
-# PHONEMIZER_ESPEAK_LIBRARY, and espeak-ng reads ESPEAK_DATA_PATH.
-ESPEAK_LIB="$("$ENGINE_VENV/bin/python" -c 'import espeakng_loader; print(espeakng_loader.get_library_path())' 2>/dev/null)"
-ESPEAK_DATA="$("$ENGINE_VENV/bin/python" -c 'import espeakng_loader; print(espeakng_loader.get_data_path())' 2>/dev/null)"
-
-# 3. Engine LaunchAgent — keeps the engine on 127.0.0.1:$ENGINE_PORT across reboots.
-mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.cache/myna" "$HOME/Library/Logs"
-ENGINE_PLIST="$HOME/Library/LaunchAgents/dev.myna.engine.plist"
-cat > "$ENGINE_PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>dev.myna.engine</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>$ENGINE_VENV/bin/python</string>
-    <string>-m</string><string>mlx_audio.server</string>
-    <string>--host</string><string>127.0.0.1</string>
-    <string>--port</string><string>$ENGINE_PORT</string>
-  </array>
-  <key>WorkingDirectory</key><string>$HOME/.cache/myna</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PHONEMIZER_ESPEAK_LIBRARY</key><string>$ESPEAK_LIB</string>
-    <key>ESPEAK_DATA_PATH</key><string>$ESPEAK_DATA</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$HOME/Library/Logs/myna-engine.log</string>
-  <key>StandardErrorPath</key><string>$HOME/Library/Logs/myna-engine.log</string>
-</dict>
-</plist>
-EOF
+# 3. The daemon now supervises the engine as a CHILD process — one brew
+#    service (myna-daemon) for the whole voice stack. Evict any legacy
+#    dev.myna.engine LaunchAgent from the old two-service layout so the daemon
+#    is the sole owner and they don't fight over the port. (The daemon also
+#    boots it out on its own startup; this covers fresh runs of setup.)
+mkdir -p "$HOME/.cache/myna" "$HOME/Library/Logs"
 launchctl bootout "gui/$(id -u)/dev.myna.engine" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$ENGINE_PLIST" 2>/dev/null \
-  || launchctl load "$ENGINE_PLIST" 2>/dev/null || true
-say "Voice engine loaded on port $ENGINE_PORT"
+rm -f "$HOME/Library/LaunchAgents/dev.myna.engine.plist"
 
-# 4. Make sure the daemon (brew service) is up.
-if ! curl -sf -m 2 "http://127.0.0.1:${DAEMON_PORT}/v2/health" >/dev/null 2>&1; then
-  say "Starting myna-daemon"
+# 4. (Re)start the daemon — on launch it spawns + supervises the mlx-audio
+#    engine itself (it resolves the espeak/G2P env from the venv).
+if curl -sf -m 2 "http://127.0.0.1:${DAEMON_PORT}/v2/health" >/dev/null 2>&1; then
+  say "Restarting myna-daemon so it picks up the freshly-installed engine"
+  brew services restart myna-daemon >/dev/null 2>&1 \
+    || launchctl kickstart -k "gui/$(id -u)/homebrew.mxcl.myna-daemon" 2>/dev/null \
+    || warn "restart it manually: brew services restart myna-daemon"
+else
+  say "Starting myna-daemon (it will start the voice engine)"
   brew services start myna-daemon >/dev/null 2>&1 \
     || warn "couldn't start myna-daemon via brew — run: brew services start myna-daemon"
 fi
+# Give the daemon's supervisor a moment to bring the engine up.
+for _ in $(seq 1 20); do
+  curl -sf -m 2 "http://127.0.0.1:${ENGINE_PORT}/v1/models" >/dev/null 2>&1 && break
+  sleep 1
+done
+say "Voice engine managed by myna-daemon on port $ENGINE_PORT"
 
 # 5. Claude Code Stop hook — prefer a local checkout, else download from the tag.
 HOOK_DIR="$HOME/.config/myna/hooks"
