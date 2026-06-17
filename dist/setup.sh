@@ -66,7 +66,15 @@ done
 #                    "Kokoro requires the optional 'misaki' package".
 #    We install spacy/etc. DIRECTLY (not via `misaki[en]`) because that extra
 #    pins old spacy/blis versions with no cp313 wheel that fail to compile.
-ENGINE_PKGS=('mlx-audio[server]' misaki num2words spacy phonemizer espeakng-loader)
+#
+#    misaki is PINNED <0.8: mlx-audio declares NO misaki constraint, so an
+#    unpinned install grabs the latest. misaki >=0.8 calls
+#    `EspeakWrapper.set_data_path()`, which the plain `phonemizer` (not
+#    phonemizer-fork) we install does NOT have — so Kokoro's G2P crashes at
+#    import time and EVERY synthesize 502s ("EspeakWrapper has no attribute
+#    'set_data_path'"). 0.7.x is the proven-good line. This is the likely cause
+#    of "the engine works on one machine but 502s on another".
+ENGINE_PKGS=('mlx-audio[server]' 'misaki<0.8' num2words spacy phonemizer espeakng-loader)
 
 engine_ready() {
   [ -x "$ENGINE_VENV/bin/python" ] || return 1
@@ -74,7 +82,18 @@ engine_ready() {
 import importlib.util as u, sys
 need = ["mlx_audio", "misaki", "num2words", "spacy",
         "phonemizer", "espeakng_loader", "uvicorn", "fastapi", "webrtcvad"]
-sys.exit(0 if all(u.find_spec(m) is not None for m in need) else 1)
+if not all(u.find_spec(m) is not None for m in need):
+    sys.exit(1)
+# Functional gate, not just presence: actually import misaki's espeak G2P
+# submodule — this is the exact line that explodes with an incompatible
+# misaki/phonemizer pair (AttributeError: EspeakWrapper.set_data_path). An
+# install left broken by an old unpinned setup (misaki >=0.8) therefore fails
+# this probe and gets repaired by the (now pinned <0.8) reinstall below.
+try:
+    import misaki.espeak  # noqa: F401
+except Exception:
+    sys.exit(1)
+sys.exit(0)
 PY
 }
 

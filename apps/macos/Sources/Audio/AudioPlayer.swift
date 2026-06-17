@@ -86,6 +86,10 @@ public final class AudioPlayer: ObservableObject {
     /// AVAudioEngine connections need a consistent format; we (re-)wire
     /// the graph if the format changes between sessions.
     private var connectedFormat: AVAudioFormat?
+    /// Diagnostics (v0.4.3): fingerprints the "stops taking reads" wedge —
+    /// whether a session reaches end-of-queue cleanly and whether a fresh
+    /// read finds a non-idle player. Cheap; a handful of lines per read.
+    private let log = Log(.app)
 
     // MARK: init
 
@@ -164,6 +168,14 @@ public final class AudioPlayer: ObservableObject {
         // buffers would sit unscheduled and never play. Route them through
         // the per-chunk path, which schedules each onto the active session.
         guard state == .idle else {
+            // DIAGNOSTIC (v0.4.3): a fresh read's lead buffer arrived but the
+            // player isn't idle — i.e. a prior session didn't fully reset.
+            // This is the fingerprint of the "stops taking reads after a few
+            // triggers" wedge; log it so a field repro pinpoints the cause.
+            // Routing the buffers per-chunk keeps audio working as before.
+            log.warn("enqueueAll while state=\(state.rawValue) "
+                + "(queued=\(queue.chunks.count), cur=\(currentChunkIndex)) — "
+                + "player not idle at read start; routing per-chunk")
             for buffer in buffers { enqueue(buffer: buffer) }
             return
         }
@@ -459,7 +471,12 @@ public final class AudioPlayer: ObservableObject {
 
     private func handleChunkCompletion(index: Int, token: Int) {
         // Drop late callbacks from a previous session.
-        guard token == sessionToken else { return }
+        guard token == sessionToken else {
+            // DIAGNOSTIC (v0.4.3): a completion for a superseded session — normal
+            // after stop()/new read, but a flood here would explain lost progress.
+            log.info("chunk completion ignored (stale): idx=\(index) tok=\(token) != session \(sessionToken)")
+            return
+        }
         // Advance bookkeeping if this was the latest in-flight chunk.
         if index >= currentChunkIndex {
             currentChunkIndex = index + 1
@@ -473,6 +490,10 @@ public final class AudioPlayer: ObservableObject {
             state = .idle
             positionTimer?.invalidate()
             positionTimer = nil
+            // DIAGNOSTIC (v0.4.3): confirms the session drained to idle. If the
+            // wedge happens, this line will be MISSING for the stuck read —
+            // proving a terminal completion was lost (vs. the daemon/capture).
+            log.info("playback drained to idle: \(queue.chunks.count) chunks, token=\(token)")
         }
     }
 

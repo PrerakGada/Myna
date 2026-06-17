@@ -256,8 +256,13 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
                     }
                 } catch {
                     // Partial mid-stream failure: play what we collected
-                    // rather than dropping the whole clip.
-                    log.error("synthesize failed (seamless, partial): \(error)")
+                    // rather than dropping the whole clip. The scheduled
+                    // buffers' completions still drain the player to idle.
+                    // DIAGNOSTIC (v0.4.3): started/chunkCount/generation context
+                    // so a field repro can correlate a truncated stream with a
+                    // subsequent read finding the player non-idle.
+                    log.error("synthesize failed (seamless, partial; started=\(started), "
+                        + "chunks=\(chunkCount), gen=\(myGeneration)/\(speakGeneration)): \(error)")
                 }
                 // A superseding speak or an explicit stop cancelled us mid-
                 // stream — don't shove a stale clip into the fresh session.
