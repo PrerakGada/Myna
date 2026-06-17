@@ -390,8 +390,15 @@ public final class AudioPlayer: ObservableObject {
                 at: nil,
                 options: [],
                 completionCallbackType: .dataPlayedBack
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+            ) { @Sendable [weak self] _ in
+                // AVFAudio invokes this on its own CompletionHandlerQueue, NOT
+                // the main actor. The closure must be @Sendable / non-isolated,
+                // otherwise it inherits AudioPlayer's @MainActor isolation and
+                // macOS 26's stricter Swift runtime traps on the executor check
+                // (EXC_BREAKPOINT in swift_task_isCurrentExecutor) the instant
+                // it's called off-main — before we ever reach the hop below. Do
+                // the MainActor hop explicitly here.
+                Task { @MainActor in
                     self?.handleChunkCompletion(index: index, token: token)
                 }
             }
@@ -407,8 +414,11 @@ public final class AudioPlayer: ObservableObject {
             frameCount: framesToPlay,
             at: timeAnchor,
             completionCallbackType: .dataPlayedBack
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+        ) { @Sendable [weak self] _ in
+            // Must be @Sendable for the same reason as the scheduleBuffer path
+            // above: AVFAudio runs it off the main actor, and a MainActor-
+            // isolated closure traps on macOS 26's executor check. Hop inside.
+            Task { @MainActor in
                 self?.handleChunkCompletion(index: index, token: token)
             }
         }
