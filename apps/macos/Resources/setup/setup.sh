@@ -44,24 +44,74 @@ for c in python3.13 "$(brew --prefix 2>/dev/null)/bin/python3.13" \
 done
 [ -n "$PY" ] || die "python3.13 not found. Install it with: brew install python@3.13"
 
-# 2. Engine venv + mlx-audio.
+# 2. Engine venv + mlx-audio.  IDEMPOTENT + cache-friendly.
+#    The engine stack is ~600 MB of wheels, so re-running setup or upgrading
+#    Myna used to re-download ALL of it every time (the venv survives a cask
+#    reinstall, but `pip install --upgrade` re-resolved the whole tree against
+#    PyPI and re-fetched anything with a newer release). Now:
+#      • if the venv already imports the whole stack, skip pip entirely
+#        (a ~30 ms import probe — the common case on re-install / upgrade);
+#      • when the installer DOES run we DON'T pass `--upgrade`, so an already-
+#        installed package counts as satisfied and is left alone (only
+#        genuinely-missing pieces are fetched), and the installer's wheel cache
+#        (~/.cache/uv or ~/.cache/pip) makes any real download reusable next time.
+#    The install itself prefers `uv` over pip (see below) for a faster cold run.
+#    Set MYNA_FORCE_ENGINE=1 to force a clean `--upgrade` of the whole stack.
+#
+#    The full engine stack — `mlx-audio` alone is NOT enough to synthesize:
+#      • [server]  → uvicorn + fastapi + webrtcvad (mlx_audio.server imports
+#                    these; without it the engine crashes, app shows "offline")
+#      • misaki + num2words + spacy + phonemizer + espeakng-loader → Kokoro's
+#                    G2P. Without these /v1/models works but real TTS dies with
+#                    "Kokoro requires the optional 'misaki' package".
+#    We install spacy/etc. DIRECTLY (not via `misaki[en]`) because that extra
+#    pins old spacy/blis versions with no cp313 wheel that fail to compile.
+ENGINE_PKGS=('mlx-audio[server]' misaki num2words spacy phonemizer espeakng-loader)
+
+engine_ready() {
+  [ -x "$ENGINE_VENV/bin/python" ] || return 1
+  "$ENGINE_VENV/bin/python" - <<'PY' >/dev/null 2>&1
+import importlib.util as u, sys
+need = ["mlx_audio", "misaki", "num2words", "spacy",
+        "phonemizer", "espeakng_loader", "uvicorn", "fastapi", "webrtcvad"]
+sys.exit(0 if all(u.find_spec(m) is not None for m in need) else 1)
+PY
+}
+
 if [ ! -d "$ENGINE_VENV" ]; then
   say "Creating voice-engine venv at $ENGINE_VENV"
   "$PY" -m venv "$ENGINE_VENV"
 fi
-say "Installing the voice engine (mlx-audio) — this can take a few minutes…"
-"$ENGINE_VENV/bin/pip" install --quiet --upgrade pip
-# The full engine stack. `mlx-audio` alone is NOT enough to actually synthesize:
-#   • [server]  → uvicorn + fastapi + webrtcvad (mlx_audio.server imports these;
-#                 without it the engine crashes on startup, app shows "offline")
-#   • misaki + num2words + spacy + phonemizer + espeakng-loader → Kokoro's text
-#                 processing / G2P. Without these /v1/models works but real TTS
-#                 dies with "Kokoro requires the optional 'misaki' package".
-# NB: we install spacy/etc. DIRECTLY (not via `misaki[en]`) because that extra
-# pins old spacy/blis versions that have no cp313 wheel and fail to compile.
-"$ENGINE_VENV/bin/pip" install --quiet --upgrade \
-  'mlx-audio[server]' misaki num2words spacy phonemizer espeakng-loader \
-  || die "engine install failed. Re-run, or install the packages above manually."
+
+if [ "${MYNA_FORCE_ENGINE:-0}" != "1" ] && engine_ready; then
+  say "Voice engine already installed — reusing it (set MYNA_FORCE_ENGINE=1 to reinstall)"
+else
+  # Pick the fastest available installer. Prefer `uv` (Astral) — parallel
+  # downloads + a far faster resolver: ~3x quicker than pip on a cold install
+  # in our benchmark (12s vs 34s), and bigger on slow/high-latency links. If uv
+  # isn't on PATH, bootstrap it into the venv (a tiny wheel, no system change);
+  # if even that fails, fall back to plain pip. Always works, just faster when
+  # uv is around. uv's cache also hardlinks into venvs, so recreating the venv
+  # later is near-instant.
+  UV_BIN="$(command -v uv 2>/dev/null || true)"
+  if [ -z "$UV_BIN" ]; then
+    "$ENGINE_VENV/bin/pip" install --quiet uv >/dev/null 2>&1 \
+      && [ -x "$ENGINE_VENV/bin/uv" ] && UV_BIN="$ENGINE_VENV/bin/uv" || true
+  fi
+  pip_up=""; [ "${MYNA_FORCE_ENGINE:-0}" = "1" ] && pip_up="--upgrade"
+  if [ -n "$UV_BIN" ]; then
+    say "Installing the voice engine with uv — first run pulls ~600 MB; later runs reuse the cache…"
+    # shellcheck disable=SC2086
+    "$UV_BIN" pip install --python "$ENGINE_VENV/bin/python" --quiet $pip_up "${ENGINE_PKGS[@]}" \
+      || die "engine install (uv) failed. Re-run, or install the packages above manually."
+  else
+    say "Installing the voice engine with pip (install \`uv\` for ~3x faster setup) — this can take a few minutes…"
+    "$ENGINE_VENV/bin/pip" install --quiet --upgrade pip
+    # shellcheck disable=SC2086
+    "$ENGINE_VENV/bin/pip" install --quiet $pip_up "${ENGINE_PKGS[@]}" \
+      || die "engine install failed. Re-run, or install the packages above manually."
+  fi
+fi
 
 # 3. The daemon now supervises the engine as a CHILD process — one brew
 #    service (myna-daemon) for the whole voice stack. Evict any legacy
@@ -127,11 +177,28 @@ fi
 #    "didn't finish" on slower networks and left users hitting 503s on first
 #    read. snapshot_download resumes partial downloads and has no synth/HTTP
 #    timeout to fight, so the model is fully cached when this returns.
-say "Downloading the voice model (~340 MB, one time; resumes if interrupted)…"
+say "Checking the voice model (~340 MB; downloads once, resumes if interrupted)…"
 MODEL_ID="${MYNA_VOICE_MODEL:-prince-canuma/Kokoro-82M}"
-if "$ENGINE_VENV/bin/python" -c \
-     'import sys; from huggingface_hub import snapshot_download; snapshot_download(sys.argv[1])' \
-     "$MODEL_ID"; then
+# Speed up a COLD model fetch: huggingface_hub 1.x transfers via Xet (chunked,
+# deduped, content-addressed; hf-xet already ships as a dependency, no install
+# needed). HF_XET_HIGH_PERFORMANCE maxes out its concurrency. No effect when the
+# model is already cached (the local_files_only fast path below does zero
+# network). NB: the old hf_transfer flag is deprecated in 1.x — don't use it.
+"$ENGINE_VENV/bin/python" -c 'import hf_xet' 2>/dev/null && export HF_XET_HIGH_PERFORMANCE=1
+# Fast path: if the snapshot is already fully cached, local_files_only returns
+# instantly with NO network — avoids re-verifying ~120 files against the Hub on
+# every re-install / upgrade. Only a missing/partial cache hits the network.
+if "$ENGINE_VENV/bin/python" - "$MODEL_ID" <<'PY'; then
+import sys
+from huggingface_hub import snapshot_download
+model_id = sys.argv[1]
+try:
+    snapshot_download(model_id, local_files_only=True)
+    print("   model already cached — skipping download")
+except Exception:
+    snapshot_download(model_id)
+    print("   model downloaded")
+PY
   say "Voice model ready."
   # Best-effort: prime the (now-cached) model into engine memory so the first
   # real read is instant. Generous timeout — the FIRST synth also pays the
