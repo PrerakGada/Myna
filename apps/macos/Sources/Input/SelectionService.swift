@@ -97,15 +97,26 @@ public final class SelectionService: @unchecked Sendable {
     /// Empirically 120ms is the smallest window where every tested app
     /// (Safari, Chrome, Slack, Mail, etc.) has finished its copy handler.
     public let copyWaitNanos: UInt64
+    /// Returns true while the user is still physically holding modifier keys.
+    /// Injected so tests stay deterministic; the default reads the live
+    /// hardware modifier state via CGEventSource. See `captureSelectedText`
+    /// for why this matters (synthetic Cmd+C pollution by the hotkey combo).
+    private let modifiersHeld: @Sendable () -> Bool
 
     public init(
         pasteboard: PasteboardProtocol = NSPasteboardAdapter(),
         keyPoster: KeyPostingProtocol = CGEventKeyPoster(),
-        copyWaitNanos: UInt64 = 120_000_000
+        copyWaitNanos: UInt64 = 120_000_000,
+        modifiersHeld: @escaping @Sendable () -> Bool = {
+            let f = CGEventSource.flagsState(.combinedSessionState)
+            return f.contains(.maskCommand) || f.contains(.maskShift)
+                || f.contains(.maskAlternate) || f.contains(.maskControl)
+        }
     ) {
         self.pasteboard = pasteboard
         self.keyPoster = keyPoster
         self.copyWaitNanos = copyWaitNanos
+        self.modifiersHeld = modifiersHeld
     }
 
     /// Capture the user's selected text. Returns nil if no text was
@@ -119,6 +130,22 @@ public final class SelectionService: @unchecked Sendable {
         // would otherwise leave the user with an empty clipboard.
         // Per AUDIT_REPORT.md Security 🟡 #3 / Lane A 🟡 #5.
         defer { pasteboard.restore(snapshot) }
+
+        // Wait (briefly, bounded) for the hotkey's own modifiers to lift
+        // before synthesizing Cmd+C. The read shortcut is a modifier combo
+        // (default ⌘⌥⇧S) fired on keyDown, so the keys are still physically
+        // down when we get here; a Cmd+C posted now arrives as ⌘⌥⇧C, which no
+        // app treats as Copy — the pasteboard stays empty and we report
+        // "no text captured". Whether the user has lifted the keys by now is a
+        // race → the intermittent "sometimes it reads, sometimes it doesn't".
+        // No-op for gesture / URL-scheme triggers (no modifiers held) and tests.
+        var waitedForMods: UInt64 = 0
+        let modStep: UInt64 = 15_000_000        // 15ms
+        let modCap: UInt64 = 600_000_000        // give up after 600ms, try anyway
+        while modifiersHeld(), waitedForMods < modCap {
+            try? await Task.sleep(nanoseconds: modStep)
+            waitedForMods += modStep
+        }
 
         let posted = keyPoster.postCmdC()
         guard posted else { return nil }

@@ -43,6 +43,26 @@ final class SelectionServiceTests: XCTestCase {
         // Clipboard must still be exactly what it was.
         XCTAssertEqual(pasteboard.pasteboardString, "before")
     }
+
+    /// The hotkey-modifier race fix: when the user is still holding the
+    /// shortcut's modifiers, capture must WAIT for them to lift before
+    /// synthesizing Cmd+C (otherwise the copy lands as ⌘⌥⇧C and fails). Once
+    /// released, the copy succeeds and the selection is returned.
+    func test_capture_waits_for_modifiers_to_release_then_copies() async {
+        let pasteboard = FakePasteboard()
+        let poster = FakeKeyPoster(onPost: { pasteboard.simulateAppPlacingOnClipboard("delayed") })
+        // Held for the first few polls, then released.
+        let mods = HeldCounter(holdTimes: 3)
+        let service = SelectionService(
+            pasteboard: pasteboard,
+            keyPoster: poster,
+            copyWaitNanos: 1_000_000,
+            modifiersHeld: { mods.heldThenRelease() }
+        )
+        let text = await service.captureSelectedText()
+        XCTAssertEqual(text, "delayed")           // waited, then captured cleanly
+        XCTAssertGreaterThan(mods.callCount, 1)    // the wait loop actually polled
+    }
 }
 
 // MARK: - test doubles
@@ -98,5 +118,26 @@ private struct FakeKeyPoster: KeyPostingProtocol {
     func postCmdC() -> Bool {
         onPost?()
         return succeed
+    }
+}
+
+/// Reports "modifiers held" for the first `holdTimes` polls, then "released".
+/// Lock-guarded because `modifiersHeld` is a `@Sendable` closure.
+private final class HeldCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private let holdTimes: Int
+
+    init(holdTimes: Int) { self.holdTimes = holdTimes }
+
+    func heldThenRelease() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        calls += 1
+        return calls <= holdTimes
+    }
+
+    var callCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return calls
     }
 }
