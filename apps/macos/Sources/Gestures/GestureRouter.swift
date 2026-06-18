@@ -10,18 +10,19 @@
 // full-screen apps" — defaults to 4 fingers on Magic Trackpad) and
 // never fires reliably, so we scrapped it. Current set:
 //
-//   • 4-finger tap         → speak selection (full)
-//   • 4-finger double-tap  → stop                    ← provisional
-//   • 4-finger click       → play / pause toggle      (currently dormant —
-//   • 4-finger double-click → stop                     see note below)
+//   • 4-finger tap          → speak selection (full)
+//   • 4-finger press-hold   → speak selection (full)   (emitted as `.click`)
+//   • 4-finger double-tap   → stop
+//   • 4-finger double-click → stop
 //
-// CLICK STATUS (2026-05-27)
-// On Prerak's hardware the click + double-click paths don't fire even
-// after switching the global monitor from .pressure to .leftMouseDown
-// (see MultitouchBridge.swift). Until we identify why, the click
-// gestures stay wired but effectively inert. To keep `stop` reachable
-// from gestures in the meantime, double-tap is remapped from summary
-// → stop. We'll restore summary on double-tap once click is fixed.
+// CLICK STATUS (2026-06-18)
+// macOS never delivers a normal click event to a background app while 4
+// fingers rest on the trackpad — the global mouse/pressure monitor stays
+// silent (confirmed live). So the physical "4-finger click" is undetectable
+// from a background app. Per Prerak's request the deliberate trigger is now a
+// 4-finger PRESS-AND-HOLD (~0.3s), which the recognizer emits as `.click`
+// using the reliable finger-count stream (the same one the tap uses). Both the
+// quick tap and the press-hold speak the selection.
 import Foundation
 
 /// The semantic gesture vocabulary Myna recognises.
@@ -33,7 +34,9 @@ public enum MynaGesture: String, Sendable, CaseIterable {
     /// path is debugged; canonical mapping is `speakSelection(.summary)`).
     case fourFingerDoubleTap
 
-    /// 4-finger trackpad hard click → play / pause toggle.
+    /// 4-finger trackpad press-and-hold (~0.3s) → speak selection (full).
+    /// Named "click" for historical continuity; the OS click event is
+    /// undetectable from a background app, so this is a deliberate hold.
     case fourFingerClick
 
     /// 4-finger trackpad hard double-click → stop.
@@ -72,12 +75,13 @@ public final class GestureRouter {
         case .fourFingerTap:
             target.speakSelection(mode: .full)
         case .fourFingerDoubleTap:
-            // Provisional remap: click path is dormant on Prerak's
-            // hardware so double-tap is the only way to reach stop from
-            // gestures right now. Restore `.summary` once click works.
+            // Double-tap → stop (keeps stop reachable from gestures).
             target.stop()
         case .fourFingerClick:
-            target.togglePause()
+            // Press-and-hold (~0.3s) → read, per Prerak's request. Same
+            // action as tap; the hold is the deliberate, accident-resistant
+            // way to trigger a read.
+            target.speakSelection(mode: .full)
         case .fourFingerDoubleClick:
             target.stop()
         }

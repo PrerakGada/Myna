@@ -23,11 +23,14 @@ final class GestureRouterTests: XCTestCase {
         XCTAssertEqual(target.calls, [.stop])
     }
 
-    func test_click_toggles_pause() {
+    func test_click_speaks_full_selection() {
+        // The four-finger "click" is now a press-and-hold (the OS never
+        // delivers a real 4-finger click to a background app). Per Prerak's
+        // request it reads the selection, same as the tap.
         let target = FakeGestureTarget()
         let router = GestureRouter(target: target)
         router.handle(.fourFingerClick)
-        XCTAssertEqual(target.calls, [.togglePause])
+        XCTAssertEqual(target.calls, [.speakSelection(.full)])
     }
 
     func test_double_click_stops() {

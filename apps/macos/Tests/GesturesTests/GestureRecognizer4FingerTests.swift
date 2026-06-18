@@ -159,6 +159,44 @@ final class GestureRecognizer4FingerTests: XCTestCase {
         XCTAssertEqual(sink.gestures, [.tap])
     }
 
+    // MARK: - press-and-hold (emitted as .click)
+
+    func test_press_and_hold_emits_click_after_hold_threshold() {
+        let sink = GestureSink()
+        let cfg = GestureRecognizerConfig(tapMaxDuration: 0.220, holdMinDuration: 0.300)
+        let r = makeRecognizer(config: cfg, sink: sink)
+
+        // 4 fingers land, then a frame arrives while still held past the
+        // threshold (the real bridge polls ~120 Hz, so such a frame always
+        // comes during a genuine hold). Fires .click immediately — not pending.
+        r.onTouchFrame(.init(timestamp: 100.000, fingerCount: 4))
+        r.onTouchFrame(.init(timestamp: 100.320, fingerCount: 4))
+        XCTAssertEqual(sink.gestures, [.click], "a 4-finger hold past the threshold fires .click")
+
+        // Lifting afterwards must NOT also fire a tap.
+        r.onTouchFrame(.init(timestamp: 100.400, fingerCount: 0))
+        r.flushIfDue(at: 101.0)
+        XCTAssertEqual(sink.gestures, [.click], "the lift after a hold is not also a tap")
+    }
+
+    func test_quick_tap_with_intermediate_frames_does_not_trigger_hold() {
+        let sink = GestureSink()
+        let cfg = GestureRecognizerConfig(
+            tapMaxDuration: 0.220,
+            doubleClickInterval: 0.500,
+            holdMinDuration: 0.300
+        )
+        let r = makeRecognizer(config: cfg, sink: sink)
+
+        // Frames keep coming (like the real 120 Hz poll) but the finger lifts
+        // before the hold threshold — must stay a tap, never a hold .click.
+        r.onTouchFrame(.init(timestamp: 100.000, fingerCount: 4))
+        r.onTouchFrame(.init(timestamp: 100.080, fingerCount: 4))
+        r.onTouchFrame(.init(timestamp: 100.150, fingerCount: 0))
+        r.flushIfDue(at: 100.700)
+        XCTAssertEqual(sink.gestures, [.tap], "a quick tap must not fire a hold .click")
+    }
+
     // MARK: - double-click
 
     func test_double_click_emits_when_two_clicks_within_window() {

@@ -109,19 +109,27 @@ public struct GestureRecognizerConfig: Sendable {
     /// a residual contact from triggering a phantom tap immediately
     /// after a click is emitted.
     public let postEmitDebounce: TimeInterval
+    /// How long 4 fingers must stay in contact to fire a "press-and-hold"
+    /// (emitted as `.click`). macOS never delivers a real 4-finger click
+    /// event to a background app, so the deliberate "click" gesture is a
+    /// short hold instead. Must exceed `tapMaxDuration` so a quick tap and a
+    /// hold don't both fire for one contact.
+    public let holdMinDuration: TimeInterval
 
     public init(
         requiredFingerCount: Int = 4,
         tapMaxDuration: TimeInterval = 0.220,
         doubleClickInterval: TimeInterval = 0.500,
         clickStage: Int = 2,
-        postEmitDebounce: TimeInterval = 0.150
+        postEmitDebounce: TimeInterval = 0.150,
+        holdMinDuration: TimeInterval = 0.300
     ) {
         self.requiredFingerCount = requiredFingerCount
         self.tapMaxDuration = tapMaxDuration
         self.doubleClickInterval = doubleClickInterval
         self.clickStage = clickStage
         self.postEmitDebounce = postEmitDebounce
+        self.holdMinDuration = holdMinDuration
     }
 }
 
@@ -183,6 +191,20 @@ public final class GestureRecognizer4Finger {
                 phase = .contact(start: frame.timestamp, sawClickStage: false, upgradeFrom: nil)
             }
         case .contact(let start, let sawClickStage, let upgradeFrom):
+            // Press-and-hold → emit .click (mapped to read). macOS never
+            // delivers a real 4-finger click event to a background app, so a
+            // deliberate hold past `holdMinDuration` IS the "click" gesture.
+            // Fire once per contact and set sawClickStage so the eventual lift
+            // isn't also counted as a tap.
+            if !sawClickStage,
+                frame.fingerCount >= config.requiredFingerCount,
+                frame.timestamp - start >= config.holdMinDuration,
+                frame.timestamp - lastEmitAt >= config.postEmitDebounce {
+                emit(.click)
+                lastEmitAt = frame.timestamp
+                phase = .contact(start: start, sawClickStage: true, upgradeFrom: upgradeFrom)
+                return
+            }
             if frame.fingerCount == 0 {
                 // Fingers lifted. Decide tap vs nothing.
                 let duration = frame.timestamp - start
