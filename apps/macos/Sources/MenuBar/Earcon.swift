@@ -1,5 +1,5 @@
 // Earcon.swift — optional short tones for non-speech feedback:
-//   - thinkingOnset: 80ms, 220Hz sine, -18dB (per Sally's spec § 4)
+//   - gestureCaptured: 55ms, 660→880Hz rising sine, -14dB
 //   - toastReady: 60ms, 220Hz sine, -20dB (per Sally's spec § 5)
 //
 // Sounds are synthesised in-memory on first use and cached. We DO NOT
@@ -7,8 +7,17 @@
 // use a separate one-shot AVAudioPlayer to avoid blocking the main
 // playback graph.
 //
-// Earcons NEVER overlap speech: callers gate on `state != .speaking`
-// before calling `play(_:)`.
+// `gestureCaptured` replaced the old `thinkingOnset` tone (80ms/220Hz, fired
+// from MenuBarController on thinking-onset). A trackpad gesture gives no
+// visual confirmation at the moment of contact, so without a tone you cannot
+// tell a missed 4-finger tap from a slow one — you re-tap, and each re-tap
+// used to stack another concurrent capture. It rises (660→880Hz) and sits
+// louder than the other earcons (-14dB) so it reads as "got it" and stays
+// audible over ambient noise.
+//
+// Unlike the other earcons this one is NOT gated on `state != .speaking`:
+// confirming that a gesture landed matters most when Myna is already
+// speaking (e.g. double-tap to stop).
 import AVFoundation
 
 @MainActor
@@ -16,13 +25,14 @@ public final class Earcon {
     public static let shared = Earcon()
 
     public enum Tone: String, Sendable {
-        case thinkingOnset
+        /// Fired the instant a trackpad gesture is recognised.
+        case gestureCaptured
         case toastReady
         case errorTwoTone
 
         var durationMs: Int {
             switch self {
-            case .thinkingOnset: return 80
+            case .gestureCaptured: return 55
             case .toastReady: return 60
             case .errorTwoTone: return 120
             }
@@ -30,17 +40,18 @@ public final class Earcon {
 
         var attenuationDb: Double {
             switch self {
-            case .thinkingOnset: return -18
+            case .gestureCaptured: return -14
             case .toastReady: return -20
             case .errorTwoTone: return -22
             }
         }
 
-        /// Fundamental frequency. errorTwoTone uses two — first descends
-        /// to the second over the duration.
+        /// Fundamental frequency. Tones with two values sweep from the
+        /// first to the second over the duration — gestureCaptured rises
+        /// ("got it"), errorTwoTone descends.
         var freqHz: (Double, Double) {
             switch self {
-            case .thinkingOnset: return (220, 220)
+            case .gestureCaptured: return (660, 880)
             case .toastReady: return (220, 220)
             case .errorTwoTone: return (440, 330)
             }

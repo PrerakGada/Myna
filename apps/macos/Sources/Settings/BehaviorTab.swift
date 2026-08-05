@@ -17,12 +17,15 @@ public struct BehaviorTab: View {
         Form {
             Section("Sounds") {
                 Toggle(
-                    "Play a brief tick when Myna starts thinking",
-                    isOn: $viewModel.thinkingEarconEnabled
+                    "Play a tone when a trackpad gesture is detected",
+                    isOn: $viewModel.gestureEarconEnabled
                 )
-                Text("80ms low tone (~220 Hz) at -18dB. Never overlaps speech.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "55ms rising tone (660→880 Hz) at -14dB, the moment the gesture "
+                        + "registers — so you know it landed without waiting for speech."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 Toggle(
                     "Play a chime when a Claude Code toast appears",
                     isOn: $viewModel.toastChimeEnabled

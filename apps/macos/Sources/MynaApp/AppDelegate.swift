@@ -119,7 +119,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // v0.2: trackpad gestures, opt-in. The router is held strong
         // by the monitor (which holds it strong); we keep our own
         // reference so the AppDelegate test surface can introspect it.
-        self.gestureRouter = GestureRouter(target: dispatcher)
+        self.gestureRouter = GestureRouter(
+            target: dispatcher,
+            soundEnabled: { [weak settings] in settings?.gestureEarconEnabled ?? true }
+        )
         self.gestures = GestureMonitor(router: gestureRouter)
         // Observe the settings toggle so the monitor starts/stops in
         // real time when the user flips the switch in Settings.

@@ -23,8 +23,11 @@ public enum SettingsKey: String, CaseIterable, Sendable {
     case enginePort = "dev.myna.app.enginePort"
     case logLevel = "dev.myna.app.logLevel"
     case useNotifications = "dev.myna.app.useNotifications"
-    // v0.2 behavior toggles (S07 thinking earcon, S08 toast chime + focus mode)
-    case thinkingEarconEnabled = "dev.myna.app.thinkingEarconEnabled"
+    // v0.2 behavior toggles (S08 toast chime + focus mode)
+    /// Tone fired the instant a trackpad gesture is recognised. Replaced the
+    /// v0.2 thinking-onset earcon (`dev.myna.app.thinkingEarconEnabled`,
+    /// now unused — stale values are harmless).
+    case gestureEarconEnabled = "dev.myna.app.gestureEarconEnabled"
     case toastChimeEnabled = "dev.myna.app.toastChimeEnabled"
     case ccToastsEnabled = "dev.myna.app.ccToastsEnabled"
     /// v0.2: opt-in trackpad gesture recognition. Default OFF — we
@@ -54,9 +57,10 @@ public enum SettingsDefaults {
     public static let enginePort: Int = 8_765
     public static let logLevel: String = LogLevel.info.rawValue
     public static let useNotifications: Bool = false
-    // v0.2 behavior defaults: thinking earcon OFF (opt-in per S07 spec),
-    // toast chime ON (gentle 60ms tick, on by default per Sally), toasts ON.
-    public static let thinkingEarconEnabled: Bool = false
+    // Gesture earcon ON by default: a trackpad gesture has no visual
+    // confirmation at the moment of contact, so silence is indistinguishable
+    // from a missed gesture. Toast chime ON (gentle 60ms tick), toasts ON.
+    public static let gestureEarconEnabled: Bool = true
     public static let toastChimeEnabled: Bool = true
     public static let ccToastsEnabled: Bool = true
     /// v0.2: trackpad gestures default OFF. See SettingsKey docs.
@@ -138,8 +142,8 @@ public final class SettingsViewModel: ObservableObject {
     @Published public var enginePort: Int { didSet { store.set(.enginePort, enginePort) } }
     @Published public var logLevel: String { didSet { store.set(.logLevel, logLevel) } }
     @Published public var useNotifications: Bool { didSet { store.set(.useNotifications, useNotifications) } }
-    @Published public var thinkingEarconEnabled: Bool {
-        didSet { store.set(.thinkingEarconEnabled, thinkingEarconEnabled) }
+    @Published public var gestureEarconEnabled: Bool {
+        didSet { store.set(.gestureEarconEnabled, gestureEarconEnabled) }
     }
     @Published public var toastChimeEnabled: Bool {
         didSet { store.set(.toastChimeEnabled, toastChimeEnabled) }
@@ -180,7 +184,7 @@ public final class SettingsViewModel: ObservableObject {
         self.enginePort = store.int(.enginePort) ?? SettingsDefaults.enginePort
         self.logLevel = store.string(.logLevel) ?? SettingsDefaults.logLevel
         self.useNotifications = store.bool(.useNotifications) ?? SettingsDefaults.useNotifications
-        self.thinkingEarconEnabled = store.bool(.thinkingEarconEnabled) ?? SettingsDefaults.thinkingEarconEnabled
+        self.gestureEarconEnabled = store.bool(.gestureEarconEnabled) ?? SettingsDefaults.gestureEarconEnabled
         self.toastChimeEnabled = store.bool(.toastChimeEnabled) ?? SettingsDefaults.toastChimeEnabled
         self.ccToastsEnabled = store.bool(.ccToastsEnabled) ?? SettingsDefaults.ccToastsEnabled
         self.trackpadGesturesEnabled =
@@ -248,7 +252,7 @@ public final class SettingsViewModel: ObservableObject {
         enginePort = SettingsDefaults.enginePort
         logLevel = SettingsDefaults.logLevel
         useNotifications = SettingsDefaults.useNotifications
-        thinkingEarconEnabled = SettingsDefaults.thinkingEarconEnabled
+        gestureEarconEnabled = SettingsDefaults.gestureEarconEnabled
         toastChimeEnabled = SettingsDefaults.toastChimeEnabled
         ccToastsEnabled = SettingsDefaults.ccToastsEnabled
         trackpadGesturesEnabled = SettingsDefaults.trackpadGesturesEnabled

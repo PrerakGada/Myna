@@ -64,13 +64,28 @@ public protocol GestureActionTarget: AnyObject {
 public final class GestureRouter {
     private weak var target: (any GestureActionTarget)?
     private let log = Log(.app)
+    /// Whether to play the gesture-captured earcon. Injected rather than
+    /// read from settings directly so this stays unit-testable.
+    /// **Defaults to false so tests stay silent — production wiring in
+    /// `AppDelegate` must pass the real settings-backed gate.**
+    private let soundEnabled: @MainActor () -> Bool
 
-    public init(target: any GestureActionTarget) {
+    public init(
+        target: any GestureActionTarget,
+        soundEnabled: @escaping @MainActor () -> Bool = { false }
+    ) {
         self.target = target
+        self.soundEnabled = soundEnabled
     }
 
     public func handle(_ gesture: MynaGesture) {
         guard let target else { return }
+        // Fire BEFORE dispatching: the tone confirms "gesture landed", and a
+        // read can take a beat to produce audio. Deliberately not gated on
+        // playback state — see Earcon.swift.
+        if soundEnabled() {
+            Earcon.shared.play(.gestureCaptured)
+        }
         switch gesture {
         case .fourFingerTap:
             target.speakSelection(mode: .full)

@@ -40,6 +40,34 @@ final class GestureRouterTests: XCTestCase {
         XCTAssertEqual(target.calls, [.stop])
     }
 
+    func test_every_gesture_fires_the_captured_tone() {
+        // The tone is the only confirmation a gesture landed — a gesture
+        // that dispatches silently is the bug this guards against.
+        let target = FakeGestureTarget()
+        var tones = 0
+        let router = GestureRouter(target: target, soundEnabled: {
+            tones += 1
+            return false  // gate consulted, but stay silent in tests
+        })
+        for gesture in MynaGesture.allCases {
+            router.handle(gesture)
+        }
+        XCTAssertEqual(tones, MynaGesture.allCases.count)
+    }
+
+    func test_tone_gate_is_not_consulted_when_target_is_gone() {
+        // No target → no action, so no "captured" tone should imply one.
+        var target: FakeGestureTarget? = FakeGestureTarget()
+        var tones = 0
+        let router = GestureRouter(target: target!, soundEnabled: {
+            tones += 1
+            return false
+        })
+        target = nil
+        router.handle(.fourFingerTap)
+        XCTAssertEqual(tones, 0)
+    }
+
     func test_router_drops_when_target_is_deallocated() {
         var target: FakeGestureTarget? = FakeGestureTarget()
         let router = GestureRouter(target: target!)

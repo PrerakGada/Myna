@@ -62,7 +62,6 @@ public final class MenuBarController: ObservableObject, CCToastActions {
     private var debounceTask: Task<Void, Never>?
     private var playerCancellable: AnyCancellable?
     private var loadingCancellable: AnyCancellable?
-    private var hadThinkingState: Bool = false
 
     public init(
         client: DaemonClient,
@@ -174,15 +173,10 @@ public final class MenuBarController: ObservableObject, CCToastActions {
         lastRawIconState = raw
         if raw == iconState { return }
 
-        // Fire thinking earcon at thinking-onset, gated by setting and
-        // "never overlaps speech" rule (S07 AC #4).
-        if raw == .thinking, !hadThinkingState, player.state != .playing {
-            if settings?.thinkingEarconEnabled ?? false {
-                Earcon.shared.play(.thinkingOnset)
-            }
-        }
-        hadThinkingState = (raw == .thinking)
-
+        // The thinking-onset earcon was removed in favour of a
+        // gesture-captured tone fired from GestureRouter — thinking-onset
+        // duplicated feedback the icon already gives, while the moment that
+        // actually lacked confirmation was trackpad contact.
         debounceTask?.cancel()
         debounceTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.iconDebounceInterval * 1_000_000_000))
@@ -238,6 +232,24 @@ public final class MenuBarController: ObservableObject, CCToastActions {
         )
         recentsStore.add(item)
         recents = recentsStore.load()
+    }
+
+    /// The single live notice toast, if any. Held so repeated notices re-arm
+    /// the existing panel instead of stacking duplicates — a user who taps
+    /// four times because nothing happened should see one toast, not four.
+    private var noticeToast: NoticeToastWindow?
+
+    /// Surface a transient explanation of why an action did nothing.
+    /// Anchored below the CC toast stack so the two never overlap.
+    public func showNotice(title: String, hint: String) {
+        if let existing = noticeToast {
+            existing.restartLifetime()
+            return
+        }
+        let toast = NoticeToastWindow(title: title, hint: hint, stackIndex: toasts.visibleCount)
+        toast.onDismiss = { [weak self] in self?.noticeToast = nil }
+        noticeToast = toast
+        toast.showAnimated(animated: !PowerMonitor.shared.shouldSuppressAnimation)
     }
 
     // MARK: - menu actions
