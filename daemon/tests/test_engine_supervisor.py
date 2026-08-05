@@ -94,9 +94,28 @@ def test_spawn_command_and_espeak_env(tmp_path, monkeypatch):
         },
     )
     sup._spawn()
-    assert "mlx_audio.server" in captured["cmd"]
+    # The engine is launched through engine_shim.py (which patches Kokoro's
+    # SineGen, then runs mlx_audio.server) rather than `-m mlx_audio.server`.
+    assert captured["cmd"][1].endswith("engine_shim.py")
     assert "--port" in captured["cmd"] and "8765" in captured["cmd"]
     assert captured["env"]["PHONEMIZER_ESPEAK_LIBRARY"] == "/x/lib"
+
+
+def test_spawn_uses_shim_that_actually_exists(tmp_path):
+    # A shim path that doesn't resolve would silently drop us back to the
+    # unpatched engine, so assert the file really ships beside the module.
+    import os
+
+    sup = _make(tmp_path)
+    assert os.path.exists(sup.engine_shim_path())
+    assert sup._engine_launcher() == [sup.engine_shim_path()]
+
+
+def test_spawn_falls_back_to_stock_server_when_shim_missing(tmp_path, monkeypatch):
+    # Partial install / odd packaging: better an unpatched engine than none.
+    sup = _make(tmp_path)
+    monkeypatch.setattr(sup, "engine_shim_path", lambda: str(tmp_path / "gone.py"))
+    assert sup._engine_launcher() == ["-m", "mlx_audio.server"]
 
 
 def test_spawn_noops_without_venv(tmp_path, monkeypatch):

@@ -105,9 +105,11 @@ class EngineSupervisor:
             log = open(self._log_path, "a")
         except OSError:
             log = None
+        launcher = self._engine_launcher()
         logger.info(
-            "spawning engine: %s -m mlx_audio.server --host %s --port %s",
+            "spawning engine: %s %s --host %s --port %s",
             self._venv_python,
+            " ".join(launcher),
             self._host,
             self._port,
         )
@@ -116,8 +118,7 @@ class EngineSupervisor:
         self._proc = subprocess.Popen(
             [
                 self._venv_python,
-                "-m",
-                "mlx_audio.server",
+                *launcher,
                 "--host",
                 self._host,
                 "--port",
@@ -128,6 +129,25 @@ class EngineSupervisor:
             stderr=log,
             start_new_session=True,
         )
+
+    def engine_shim_path(self) -> str:
+        """Absolute path to engine_shim.py, which lives beside this module."""
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine_shim.py")
+
+    def _engine_launcher(self) -> list[str]:
+        """How to start the engine: the shim if we can find it, else stock.
+
+        The shim runs by PATH, not `-m`, because it must execute under the
+        engine venv's interpreter where the `myna` package isn't installed.
+        See engine_shim.py for what it patches and why. If the file is missing
+        (partial install, odd packaging) we fall back to the stock server —
+        the 502s return, but the engine still runs.
+        """
+        shim = self.engine_shim_path()
+        if os.path.exists(shim):
+            return [shim]
+        logger.warning("engine shim missing at %s — starting mlx_audio.server unpatched", shim)
+        return ["-m", "mlx_audio.server"]
 
     def _engine_env(self) -> dict:
         """Engine env incl. the bundled-espeak paths Kokoro's phonemizer needs.
