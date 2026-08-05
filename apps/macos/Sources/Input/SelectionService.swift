@@ -102,6 +102,7 @@ public final class SelectionService: @unchecked Sendable {
     /// hardware modifier state via CGEventSource. See `captureSelectedText`
     /// for why this matters (synthetic Cmd+C pollution by the hotkey combo).
     private let modifiersHeld: @Sendable () -> Bool
+    private let log = Log(.app)
 
     public init(
         pasteboard: PasteboardProtocol = NSPasteboardAdapter(),
@@ -122,6 +123,22 @@ public final class SelectionService: @unchecked Sendable {
     /// Capture the user's selected text. Returns nil if no text was
     /// selected, or if the key-posting mechanism failed (e.g., the app
     /// hasn't been granted Accessibility yet).
+    ///
+    /// **@MainActor is load-bearing, not decoration.** `NSPasteboard` is
+    /// AppKit and is not thread-safe. This method used to be nonisolated
+    /// `async`, so despite being called from the @MainActor AppDispatcher it
+    /// ran on the cooperative pool — every `saveSnapshot()` / `restore()` /
+    /// `pasteboardString` touched NSPasteboard off-main. Repeating a trackpad
+    /// gesture overlapped two captures, they mutated the pasteboard's internal
+    /// NSConcreteMapTable concurrently, and the resulting uncaught ObjC
+    /// exception aborted the process:
+    ///
+    ///     NSPasteboard.pasteboardItems → objc_exception_throw → abort()
+    ///     thread: com.apple.root.user-initiated-qos.cooperative
+    ///
+    /// (Crash on 0.4.5 / macOS 26.5.2, 2026-08-05.) The `await`s below are
+    /// suspension points, so main-actor isolation does NOT block the UI.
+    @MainActor
     public func captureSelectedText() async -> String? {
         let snapshot = pasteboard.saveSnapshot()
         pasteboard.clearContents()
@@ -147,14 +164,32 @@ public final class SelectionService: @unchecked Sendable {
             waitedForMods += modStep
         }
 
+        // Which app the synthetic ⌘C will actually land in. Logged on failure
+        // because "no text captured" behaves very differently per app and the
+        // old single warning couldn't tell the cases apart.
+        let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
+
         let posted = keyPoster.postCmdC()
-        guard posted else { return nil }
+        guard posted else {
+            // CGEvent creation/posting failed outright — almost always a
+            // missing Accessibility grant for THIS binary.
+            log.warn("capture: Cmd+C post failed (front=\(frontApp)) — check Accessibility")
+            return nil
+        }
         try? await Task.sleep(nanoseconds: copyWaitNanos)
         let captured = pasteboard.pasteboardString
         // Trim and treat empty as "no selection".
         guard let value = captured?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            // ⌘C was posted but the pasteboard is still empty after the wait.
+            // Either nothing was selected, or the app didn't act on a synthetic
+            // ⌘C (some apps consult the real hardware modifier state rather
+            // than the event's flags — we never press the physical ⌘ key).
+            log.warn(
+                "capture: pasteboard empty \(copyWaitNanos / 1_000_000)ms after Cmd+C "
+                + "(front=\(frontApp)) — no selection, or app ignored synthetic copy")
             return nil
         }
+        log.info("capture: \(value.count) chars from \(frontApp)")
         return value
     }
 }
