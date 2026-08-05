@@ -36,6 +36,10 @@ public final class CCToastController: ObservableObject {
     /// Currently open toast windows, newest first.
     private(set) var windows: [CCToastWindow] = []
 
+    /// How many toasts are on screen. Read by MenuBarController so a notice
+    /// toast can anchor below the stack instead of on top of it.
+    public var visibleCount: Int { windows.count }
+
     /// Items hidden behind the "+N more" overflow chip (currently in
     /// the registry but not on screen). Drives the menu-bar badge.
     @Published public private(set) var overflowCount: Int = 0

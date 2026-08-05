@@ -104,10 +104,41 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
         speakTask = Task {
             guard let text = await selection.captureSelectedText() else {
                 log.warn("speak-selection: no text captured")
+                Self.presentNoSelectionNotice(on: menuController)
                 return
             }
             await synthesizeAndPlay(text: text, url: nil, mode: mode)
         }
+    }
+
+    /// Terminal emulators that run full-screen TUIs. While a TUI has mouse
+    /// reporting on, a drag is delivered to the TUI instead of creating a
+    /// *terminal* selection — so ⌘C has nothing to copy and the read comes
+    /// back empty. Holding ⌥ forces a native selection, which is the one
+    /// piece of advice worth surfacing here.
+    private static let terminalBundleIds: Set<String> = [
+        "com.googlecode.iterm2",
+        "com.apple.Terminal",
+        "net.kovidgoyal.kitty",
+        "com.github.wez.wezterm",
+        "io.alacritty",
+        "com.mitchellh.ghostty",
+    ]
+
+    /// Explain an empty read instead of failing silently. Split out of
+    /// `speakSelection` so that method stays under the body-length limit.
+    private static func presentNoSelectionNotice(on menu: MenuBarController?) {
+        guard let menu else { return }
+        let front = NSWorkspace.shared.frontmostApplication
+        let isTerminal = front?.bundleIdentifier.map(terminalBundleIds.contains) ?? false
+        let name = front?.localizedName ?? "that app"
+        menu.showNotice(
+            title: "Nothing selected to read",
+            hint: isTerminal
+                ? "Gesture registered, but \(name) had no selection. Inside a "
+                    + "full-screen app like Claude Code, hold ⌥ while dragging to select."
+                : "Gesture registered, but nothing was selected in \(name)."
+        )
     }
 
     public func readChrome() {
