@@ -41,6 +41,16 @@ parse_common_args "$@"
 
 ROOT="$(repo_root)"
 VERSION="$(version_from_tag)"
+# sparkle:version — Sparkle compares this against the installed app's
+# CFBundleVersion to decide whether an update is newer. A wrong value here
+# does not fail anything visibly; it just means no client ever updates. That
+# is exactly what happened from v0.1.0 to v0.4.6, when callers omitted BUILD
+# and every appcast item silently advertised build 1. Keep the default (the
+# appcast.yml regeneration workflow still relies on it) but make it shout.
+if [ -z "${BUILD:-}" ]; then
+  echo "WARNING: BUILD unset — emitting <sparkle:version>1</sparkle:version>." >&2
+  echo "         Clients whose CFBundleVersion is >1 will NOT see this update." >&2
+fi
 BUILD="${BUILD:-1}"
 DMG_PATH="${DMG_PATH:-$ROOT/dist/out/Myna-$VERSION.dmg}"
 APPCAST_PATH="${APPCAST_PATH:-$ROOT/dist/out/appcast.xml}"

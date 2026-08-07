@@ -137,6 +137,31 @@ else
   printf '  warn karaoke/Package.swift missing — skipping (pre-v0.2?)\n' >&2
 fi
 
+echo "==> appcast sparkle:version wiring"
+# Regression guard for the dead-appcast bug (v0.1.0..v0.4.6): release.yml
+# omitted BUILD, appcast.sh defaulted it to 1, and every published item
+# advertised build 1 against installed builds of 1..16 — so Sparkle never
+# offered an update to anyone. Nothing failed visibly; only the XML was wrong.
+assert_ok "release.yml passes BUILD to appcast.sh" \
+  grep -q 'BUILD: ${{ steps.build.outputs.build }}' "$ROOT/.github/workflows/release.yml"
+assert_ok "release.yml resolves BUILD from CURRENT_PROJECT_VERSION" \
+  grep -q 'CURRENT_PROJECT_VERSION' "$ROOT/.github/workflows/release.yml"
+assert_ok "appcast.sh emits sparkle:version from BUILD" \
+  grep -q '<sparkle:version>\$BUILD</sparkle:version>' "$ROOT/dist/appcast.sh"
+assert_ok "appcast.sh warns when BUILD is unset" \
+  grep -q 'WARNING: BUILD unset' "$ROOT/dist/appcast.sh"
+# The build number must actually be greater than the last shipped one, or the
+# update is invisible even with correct wiring.
+proj_build=$(grep -E '^[[:space:]]*CURRENT_PROJECT_VERSION:' "$ROOT/apps/macos/project.yml" | grep -oE '[0-9]+' | head -1)
+if [ -n "$proj_build" ] && [ "$proj_build" -ge 16 ]; then
+  printf '  ok   CURRENT_PROJECT_VERSION resolves (%s)\n' "$proj_build"
+  pass=$((pass+1))
+else
+  printf '  FAIL CURRENT_PROJECT_VERSION unreadable or stale (got %s)\n' "${proj_build:-none}" >&2
+  fail=$((fail+1))
+  failed_scripts+=("project.yml build number")
+fi
+
 echo
 if [ "$fail" -eq 0 ]; then
   printf '==> %d pass, %d fail — OK\n' "$pass" "$fail"

@@ -352,10 +352,25 @@ jobs:
           tar -xJf /tmp/sparkle.tar.xz -C sparkle
           ls sparkle/bin/sign_update
           brew install openssl@3 || brew upgrade openssl@3 || true
+      - name: Resolve build number for the appcast
+        id: build
+        # sparkle:version is what Sparkle compares against the installed app's
+        # CFBundleVersion. Omitting it let appcast.sh fall back to BUILD=1, so
+        # every release from v0.1.0 to v0.4.6 advertised build 1 against
+        # installed builds of 1..16 — Sparkle read each release as OLDER than
+        # what was installed and never offered an update. Fail loudly rather
+        # than silently shipping a dead appcast entry again.
+        run: |
+          BUILD=$(grep -E '^[[:space:]]*CURRENT_PROJECT_VERSION:' apps/macos/project.yml \
+                  | grep -oE '[0-9]+' | head -1)
+          [ -n "$BUILD" ] || { echo "::error::could not read CURRENT_PROJECT_VERSION from apps/macos/project.yml"; exit 1; }
+          echo "Resolved appcast build number: $BUILD"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
       - name: Sign + append appcast item
         env:
           SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
           VERSION: ${{ needs.preflight.outputs.version }}
+          BUILD: ${{ steps.build.outputs.build }}
           DOWNLOAD_BASE_URL: ${{ format('https://github.com/{0}/releases/download/v{1}', github.repository, needs.preflight.outputs.version) }}
           RELEASE_NOTES_URL: ${{ format('https://github.com/{0}/releases/tag/v{1}', github.repository, needs.preflight.outputs.version) }}
           SIGN_UPDATE_BIN: ${{ github.workspace }}/sparkle/bin/sign_update
