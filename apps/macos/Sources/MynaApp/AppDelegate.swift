@@ -66,14 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         bootstrap()
         FileHandle.standardError.write(Data("[Myna] bootstrap returned; registering hotkeys\n".utf8))
 
-        // Trigger the Accessibility prompt if we don't already have it.
-        // Without Accessibility, CGEvent.post silently no-ops when
-        // SelectionService simulates Cmd+C — the hotkey fires, the
-        // pasteboard never fills, and nothing plays. The first launch
-        // MUST surface the system prompt so the user can grant it; macOS
-        // doesn't show the dialog automatically the way it does for
-        // microphone / camera / contacts.
-        promptForAccessibilityIfNeeded()
+        // The Accessibility prompt waits for the launch task in bootstrap():
+        // a fresh install gets it from the installer's last step or the
+        // onboarding slide, not as a system alert stacked on the installer.
         hotkeys.register(handlers: [
             .speakSelectionFull: { [weak self] in self?.dispatcher.speakSelection(mode: .full) },
             .speakSelectionSummary: { [weak self] in self?.dispatcher.speakSelection(mode: .summary) },
@@ -172,12 +167,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
                 DaemonService.updateIfStale(runningVersion: health.version)
             }
             if isTrulyFresh {
+                // Its Accessibility slide asks for the permission.
                 _ = OnboardingLauncher.shared.present(
                     client: self.client,
                     player: self.player,
                     settings: self.settings
                 )
             } else {
+                // Without Accessibility, CGEvent.post silently no-ops when
+                // SelectionService simulates Cmd+C — the hotkey fires, the
+                // pasteboard never fills, and nothing plays. macOS doesn't
+                // show this prompt on its own, so ask on every launch until
+                // it's granted.
+                self.promptForAccessibilityIfNeeded()
                 _ = WhatsNewLauncher.shared.showIfDue()
             }
         }
