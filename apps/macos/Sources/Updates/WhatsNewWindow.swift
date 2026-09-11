@@ -199,9 +199,13 @@ private struct WhatsNewContent: View {
                     .foregroundStyle(.secondary)
             }
             ScrollView {
-                Text(renderedMarkdown())
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                        blockView(block)
+                    }
+                }
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack {
                 Spacer()
@@ -215,16 +219,89 @@ private struct WhatsNewContent: View {
         .frame(minWidth: 520, minHeight: 640)
     }
 
-    /// Render the markdown body using SwiftUI's built-in AttributedString
-    /// markdown parser. Falls back to plain text if parsing fails.
-    private func renderedMarkdown() -> AttributedString {
-        let opts = AttributedString.MarkdownParsingOptions(
-            allowsExtendedAttributes: true,
-            interpretedSyntax: .inlineOnlyPreservingWhitespace
-        )
-        if let parsed = try? AttributedString(markdown: markdown, options: opts) {
-            return parsed
+    /// The changelog's blocks, minus its own top heading (the window already
+    /// says "What's New").
+    private var blocks: [ChangelogBlock] {
+        var parsed = ChangelogBlock.parse(markdown)
+        if case .heading(_, let level)? = parsed.first, level <= 2 {
+            parsed.removeFirst()
         }
-        return AttributedString(markdown)
+        return parsed
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: ChangelogBlock) -> some View {
+        switch block {
+        case .heading(let text, let level):
+            Text(Self.inline(text))
+                .font(.system(size: level <= 2 ? 19 : 15, weight: .semibold))
+                .padding(.top, level <= 2 ? 8 : 6)
+        case .paragraph(let text):
+            Text(Self.inline(text))
+                .font(.system(size: 13))
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+        case .bullet(let text):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("•").foregroundStyle(.secondary)
+                Text(Self.inline(text))
+                    .font(.system(size: 13))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Bold, italics, code and links within one block.
+    private static func inline(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+    }
+}
+
+/// A changelog split into the block types our changelogs use. SwiftUI's
+/// markdown support is inline-only, so headings and lists are laid out by
+/// WhatsNewContent instead of showing up as raw `##` and `-`.
+enum ChangelogBlock: Equatable {
+    case heading(String, level: Int)
+    case paragraph(String)
+    case bullet(String)
+
+    static func parse(_ markdown: String) -> [ChangelogBlock] {
+        var blocks: [ChangelogBlock] = []
+        var paragraph: [String] = []
+        var bullet: [String]?
+
+        func flush() {
+            if let lines = bullet {
+                blocks.append(.bullet(lines.joined(separator: " ")))
+                bullet = nil
+            }
+            if !paragraph.isEmpty {
+                blocks.append(.paragraph(paragraph.joined(separator: " ")))
+                paragraph = []
+            }
+        }
+
+        for rawLine in markdown.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty {
+                flush()
+            } else if line.hasPrefix("#") {
+                flush()
+                let level = line.prefix { $0 == "#" }.count
+                blocks.append(.heading(line.dropFirst(level).trimmingCharacters(in: .whitespaces), level: level))
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                flush()
+                bullet = [String(line.dropFirst(2))]
+            } else if bullet != nil, rawLine.hasPrefix("  ") {
+                bullet?.append(line)
+            } else {
+                if bullet != nil { flush() }
+                paragraph.append(line)
+            }
+        }
+        flush()
+        return blocks
     }
 }

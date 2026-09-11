@@ -45,17 +45,14 @@ public struct GesturesTab: View {
     @ViewBuilder
     private var gesturesSection: some View {
         Section("Gestures") {
+            LabeledContent("4-finger press and hold") {
+                Text("Read selection").foregroundStyle(.secondary)
+            }
             LabeledContent("4-finger tap") {
-                Text("Speak selection").foregroundStyle(.secondary)
+                Text("Read selection").foregroundStyle(.secondary)
             }
             LabeledContent("4-finger double-tap") {
                 Text("Stop").foregroundStyle(.secondary)
-            }
-            LabeledContent("4-finger click") {
-                Text("Play / pause  (debug)").foregroundStyle(.secondary)
-            }
-            LabeledContent("4-finger double-click") {
-                Text("Stop  (debug)").foregroundStyle(.secondary)
             }
         }
     }
@@ -82,8 +79,6 @@ public struct GesturesTab: View {
                          body: limitTrackpadBody)
                 limitRow(headline: "Uses a private macOS framework.",
                          body: limitPrivateAPIBody)
-                limitRow(headline: "Click gestures need a click while 4 fingers are touching.",
-                         body: limitClickBody)
             }
             .font(.caption)
         }
@@ -110,7 +105,7 @@ public struct GesturesTab: View {
     // swiftlint:disable line_length
 
     private let howItWorksBody = """
-Tap = brief contact with all four fingers, then lift. Click = press the trackpad firmly while four fingers are down. Double versions need a second tap or click within the system double-click interval.
+Press and hold = rest four fingers on the trackpad for about a third of a second; this is the most reliable trigger. Tap = a brief four-finger touch, then lift. Double-tap = a second tap within the system double-click interval.
 """
 
     private let limitConflictBody = """
@@ -125,8 +120,5 @@ Tap = brief contact with all four fingers, then lift. Click = press the trackpad
   Public NSEvent APIs don't expose trackpad finger counts for global gestures, so Myna reads them from Apple's MultitouchSupport framework. This framework has powered BetterTouchTool, Magnet, Hammerspoon and similar tools for 15+ years; if Apple ever removes it, gestures will stop working and Myna will fall back to hotkeys only.
 """
 
-    private let limitClickBody = """
-  Press the trackpad firmly enough to actuate the click (the haptic feedback / audible click). Force Touch is not required — a normal click works on any trackpad.
-"""
     // swiftlint:enable line_length
 }

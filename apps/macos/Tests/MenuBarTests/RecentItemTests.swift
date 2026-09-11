@@ -49,6 +49,22 @@ final class RecentItemTests: XCTestCase {
         XCTAssertEqual(line, "Bella · just now · \"Designing Data\"")
     }
 
+    // MARK: - replay payload
+
+    func test_decodes_items_saved_before_0_5() throws {
+        let json = #"[{"id":"a","title":"Old read","voice":"af_heart","createdAtMs":1}]"#
+        let items = try JSONDecoder().decode([RecentItem].self, from: Data(json.utf8))
+        XCTAssertEqual(items.first?.title, "Old read")
+        XCTAssertNil(items.first?.text)
+        XCTAssertNil(items.first?.url)
+    }
+
+    func test_caps_the_stored_text() {
+        let long = String(repeating: "a", count: RecentItem.maxStoredText + 50)
+        let item = RecentItem(title: "t", voice: "v", createdAtMs: 0, text: long)
+        XCTAssertEqual(item.text?.count, RecentItem.maxStoredText)
+    }
+
     // MARK: - store ring buffer
 
     func test_store_keeps_at_most_max_items() {

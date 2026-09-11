@@ -223,12 +223,14 @@ public final class MenuBarController: ObservableObject, CCToastActions {
     /// Record that Myna started reading something. Inserts into the
     /// recents ring (S06 Recent submenu) and updates `lastReadTitle`
     /// for the Now Reading header.
-    public func recordNowReading(title: String, voice: String) {
+    public func recordNowReading(title: String, voice: String, text: String? = nil, url: String? = nil) {
         lastReadTitle = title
         let item = RecentItem(
             title: title,
             voice: voice,
-            createdAtMs: RecentItem.currentTimeMs()
+            createdAtMs: RecentItem.currentTimeMs(),
+            text: url == nil ? text : nil,
+            url: url
         )
         recentsStore.add(item)
         recents = recentsStore.load()
@@ -285,15 +287,14 @@ public final class MenuBarController: ObservableObject, CCToastActions {
         }
     }
 
-    /// Replay an item from the Recent submenu. v0.2 emits a notification
-    /// that AppDispatcher catches to re-synthesise; if no dispatcher is
-    /// listening this is a no-op.
+    /// Replay an item from the Recent submenu. Emits a notification that
+    /// AppDispatcher catches to re-synthesise the full text (or re-fetch the
+    /// article); if no dispatcher is listening this is a no-op.
     public func replayRecent(_ item: RecentItem) {
-        NotificationCenter.default.post(
-            name: .mynaReplayRecent,
-            object: nil,
-            userInfo: ["title": item.title, "voice": item.voice]
-        )
+        var info: [String: String] = ["title": item.title, "voice": item.voice]
+        if let text = item.text { info["text"] = text }
+        if let url = item.url { info["url"] = url }
+        NotificationCenter.default.post(name: .mynaReplayRecent, object: nil, userInfo: info)
     }
 
     public func openSettings() {
@@ -314,19 +315,12 @@ public final class MenuBarController: ObservableObject, CCToastActions {
         NSWorkspace.shared.activateFileViewerSelecting([LogFileMirror.shared.currentLogURL])
     }
 
-    /// Restart the daemon by re-loading its LaunchAgent. Hard-coded path
-    /// matches the plist Lane B installs via Homebrew formula. Surfaced
-    /// in the menu per S06 footer spec.
+    /// Restart the daemon's launchd job, whether the app's own setup or
+    /// Homebrew installed it. Surfaced in the menu per S06 footer spec.
     public func restartDaemon() {
-        let plistPath = NSString("~/Library/LaunchAgents/dev.myna.daemon.plist").expandingTildeInPath
-        let task = Process()
-        task.launchPath = "/bin/launchctl"
-        task.arguments = ["kickstart", "-k", "gui/\(getuid())/dev.myna.daemon"]
-        _ = try? task.run()
-        // Backup: try a simple unload+load if kickstart doesn't take.
-        // (Quietly fails when the plist isn't installed.)
-        if !FileManager.default.fileExists(atPath: plistPath) {
-            return
+        Task {
+            let result = await DaemonService.restart()
+            Log(.app).info("restartDaemon: \(result)")
         }
     }
 

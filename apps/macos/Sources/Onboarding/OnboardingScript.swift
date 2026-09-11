@@ -88,9 +88,9 @@ public enum OnboardingScript {
         OnboardingSlide(
             id: "what-i-do",
             headline: "Your reading companion.",
-            body: "I read things out loud. Articles you're scrolling. Replies from Claude. Anything you've selected. All from right here on your Mac.",
+            body: "I read things out loud. Anything you've selected. Articles open in Chrome. Replies from Claude. All from right here on your Mac.",
             spoken:
-                "I read things out loud. Articles you're scrolling. Replies from Claude. Anything you've selected. All from right here on your Mac. Nothing goes to the cloud.",
+                "I read things out loud. Anything you've selected. Articles open in Chrome. Replies from Claude. All from right here on your Mac. What you read stays on your Mac.",
             fallbackDuration: 12
         ),
         OnboardingSlide(
@@ -112,7 +112,7 @@ public enum OnboardingScript {
         OnboardingSlide(
             id: "final",
             headline: "I live up here.",
-            body: "Click the bird in your menu bar anytime. Try the Option-Command-K shortcut on any selected text to hear me again.",
+            body: "Click the bird in your menu bar anytime. Select text in any app and press ⌘⌥⇧S to hear it.",
             spoken: "I live up here. Click me anytime. Let's start.",
             fallbackDuration: 6,
             isFinal: true

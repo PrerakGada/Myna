@@ -206,7 +206,7 @@ public struct MenuBarView: View {
                 onSkipForward: { controller.seek(delta: 15) }
             )
         case .error(let msg):
-            ErrorHero(message: msg)
+            ErrorHero(message: msg, onSetup: { _ = SetupLauncher.shared.present() })
         }
     }
 

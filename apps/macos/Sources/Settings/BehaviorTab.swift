@@ -37,9 +37,8 @@ public struct BehaviorTab: View {
                     isOn: $viewModel.ccToastsEnabled
                 )
                 Text(
-                    "Toasts appear at the top-right of the active display. "
-                        + "macOS Focus mode is respected — when Do Not Disturb is on, "
-                        + "toasts route silently to the menu bar instead."
+                    "When a session finishes, its reply appears in the floating pill with Play and Dismiss. "
+                        + "With the pill turned off (Advanced), a card slides in at the top-right instead."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

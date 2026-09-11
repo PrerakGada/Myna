@@ -13,12 +13,29 @@ public struct RecentItem: Codable, Sendable, Equatable, Identifiable {
     public let title: String
     public let voice: String
     public let createdAtMs: Int
+    /// What was read, so tapping the row reads all of it again (capped at
+    /// `maxStoredText`). Nil for article reads, which replay from `url`, and
+    /// for items saved before 0.5, which replay their title.
+    public let text: String?
+    /// The article URL, for Chrome reads.
+    public let url: String?
 
-    public init(id: String = UUID().uuidString, title: String, voice: String, createdAtMs: Int) {
+    public static let maxStoredText = 20_000
+
+    public init(
+        id: String = UUID().uuidString,
+        title: String,
+        voice: String,
+        createdAtMs: Int,
+        text: String? = nil,
+        url: String? = nil
+    ) {
         self.id = id
         self.title = title
         self.voice = voice
         self.createdAtMs = createdAtMs
+        self.text = text.map { String($0.prefix(Self.maxStoredText)) }
+        self.url = url
     }
 
     /// Truncate the title for menu display. Per Sally's spec: 38 chars

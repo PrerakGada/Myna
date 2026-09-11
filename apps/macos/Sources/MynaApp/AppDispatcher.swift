@@ -84,11 +84,18 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
         replayObserver = NotificationCenter.default.addObserver(
             forName: .mynaReplayRecent, object: nil, queue: .main
         ) { [weak self] note in
-            guard let title = note.userInfo?["title"] as? String, !title.isEmpty else { return }
+            // A Recent row carries the full text (or the article URL); the
+            // pill's Claude prompt sends the reply as "title".
+            let info = note.userInfo ?? [:]
+            let url = (info["url"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let text = (info["text"] as? String) ?? (info["title"] as? String) ?? ""
+            guard url != nil || !text.isEmpty else { return }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.speakTask?.cancel()
-                self.speakTask = Task { await self.synthesizeAndPlay(text: title, url: nil, mode: .full) }
+                self.speakTask = Task {
+                    await self.synthesizeAndPlay(text: url == nil ? text : nil, url: url, mode: .full)
+                }
             }
         }
     }
@@ -135,9 +142,9 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
         menu.showNotice(
             title: "Nothing selected to read",
             hint: isTerminal
-                ? "Gesture registered, but \(name) had no selection. Inside a "
+                ? "Myna couldn't find selected text in \(name). Inside a "
                     + "full-screen app like Claude Code, hold ⌥ while dragging to select."
-                : "Gesture registered, but nothing was selected in \(name)."
+                : "Myna couldn't find selected text in \(name)."
         )
     }
 
@@ -146,6 +153,10 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
         speakTask = Task {
             guard let url = chrome.frontTabURL() else {
                 log.warn("read-chrome: no Chrome tab URL")
+                menuController?.showNotice(
+                    title: "No article to read",
+                    hint: "Myna reads the front tab in Google Chrome. Open an article there and try again."
+                )
                 return
             }
             await synthesizeAndPlay(text: nil, url: url, mode: .full)
@@ -224,7 +235,7 @@ public final class AppDispatcher: URLSchemeDispatching, GestureActionTarget {
         // Record into recents (S06 Recent submenu). Title is the URL
         // host or the first ~60 chars of the text if no URL.
         let recentTitle = computeRecentTitle(text: text, url: url)
-        menuController?.recordNowReading(title: recentTitle, voice: settings.voice)
+        menuController?.recordNowReading(title: recentTitle, voice: settings.voice, text: text, url: url)
         // Surface the same preview into the FloatingPill bridge so the
         // expanded pill shows what's playing. Pill falls back to
         // "Speaking…" when this is nil. See PillBridge.swift for why

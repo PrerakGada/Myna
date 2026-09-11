@@ -61,10 +61,10 @@ public struct VoiceTab: View {
                 Slider(value: $viewModel.defaultSpeed, in: 0.5...2.0, step: 0.05) {
                     Text("Default speed: \(viewModel.defaultSpeed, format: .number.precision(.fractionLength(2)))×")
                 }
-                Toggle("Summarize before speaking by default", isOn: $viewModel.summaryMode)
                 VStack(alignment: .leading, spacing: 2) {
-                    Toggle("Play the full clip at once (gap-free)", isOn: $viewModel.oneShotPlayback)
-                    Text("Waits for the whole clip to be ready, then plays it without mid-clip pauses. Turn off to start sooner and stream as it's generated.")
+                    Toggle("Buffer before playing (no mid-read pauses)", isOn: $viewModel.oneShotPlayback)
+                    Text("Collects a few seconds of audio before it starts, so long reads never stall mid-sentence. "
+                        + "Turn off to start sooner.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

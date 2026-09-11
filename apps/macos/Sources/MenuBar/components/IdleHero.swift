@@ -119,9 +119,13 @@ public struct LoadingHero: View {
 /// the popover doesn't jump height when the daemon goes down.
 public struct ErrorHero: View {
     public let message: String
+    /// Opens the installer. An unreachable daemon usually means setup never
+    /// finished, or was closed with "Not now".
+    public let onSetup: (() -> Void)?
 
-    public init(message: String) {
+    public init(message: String, onSetup: (() -> Void)? = nil) {
         self.message = message
+        self.onSetup = onSetup
     }
 
     public var body: some View {
@@ -135,13 +139,25 @@ public struct ErrorHero: View {
                     .tracking(0.5)
                     .foregroundStyle(PopoverDesign.sectionHeaderColor)
             }
-            Text("Daemon unreachable")
+            Text("Myna's voice isn't running")
                 .font(PopoverDesign.heroTitleFont)
                 .foregroundStyle(PopoverDesign.bodyColor)
             Text(message)
                 .font(PopoverDesign.captionFont)
                 .foregroundStyle(PopoverDesign.dotError.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)
+            if let onSetup {
+                Button(action: onSetup) {
+                    Text("Set up Myna…")
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(PopoverDesign.accent))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
         }
         .padding(PopoverDesign.cardInteriorPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
