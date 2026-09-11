@@ -1,138 +1,165 @@
-# Myna
+<p align="center">
+  <img src="site/public/app-icon.png" width="128" height="128" alt="Myna">
+</p>
 
-**Listen to your screen.** An always-on, fully local text-to-speech companion for macOS.
+<h1 align="center">Myna</h1>
 
-Myna lives in your menu bar and reads any selection, any web article, or any Claude Code reply aloud with a single hotkey. Everything happens on your Mac — text never leaves the device.
+<p align="center">
+  <b>Your eyes are tired. Your Mac can read.</b><br>
+  Select text anywhere, press <kbd>⌘⌥⇧S</kbd>, and a natural voice reads it to you, generated right on your Mac.
+</p>
 
-[Install](#install) · [What it does](#what-it-does) · [Hotkeys](#hotkeys) · [CLI](#cli) · [How it works](#how-it-works)
+<p align="center">
+  <a href="https://myna.prerakgada.in/download"><b>Download for Mac</b></a> ·
+  <a href="https://myna.prerakgada.in">Website</a> ·
+  <a href="https://github.com/PrerakGada/Myna/releases">Releases</a>
+</p>
 
 ---
+
+Myna is a free, open-source menu-bar app for Apple Silicon Macs. It reads any
+selection, any Chrome article, and every finished Claude Code reply aloud in a
+Kokoro voice that runs locally through Apple's MLX, with no cloud speech
+service, no account and no subscription.
 
 ## Install
 
+1. **[Download Myna.dmg](https://myna.prerakgada.in/download)** (about 4 MB, signed and notarized) and drag Myna into Applications.
+2. **Open Myna.** On first launch it installs its voice into your user account, with each step shown as it goes: a private Python runtime, the MLX speech engine and the Kokoro model. That's about 1 GB and a few minutes. No Terminal, no Homebrew, no admin password.
+3. **Allow Accessibility** when asked (Myna needs it to copy your selection), then select something and press <kbd>⌘⌥⇧S</kbd>.
+
+**Requirements:** Apple Silicon (M1 or later), macOS 14 Sonoma or later, about 1 GB of free space.
+
+<details>
+<summary>Install with Homebrew instead</summary>
+
 ```sh
 brew tap prerakgada/tap
-brew trust prerakgada/tap          # Homebrew 6+ requires trusting third-party taps
+brew trust prerakgada/tap          # Homebrew 6+ asks you to trust third-party taps
 brew install --cask prerakgada/tap/myna
 ```
 
-Or grab the signed, notarised DMG from [the latest release](https://github.com/PrerakGada/myna/releases/latest).
+The cask installs the app and its background service (`myna-daemon`) and adds
+the `myna` command. Open Myna once afterwards to finish setting up the voice.
+</details>
 
-Then finish the setup — this installs the on-device voice engine (mlx-audio + the Kokoro model), registers the Claude Code hook, and starts the background services:
+<details>
+<summary>Optional: summaries</summary>
+
+<kbd>⌘⌥⇧A</kbd> summarizes the selection with a local model before reading it. It needs Ollama:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PrerakGada/Myna/v0.3.2/dist/setup.sh | bash
+brew install ollama
+ollama pull qwen3.5:4b
 ```
-
-It's idempotent, so it's safe to re-run; `myna doctor` checks that the daemon and engine are up.
-
-On first launch Myna walks you through a 60-second spoken intro, asks for Accessibility permission, and then sits quietly in your menu bar.
-
-**Requirements:** macOS 14 (Sonoma) or later · Apple Silicon (M1/M2/M3/M4) — the voice engine (MLX) is Apple-Silicon-only.
-
----
+</details>
 
 ## What it does
 
-- **Speak any selection** — highlight text in any app, press the hotkey, listen.
-- **Read articles** — Chrome or Safari front tab, parsed and read in order.
-- **Claude Code, on your terms** — when a Claude Code hook fires, a small playable card slides in from the top-right of your screen. One tap to play, one to dismiss. Parallel sessions stack up to three; nothing ever talks over itself.
-- **Full or summary** — separate triggers; summaries run locally via Ollama.
-- **Floating pill** — while Myna reads, a slim transport sits at the bottom of the active display. Hover to expand into a mini player; drag it wherever you want.
-- **Per-app voices** — pin a different voice per app. Bella for articles, Joe for code, Anna for chat.
-- **Karaoke ribbon** (opt-in) — the current spoken line appears at the bottom of your screen, line by line.
-- **Voice previews** — audition voices in Settings before committing.
-- **Trackpad gestures** (opt-in) — four-finger tap to speak, four-finger double-tap to stop.
+- **Read any selection.** <kbd>⌘⌥⇧S</kbd> in any app you can copy text from: browsers, PDFs, mail, Slack, terminals.
+- **Read articles.** <kbd>⌘⌥⇧R</kbd> reads the front tab of Google Chrome, with the navigation and clutter stripped out.
+- **Claude Code replies.** When a session finishes, its reply appears in Myna's player as *New output ready*. Play reads the whole reply; parallel sessions come one at a time and wait in the menu bar, tagged by project.
+- **A floating player.** While Myna reads, a slim bar sits at the bottom of the screen. Hover to scrub, skip ten seconds, pause, or change speed up to 2× without changing pitch. Drag it anywhere.
+- **The menu bar.** Now playing, voice, speed, pending Claude replies, and your last five reads with one-click replay.
+- **Four voices.** Heart (default), Bella, Michael and Adam, all Kokoro US English. Preview them in Settings → Voice.
+- **Trackpad gestures** (opt-in). A four-finger press-and-hold or tap reads the selection, with a soft tone when it's recognized; a four-finger double-tap stops.
+- **Automation.** `myna://` links for Shortcuts, Raycast, Alfred and BetterTouchTool.
+- **Updates itself** through Sparkle, with signed releases from GitHub.
 
----
+## Shortcuts
 
-## Hotkeys
-
-All shortcuts are rebindable from **Settings → Hotkeys**.
+All rebindable in **Settings → Hotkeys**.
 
 | Action | Default |
 |---|---|
-| Speak selection (full) | ⌘⌥⇧S |
-| Speak selection (summary) | ⌘⌥⇧A |
-| Read article (front tab) | ⌘⌥⇧R |
-| Pause / resume | ⌘⌥⇧Space |
-| Stop | ⌘⌥⇧. |
+| Read the selection | <kbd>⌘⌥⇧S</kbd> |
+| Summarize the selection (needs Ollama) | <kbd>⌘⌥⇧A</kbd> |
+| Read the Chrome article | <kbd>⌘⌥⇧R</kbd> |
+| Pause / resume | <kbd>⌘⌥⇧Space</kbd> |
+| Stop | <kbd>⌘⌥⇧.</kbd> |
 
-Defaults use ⌘⌥⇧ (Command-Option-Shift) to stay clear of common app shortcuts.
+## Automation
 
----
+```sh
+open myna://speak-selection            # add ?mode=summary for a summary
+open myna://read-chrome
+open myna://toggle-pause
+open myna://stop
+open "myna://seek?delta=-15"
+open "myna://speed?value=1.5"          # or ?delta=0.25
+```
 
-## CLI
+Homebrew installs also get a CLI:
 
 ```sh
 myna "Read this aloud."
 pbpaste | myna
 myna --summary "Long text to condense first."
-myna --speed 1.25 "Faster reading."
+myna doctor                            # are the daemon and engine up?
 ```
 
----
+## Privacy
 
-## Configuration
+The voice is generated on your Mac, so the text you read is never sent to a
+speech service, and there is no analytics or telemetry. Myna uses the network
+in three specific cases:
 
-- `~/.config/myna/config.json` — voice, speed, summary model, ports
-- `~/.config/myna/voice_wardrobe.json` — per-app voice rules
-- `~/.config/myna/keybindings.json` — recorded shortcuts
-- Logs: `~/Library/Logs/myna-{engine,daemon}.log`
+- **Setup** downloads uv and Python (GitHub), the engine packages (PyPI) and the Kokoro model (Hugging Face).
+- **Updates** are checked against GitHub Releases by Sparkle.
+- **Read article** has the daemon fetch that page from the web, as your browser did.
 
----
+The daemon and the engine listen on `127.0.0.1` only. Summaries go to Ollama on
+your own Mac.
 
 ## How it works
 
 ```
-Selection / hotkey / Claude Code event
-                  ↓
-        Myna.app
-        (menu bar · floating pill · settings)
-                  ↓
-        myna daemon (FastAPI, :8766)
-                  ↓
-        mlx-audio Kokoro engine (:8765)
+Selection · hotkey · gesture · myna:// · Claude Code hook
+                         ↓
+   Myna.app     menu bar, floating player, Settings, AVAudioEngine playback
+                         ↓  HTTP on 127.0.0.1:8766
+   daemon       Python/FastAPI: chunking, article extraction, summaries, streaming
+                         ↓  supervises
+   engine       mlx-audio + Kokoro-82M on 127.0.0.1:8765
 ```
 
-- **Voice engine** — [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) running on [mlx-audio](https://github.com/ml-explore/mlx-audio). ~80 MB model, runs entirely on the Apple Neural Engine.
-- **Daemon** — Python FastAPI service that handles extraction, summarisation, chunking, and streaming. Priority-first chunking returns the first audio in ~240 ms.
-- **App** — Swift / SwiftUI menu-bar app with a custom popover, the floating pill, the karaoke sidecar, and global hotkeys (built with [Sindre Sorhus's KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts)).
-- **Auto-update** — [Sparkle 2](https://sparkle-project.org), EdDSA-signed.
+## Where things live
 
----
+| What | Where |
+|---|---|
+| App | `/Applications/Myna.app` |
+| Voice engine | `~/.venvs/mlx-audio` |
+| Daemon (disk-image install) | `~/.venvs/myna-daemon`, run by `~/Library/LaunchAgents/dev.myna.daemon.plist` |
+| Private Python + uv | `~/Library/Application Support/Myna/runtime` |
+| Kokoro model | `~/.cache/huggingface/hub/models--prince-canuma--Kokoro-82M` |
+| Settings | `~/.config/myna/` |
+| Logs | `~/Library/Logs/Myna/` (app, setup) and `~/Library/Logs/myna-{daemon,engine}.log` |
 
-## Privacy
+To uninstall completely, quit Myna, drag it to the Trash, and run:
 
-- Text and audio stay on your Mac. No telemetry, no network calls except to localhost.
-- The daemon binds to `127.0.0.1` only. Firewall-friendly by default.
-- Sparkle update checks hit GitHub Releases — that's the only outbound traffic.
+```sh
+launchctl bootout gui/$(id -u)/dev.myna.daemon
+rm -rf ~/Library/LaunchAgents/dev.myna.daemon.plist ~/.venvs/myna-daemon ~/.venvs/mlx-audio \
+  ~/Library/Application\ Support/Myna ~/.config/myna \
+  ~/.cache/huggingface/hub/models--prince-canuma--Kokoro-82M
+```
 
----
-
-## Roadmap
-
-Myna is built for macOS Apple Silicon today. Other platforms will follow if there's clear demand. File an [issue](https://github.com/PrerakGada/myna/issues) with feature requests or bug reports.
-
----
+If you connected Claude Code, also remove the `myna-cc-announce.py` entry from
+`~/.claude/settings.json`. Homebrew: `brew uninstall --cask myna && brew uninstall myna-daemon`.
 
 ## Develop
 
 ```sh
-git clone https://github.com/PrerakGada/myna
-cd myna
-
-# Daemon
-cd daemon && pip install -e . && pytest
-
-# Mac app
-cd ../apps/macos && ./dev.sh
+git clone https://github.com/PrerakGada/Myna && cd Myna
+just --list          # build, test, lint, dev loop
+just ci              # everything CI runs
 ```
 
-Project layout, contribution guide, and architecture notes live in [`docs/`](docs/).
-
----
+The repo holds the Swift app (`apps/macos`), the Python daemon (`daemon`), the
+website (`site`), the CLI (`cli`), and the release tooling (`dist`, `.github`).
+Architecture notes are in [`docs/`](docs/); the release process is in
+[`RELEASE.md`](RELEASE.md).
 
 ## License
 
-[MIT](LICENSE). Built by [Prerak Gada](https://github.com/PrerakGada).
+[MIT](LICENSE). Made by [Prerak Gada](https://github.com/PrerakGada).
