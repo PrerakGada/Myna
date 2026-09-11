@@ -1,6 +1,6 @@
 // DaemonTab.swift — daemon URL + port fields (validate localhost-only),
-// engine URL + port, "Restart Daemon" button (runs launchctl unload &&
-// load), health indicator.
+// engine URL + port, "Restart daemon" button (kickstarts whichever launchd
+// job runs the daemon — see DaemonService), health indicator.
 import Foundation
 import SwiftUI
 
@@ -83,30 +83,9 @@ public struct DaemonTab: View {
 
     private func restartDaemon() async {
         restartOutput = "running…"
-        let plistPath = "\(NSHomeDirectory())/Library/LaunchAgents/dev.myna.daemon.plist"
-        let unload = await runShell("/bin/launchctl unload \(plistPath)")
-        let load = await runShell("/bin/launchctl load \(plistPath)")
-        restartOutput = "unload: \(unload.0), load: \(load.0)"
+        restartOutput = await DaemonService.restart()
+        // Give uvicorn a moment to bind before re-checking.
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
         await checkHealth()
-    }
-
-    private func runShell(_ command: String) async -> (Int32, String) {
-        await withCheckedContinuation { (continuation: CheckedContinuation<(Int32, String), Never>) in
-            let process = Process()
-            process.launchPath = "/bin/sh"
-            process.arguments = ["-c", command]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-            do {
-                try process.run()
-                process.waitUntilExit()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let output = String(data: data, encoding: .utf8) ?? ""
-                continuation.resume(returning: (process.terminationStatus, output))
-            } catch {
-                continuation.resume(returning: (-1, String(describing: error)))
-            }
-        }
     }
 }

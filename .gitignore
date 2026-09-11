@@ -56,6 +56,10 @@ HANDOFF.md
 *.tsbuildinfo
 .next/
 
+# Installer payload staged into the app at build time by dist/stage-setup.sh
+apps/macos/Resources/setup/daemon/
+apps/macos/Resources/setup/myna-cc-announce.py
+
 # Karaoke sidecar build artifacts (ad-hoc dev builds — release flow uses dist/build.sh)
 karaoke/.build/
 karaoke/MynaKaraoke.app/

@@ -148,16 +148,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         if !isTrulyFresh {
             WhatsNewLauncher.shared.markFirstRunComplete()
         }
-        // Engine-aware launch UX: if the voice engine isn't installed/running,
-        // the cinematic would have no audio and nothing could be read — so show
-        // the in-app "Finish setup" flow instead (it installs the engine + model
-        // + Claude hook, then prompts for Accessibility). Setup takes priority;
-        // the cinematic / What's New run on a later launch once the engine is up.
+        // Engine-aware launch UX: if the voice isn't installed or running, the
+        // cinematic would have no audio and nothing could be read — so the
+        // installer comes first (engine, model, Claude hook, then Accessibility).
+        // On a fresh install the spoken intro follows the moment setup succeeds;
+        // What's New waits for a later launch.
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             if await SetupController.engineIsDown(client: self.client) {
-                _ = SetupLauncher.shared.present(client: self.client)
+                SetupLauncher.shared.present { [weak self] succeeded in
+                    guard let self, succeeded, isTrulyFresh else { return }
+                    _ = OnboardingLauncher.shared.present(
+                        client: self.client,
+                        player: self.player,
+                        settings: self.settings
+                    )
+                }
                 return
+            }
+            // A DMG install keeps the daemon it was set up with; bring it up to
+            // the version bundled with this (possibly just-updated) app.
+            if let health = try? await self.client.health() {
+                DaemonService.updateIfStale(runningVersion: health.version)
             }
             if isTrulyFresh {
                 _ = OnboardingLauncher.shared.present(
