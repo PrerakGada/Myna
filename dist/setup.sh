@@ -140,7 +140,7 @@ engine_ready() {
   [ -x "$ENGINE_VENV/bin/python" ] || return 1
   "$ENGINE_VENV/bin/python" - <<'PY' >/dev/null 2>&1
 import importlib.util as u, sys
-need = ["mlx_audio", "misaki", "num2words", "spacy",
+need = ["mlx_audio", "misaki", "num2words", "spacy", "en_core_web_sm",
         "phonemizer", "espeakng_loader", "uvicorn", "fastapi", "webrtcvad"]
 if not all(u.find_spec(m) is not None for m in need):
     sys.exit(1)
@@ -213,11 +213,36 @@ make_venv() {  # make_venv <dir>
   fi
   mkdir -p "$(dirname "$1")"
   if ensure_uv; then
-    "$UV" venv --quiet --managed-python --python "$PY_VERSION" "$1"
+    # --seed adds pip, which `python -m venv` would have: libraries in the
+    # engine stack reach for it at runtime.
+    "$UV" venv --quiet --seed --managed-python --python "$PY_VERSION" "$1"
   elif [ -n "$PY" ]; then
     "$PY" -m venv "$1"
   else
     die "couldn't download the Python installer. Check your internet connection and try again."
+  fi
+}
+
+# Kokoro's text processor (misaki) needs spaCy's small English model. Left to
+# itself it downloads the model during the first read by shelling out to pip,
+# which in a venv without pip leaves that read hanging forever. Install it
+# here instead, at the version spaCy itself reports as compatible.
+ensure_spacy_model() {
+  "$ENGINE_VENV/bin/python" -c 'import en_core_web_sm' >/dev/null 2>&1 && return 0
+  say "Installing the English language model for the voice…"
+  local url
+  url="$("$ENGINE_VENV/bin/python" - <<'PY'
+from spacy import about
+from spacy.cli.download import get_compatibility, get_version
+name = "en_core_web_sm"
+version = get_version(name, get_compatibility())
+print(f"{about.__download_url__}/{name}-{version}/{name}-{version}-py3-none-any.whl")
+PY
+)" || return 1
+  if [ -n "$UV" ]; then
+    "$UV" pip install --quiet --python "$ENGINE_VENV/bin/python" "$url"
+  else
+    "$ENGINE_VENV/bin/python" -m pip install --quiet "$url"
   fi
 }
 
@@ -386,6 +411,8 @@ else
     "$ENGINE_VENV/bin/python" -m pip install --quiet $pip_up "${ENGINE_PKGS[@]}" \
       || die "couldn't install the voice engine. Check your internet connection and try again."
   fi
+  ensure_spacy_model \
+    || die "couldn't download the English language model for the voice. Check your internet connection and try again."
   engine_ready || die "the voice engine installed but doesn't load. Try again, or report it at github.com/PrerakGada/Myna/issues."
   ENGINE_INSTALLED=1
   finish "Installed"
