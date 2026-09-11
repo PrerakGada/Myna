@@ -11,7 +11,13 @@ If auto-populated context says `rashid@dpsca.in` or mentions `Rashid Azar` / `DP
 ## Repo basics
 
 - Branch policy from `~/.claude/CLAUDE.md` applies: commit or push only when Prerak asks; if on default branch, branch first.
-- v0.1.0 shipped. Don't touch the release pipeline without explicit ask. Ship log preserved at git commit [`f5860c8`](https://github.com/PrerakGada/myna/blob/f5860c8/HANDOFF.md) (the `HANDOFF.md` file is no longer in the working tree).
+- v0.5.0 is current (shipped 11 Sep 2026): one notarized DMG whose first launch installs the voice stack itself, no Homebrew needed. Don't touch the release pipeline without explicit ask. The v0.1.0 ship log is preserved at git commit [`f5860c8`](https://github.com/PrerakGada/myna/blob/f5860c8/HANDOFF.md) (the `HANDOFF.md` file is no longer in the working tree).
+- Installer, DMG and site:
+  - `dist/setup.sh` is the one installer. It picks homebrew or standalone mode, and `dist/stage-setup.sh` bundles it into the app with the daemon source and the Claude Code hook.
+  - The DMG window is built by dmgbuild from `dist/dmg/`.
+  - The app icon comes from `dist/brand/app-icon.svg` via `render-icon.sh`.
+  - `site/` deploys to Vercel on every push to `main`, and `/download` redirects to `releases/latest/download/Myna.dmg`.
+- Test installer changes on a clean macOS VM, not on this Mac. It runs the Homebrew daemon, which hides DMG-only bugs (the v0.5.0 first-read hang was invisible here).
 - 5-part repo: native Swift app at `apps/macos/` · Python daemon at `daemon/myna/` · Next.js site at `site/` · bash CLI at `cli/myna` · ops in `dist/` + `tap/` + `.github/workflows/` + `launchagents/` + `hooks/` + `hammerspoon/` (v1 legacy kept side-by-side).
 - Homebrew tap: `PrerakGada/homebrew-tap`.
 
