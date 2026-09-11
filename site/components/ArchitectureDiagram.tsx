@@ -8,20 +8,20 @@ export function ArchitectureDiagram() {
     {
       tag: "01",
       name: "App",
-      sub: "Native SwiftUI · AVAudioEngine",
-      body: "The menu bar, the hotkeys, the Settings panel, the playback. AVAudioEngine handles speed without pitch shift and lets you scrub or jump ±15s. Signed, notarised, and quietly updated by Sparkle.",
+      sub: "Native Swift · AVAudioEngine",
+      body: "The menu bar, the floating player, hotkeys, gestures and Settings. Playback runs through AVAudioEngine, so faster speeds keep their pitch and you can scrub mid-sentence. Signed, notarized, and kept current by Sparkle.",
     },
     {
       tag: "02",
       name: "Daemon",
-      sub: "Python · FastAPI · streams WAV",
-      body: "A small local service that synthesises in chunks and streams them to the app as the voice plays. Extracts articles, summarises through Ollama, never opens a socket beyond 127.0.0.1.",
+      sub: "Python · FastAPI · 127.0.0.1 only",
+      body: "A small background service that breaks text into sentences, streams audio back as each part is ready, pulls the article out of a web page, and hands summaries to Ollama. It only listens on your Mac’s own loopback address.",
     },
     {
       tag: "03",
       name: "Voice",
-      sub: "mlx-audio · Kokoro af_heart",
-      body: "The Kokoro model running natively on Apple Silicon. Fast because it's local. Warm because Kokoro is just a genuinely good model.",
+      sub: "MLX · Kokoro-82M",
+      body: "The Kokoro voice model, running on Apple Silicon through MLX and looked after by the daemon. It downloads once during setup. From then on, every word is spoken right on your Mac.",
     },
   ];
 

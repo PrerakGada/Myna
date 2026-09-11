@@ -6,7 +6,7 @@ import { GitHubStarButton } from "./GitHubStar";
 
 const SECTIONS = [
   { id: "features", label: "Features" },
-  { id: "how", label: "How it works" },
+  { id: "claude-code", label: "Claude Code" },
   { id: "install", label: "Install" },
   { id: "faq", label: "FAQ" },
 ];
@@ -62,10 +62,13 @@ export function Nav({ starSlot }: { starSlot?: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <div className="hidden sm:block">{starSlot}</div>
             <a
-              href="#install"
-              className="hidden md:inline-flex items-center rounded-full bg-ink px-4 py-2 font-display text-[0.95rem] text-paper hover:bg-ink-soft transition-colors"
+              href="/download"
+              className="hidden md:inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 font-display text-[0.95rem] text-paper hover:bg-ink-soft transition-colors"
             >
-              Install
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M6 1.5v6.5M3.2 5.4 6 8.2l2.8-2.8M2 10.5h8" />
+              </svg>
+              Download
             </a>
 
             {/* Mobile menu toggle */}

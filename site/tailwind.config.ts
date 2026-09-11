@@ -26,6 +26,12 @@ const config: Config = {
         },
         rust: "#B65A3C", // dried-ink accent for highlights
       },
+      // The hairline rings and borders use an 8% step (`ring-ink/8`), which
+      // isn't in Tailwind's default opacity scale — without this they fall
+      // back to the default blue ring.
+      opacity: {
+        8: "0.08",
+      },
       fontFamily: {
         display: ["var(--font-fraunces)", "Georgia", "serif"],
         body: ["var(--font-newsreader)", "Georgia", "serif"],

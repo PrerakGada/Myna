@@ -1,0 +1,63 @@
+<!doctype html>
+<!--
+  Source for the social preview card (site/app/opengraph-image.png and
+  twitter-image.png, 1200×630). Re-render with site/design/render-og.sh.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=JetBrains+Mono:wght@500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=block" rel="stylesheet">
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    position: relative;
+    background: #F5EFE2;
+    color: #1A1714;
+    font-family: 'Newsreader', Georgia, serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 60% 70% at 20% 0%, rgba(255, 251, 243, 0.95), transparent 70%),
+      radial-gradient(ellipse 45% 60% at 88% 55%, rgba(15, 107, 92, 0.10), transparent 70%);
+  }
+  .rule { position: absolute; left: 80px; right: 80px; bottom: 96px; height: 1px; background: rgba(26, 23, 20, 0.14); }
+  .eyebrow {
+    position: absolute; left: 84px; top: 88px;
+    font-family: 'JetBrains Mono', monospace; font-size: 17px; letter-spacing: 0.24em; text-transform: uppercase; color: #6B5F4F;
+  }
+  .eyebrow span { color: #0F6B5C; }
+  h1 {
+    position: absolute; left: 80px; top: 128px; margin: 0; width: 720px;
+    font-family: 'Fraunces', Georgia, serif; font-weight: 300; font-size: 92px; line-height: 0.98; letter-spacing: -0.035em;
+  }
+  h1 em { font-style: italic; font-weight: 400; color: #0A4F44; }
+  .sub {
+    position: absolute; left: 84px; top: 356px; width: 640px; margin: 0;
+    font-size: 30px; line-height: 1.38; color: #3A332A;
+  }
+  .kbd {
+    display: inline-block; padding: 0 10px; margin: 0 2px; border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace; font-size: 24px; line-height: 38px;
+    background: linear-gradient(#FBF6E9, #EFE6D2);
+    box-shadow: inset 0 -1px 0 rgba(26,23,20,.12), inset 0 0 0 1px rgba(26,23,20,.14);
+  }
+  .foot {
+    position: absolute; left: 84px; bottom: 50px;
+    font-family: 'JetBrains Mono', monospace; font-size: 16px; letter-spacing: 0.2em; text-transform: uppercase; color: #6B5F4F;
+  }
+  .foot b { color: #1A1714; font-weight: 500; }
+  .icon { position: absolute; right: 70px; top: 96px; width: 400px; height: 400px; }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="eyebrow">Myna <span>·</span> for Mac</div>
+  <h1>Your eyes are tired.<br><em>Your Mac can read.</em></h1>
+  <p class="sub">Select text anywhere, press <span class="kbd">⌘⌥⇧S</span>, and a natural voice reads it to you — spoken right on your Mac.</p>
+  <img class="icon" src="../public/app-icon.png" alt="">
+  <div class="rule"></div>
+  <div class="foot"><b>Free</b> · open source · Apple Silicon · myna.prerakgada.in</div>
+</body>
+</html>

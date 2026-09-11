@@ -24,29 +24,33 @@ const jetbrains = JetBrains_Mono({
   weight: ["400", "500"],
 });
 
+const DESCRIPTION =
+  "Select text anywhere and press ⌘⌥⇧S — Myna reads it aloud in a natural voice generated on your Mac. Articles from Chrome, Claude Code replies, a floating player. Free and open source for Apple Silicon.";
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://myna.dev"),
-  title: "Myna — A quiet voice for your Mac",
-  description:
-    "A free, open-source native macOS menu-bar app that reads selections, articles, and finished Claude Code sessions aloud. Real audio engine, signed + notarised, auto-updating, runs entirely on Apple Silicon. No cloud, no cost, no noise.",
+  metadataBase: new URL("https://myna.prerakgada.in"),
+  title: "Myna — a quiet voice for your Mac",
+  description: DESCRIPTION,
+  applicationName: "Myna",
+  keywords: ["text to speech", "macOS", "read aloud", "Kokoro", "MLX", "Apple Silicon", "Claude Code", "menu bar app"],
+  alternates: { canonical: "/" },
   openGraph: {
-    title: "Myna — A quiet voice for your Mac",
-    description:
-      "Native macOS menu-bar TTS. Reads selections, articles, and Claude Code output aloud. 100% local, free forever, MIT-licensed.",
+    title: "Myna — a quiet voice for your Mac",
+    description: DESCRIPTION,
     type: "website",
     url: "/",
     siteName: "Myna",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Myna — A quiet voice for your Mac",
-    description:
-      "Native macOS menu-bar TTS. Reads selections, articles, and Claude Code output aloud. 100% local, free forever, MIT-licensed.",
+    title: "Myna — a quiet voice for your Mac",
+    description: DESCRIPTION,
   },
   authors: [{ name: "Prerak Gada", url: "https://github.com/PrerakGada" }],
   creator: "Prerak Gada",
   icons: {
     icon: "/favicon.svg",
+    apple: "/apple-touch-icon.png",
   },
 };
 

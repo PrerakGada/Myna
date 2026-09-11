@@ -1,7 +1,33 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <rect width="64" height="64" rx="14" fill="#F5EFE2"/>
-  <path d="M22 38c0-9 6-15 14-15 5 0 8 2 10 5l-3 2c-1 4-4 7-8 9l-2 8h-5l1-7c-3 0-6-1-7-2z" fill="#1A1714"/>
-  <circle cx="38" cy="27" r="1.5" fill="#F5EFE2"/>
-  <path d="M44 25l5-3-1 5-4 1z" fill="#B65A3C"/>
-  <path d="M28 35c1 4 4 6 8 6" stroke="#0F6B5C" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 100 824 824">
+  <!-- The app icon (dist/brand/app-icon.svg), cropped to its rounded square. -->
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FBF7EE"/>
+      <stop offset="1" stop-color="#ECE1CB"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0.1" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#36312B"/>
+      <stop offset="0.55" stop-color="#1B1815"/>
+      <stop offset="1" stop-color="#0E0C0B"/>
+    </linearGradient>
+    <linearGradient id="beak" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F6BE45"/>
+      <stop offset="1" stop-color="#DE8A2C"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="100" y="100" width="824" height="824" rx="185"/>
+    </clipPath>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#paper)"/>
+  <g clip-path="url(#squircle)">
+    <g fill="none" stroke="#0F6B5C" stroke-width="30" stroke-linecap="round">
+      <path d="M 793.7 402.3 A 58 58 0 0 1 793.7 473.7"/>
+      <path d="M 829.95 373.9 A 104 104 0 0 1 829.95 502.1" stroke-opacity="0.66"/>
+      <path d="M 866.2 345.6 A 150 150 0 0 1 866.2 530.4" stroke-opacity="0.38"/>
+    </g>
+    <path fill="url(#ink)" d="M 110 960 C 104 770, 140 610, 205 490 C 262 380, 336 296, 430 268 C 478 254, 512 262, 532 284 C 546 298, 542 318, 552 334 C 566 356, 574 378, 578 398 L 580 478 C 604 520, 618 580, 614 650 C 608 760, 574 860, 562 960 Z"/>
+    <path fill="url(#beak)" d="M 568 392 C 625 392, 675 410, 715 438 C 675 460, 625 474, 572 478 C 560 450, 558 420, 568 392 Z"/>
+    <path fill="#EDB63F" d="M 512 344 C 530 360, 526 388, 502 400 C 468 416, 416 404, 396 376 C 424 364, 472 330, 512 344 Z"/>
+    <circle cx="488" cy="370" r="19" fill="#120F0D"/>
+  </g>
 </svg>

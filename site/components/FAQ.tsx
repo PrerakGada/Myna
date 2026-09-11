@@ -4,46 +4,66 @@ import { useState } from "react";
 
 type Item = { q: string; a: React.ReactNode };
 
+function Code({ children }: { children: React.ReactNode }) {
+  return <code className="font-mono text-[0.88em] text-ink bg-ink/[0.05] rounded px-1 py-0.5">{children}</code>;
+}
+
 const ITEMS: Item[] = [
   {
-    q: "Is Myna only for Apple Silicon Macs?",
-    a: <>Yes. The voice model runs through mlx-audio, which is built specifically for Apple Silicon. Intel Macs aren't supported and probably won't be.</>,
+    q: "What do I need to run Myna?",
+    a: <>A Mac with Apple Silicon (M1 or later) running macOS 14 Sonoma or newer, and about 1&nbsp;GB of free space for the voice. The speech engine is built on Apple&rsquo;s MLX framework, which only runs on Apple Silicon, so Intel Macs can&rsquo;t run it.</>,
+  },
+  {
+    q: "What happens the first time I open it?",
+    a: <>A setup window installs Myna&rsquo;s voice into your user account: a private copy of Python, the MLX speech engine (about 600&nbsp;MB), a small background service, and the Kokoro voice model (about 370&nbsp;MB). Each step shows its progress. No Terminal, no admin password, and a few minutes on a good connection. If you use Claude Code, it connects that too. Then it asks for Accessibility, which it needs to copy the text you select.</>,
   },
   {
     q: "Is it really free?",
-    a: <>Yes, in both senses. Free as in no payment, ever. Free as in MIT-licensed source you can read, fork, and modify. There's no paid tier waiting in the wings.</>,
+    a: <>Yes. No price, no account, no usage limits, and nothing to upgrade to. The source is MIT-licensed on GitHub.</>,
   },
   {
-    q: "Does my text ever leave my Mac?",
-    a: <>No. The voice model is local. The summariser is local. There's no analytics, no telemetry, no remote call. If your Mac is offline, Myna still works.</>,
+    q: "Does what I read leave my Mac?",
+    a: <>The voice is generated on your Mac by the Kokoro model, so the text you read is never sent to a speech service, and summaries run through Ollama on your own machine. Myna does touch the network in three specific cases: downloading its voice during setup, checking GitHub for app updates, and, when you use <em>Read article</em>, fetching that page from the web the way your browser did. There&rsquo;s no analytics and no telemetry.</>,
   },
   {
-    q: "Which voice does it use? Can I change it?",
-    a: <>The default is Kokoro's <span className="font-mono text-ink-soft">af_heart</span>, a warm voice that holds up well at length. The Voice tab in Settings lets you switch to any Kokoro voice the engine is hosting — no config-file editing required.</>,
+    q: "Which voices can I use?",
+    a: <>Four natural US-English Kokoro voices: Heart (the default), Bella, Michael and Adam. Switch from the menu bar, or preview them in Settings → Voice. Speed runs from 0.5× to 2× without changing the pitch.</>,
   },
   {
-    q: "Does it work with Safari or Firefox?",
-    a: <>The "read this article" feature works in Chrome and Safari. Selection reading (<span className="font-mono text-ink-soft">⌘⌥⇧S</span>) works in any app, including Firefox, because it operates on selected text rather than the page itself.</>,
+    q: "Which apps and browsers does it work with?",
+    a: <>Reading a selection with <Code>⌘⌥⇧S</Code> works in any app you can copy text from: browsers, PDFs, editors, mail, Slack, terminals. <em>Read article</em> (<Code>⌘⌥⇧R</Code>) reads the front tab of Google Chrome. In full-screen terminal apps like Claude Code, hold <Code>⌥</Code> while you drag so the terminal makes a real selection.</>,
   },
   {
-    q: "Can I drive Myna from BetterTouchTool, Shortcuts, or Alfred?",
-    a: <>Yes. Myna registers the <span className="font-mono text-ink-soft">myna://</span> URL scheme, so any tool that can open a URL can drive it — speak the selection, toggle pause, jump ±15s, read the current article. Open <span className="font-mono text-ink-soft">myna://toggle-pause</span> from anywhere on your Mac and Myna obeys.</>,
+    q: "How does the Claude Code part work?",
+    a: <>Setup adds a small Stop hook to Claude Code. When a session finishes, its reply appears in Myna&rsquo;s floating player as <em>New output ready</em>, with Play and Dismiss. Play reads the whole reply in your voice. If several sessions finish together, their replies come one at a time, so nothing talks over anything else, and the menu bar lists the ones waiting, tagged by project.</>,
   },
   {
-    q: "How is this different from the macOS built-in speech?",
-    a: <>The system voices are fine for short alerts and accessibility prompts, less so for reading a long essay or a Claude Code response. Kokoro is a newer, more natural model, and Myna adds the things the built-in speech doesn't have: a global summary hotkey, article extraction, Claude Code session narration, real speed control without pitch shift, ±15s seek, and a proper menu-bar control surface.</>,
+    q: "Can it summarize instead of reading everything?",
+    a: <>Yes: <Code>⌘⌥⇧A</Code> summarizes the selection and reads the summary. It needs Ollama running on your Mac with the <Code>qwen3.5:4b</Code> model (<Code>brew install ollama</Code>, then <Code>ollama pull qwen3.5:4b</Code>). Plain reading doesn&rsquo;t need any of that.</>,
   },
   {
-    q: "What is the Claude Code integration actually for?",
-    a: <>If you run one Claude session at a time, it's a nice convenience: when the session finishes, the response can be read aloud. If you run several in parallel, it's the real reason Myna exists. Each finished session queues silently in the menu bar and waits for you to pick which one to hear. Nothing talks over anything else.</>,
+    q: "Can I drive it from Shortcuts, Raycast or BetterTouchTool?",
+    a: <>Yes. Anything that can open a URL can drive Myna: <Code>myna://speak-selection</Code>, <Code>myna://read-chrome</Code>, <Code>myna://toggle-pause</Code>, <Code>myna://stop</Code>, <Code>myna://seek?delta=-15</Code> and <Code>myna://speed?value=1.5</Code>.</>,
   },
   {
-    q: "How does it update itself?",
-    a: <>Sparkle 2 is baked into the app. New versions are signed with an EdDSA key, served from a JSON appcast, and offered to you with a small native prompt. No App Store, no telemetry — just the next version when it's ready.</>,
+    q: "How is it different from macOS’s built-in Speak Selection?",
+    a: <>Kokoro is a modern neural voice that stays pleasant through a long essay. Around it Myna adds a floating player you can scrub and speed up, clean article extraction, Claude Code replies, a list of recent reads you can replay, trackpad gestures, and URL automation.</>,
   },
   {
-    q: "How do I uninstall?",
-    a: <>Drag Myna.app to the Trash. Or, if you installed via Homebrew, <span className="font-mono text-ink-soft">brew uninstall --cask myna</span> followed by <span className="font-mono text-ink-soft">brew uninstall myna-daemon</span>. Myna doesn't scatter files across your system, so cleanup is one drag away.</>,
+    q: "How does it update?",
+    a: <>Through Sparkle: signed updates published on GitHub Releases, offered right inside the app. A disk-image install also keeps its background service in step with the app after each update.</>,
+  },
+  {
+    q: "How do I uninstall it?",
+    a: <>
+      Quit Myna and drag it to the Trash. To remove its voice as well:
+      <pre className="code-block mt-3 text-[0.8rem] whitespace-pre-wrap break-all">{`launchctl bootout gui/$(id -u)/dev.myna.daemon
+rm -rf ~/Library/LaunchAgents/dev.myna.daemon.plist \\
+  ~/.venvs/myna-daemon ~/.venvs/mlx-audio \\
+  ~/Library/Application\\ Support/Myna ~/.config/myna \\
+  ~/.cache/huggingface/hub/models--prince-canuma--Kokoro-82M`}</pre>
+      <span className="block mt-3">If you connected Claude Code, also delete the <Code>myna-cc-announce.py</Code> entry from <Code>~/.claude/settings.json</Code>. Installed with Homebrew? <Code>brew uninstall --cask myna</Code> and <Code>brew uninstall myna-daemon</Code>.</span>
+    </>,
   },
 ];
 
@@ -55,7 +75,7 @@ export function FAQ() {
       {ITEMS.map((item, i) => {
         const isOpen = open === i;
         return (
-          <li key={i}>
+          <li key={item.q}>
             <button
               type="button"
               onClick={() => setOpen(isOpen ? null : i)}
@@ -82,7 +102,7 @@ export function FAQ() {
               style={{ gridTemplateRows: isOpen ? "1fr" : "0fr" }}
             >
               <div className="overflow-hidden">
-                <div className="pb-6 sm:pb-7 pr-10 text-[1.02rem] sm:text-[1.08rem] leading-[1.65] text-ink-soft pretty">
+                <div className="pb-6 sm:pb-7 pr-2 sm:pr-10 text-[1.02rem] sm:text-[1.08rem] leading-[1.65] text-ink-soft pretty">
                   {item.a}
                 </div>
               </div>
