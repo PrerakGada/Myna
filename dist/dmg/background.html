@@ -1,0 +1,92 @@
+<!doctype html>
+<!--
+  Source for the DMG window background. Rendered to background.png (1x) and
+  background@2x.png by dist/dmg/render-background.sh, then combined into the
+  multi-resolution background.tiff that dist/dmg.sh hands to dmgbuild.
+
+  Finder draws the icons and their labels on top of this image, at the
+  positions set in dist/dmg/settings.py (app at 180,210; Applications at
+  480,210; 112 pt icons).
+
+  Two Finder realities shape the layout:
+  • Label text is white in dark mode and black in light mode, so the band
+    behind the icons is a mid-tone (relative luminance ≈ 0.17) that keeps both
+    at roughly 4.5:1.
+  • Finder applies the user's global tab bar, path bar and status bar to this
+    window whatever the .DS_Store asks for — up to ~84 pt of chrome inside the
+    window. Everything that matters (headline, icons, labels, arrow) therefore
+    sits in the top ~290 pt; the hint at the bottom of the band can be covered.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=JetBrains+Mono:wght@500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=block" rel="stylesheet">
+<style>
+  html, body { margin: 0; width: 660px; height: 420px; overflow: hidden; }
+  body {
+    position: relative;
+    background: #F5EFE2;
+    color: #1A1714;
+    font-family: 'Newsreader', Georgia, serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 70% 70% at 50% -10%, rgba(255, 251, 243, 0.95), transparent 70%),
+      radial-gradient(ellipse 50% 40% at 100% 30%, rgba(15, 107, 92, 0.06), transparent 70%);
+  }
+  .eyebrow {
+    position: absolute; top: 18px; left: 0; right: 0;
+    text-align: center;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9px; letter-spacing: 0.24em; text-transform: uppercase;
+    color: #6B5F4F;
+  }
+  .eyebrow span { color: #0F6B5C; }
+  h1 {
+    position: absolute; top: 32px; left: 0; right: 0; margin: 0;
+    text-align: center;
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 400; font-size: 30px; letter-spacing: -0.025em;
+    font-variation-settings: "opsz" 96;
+  }
+  h1 em { font-style: italic; color: #0F6B5C; }
+  .sub {
+    position: absolute; top: 74px; left: 92px; right: 92px; margin: 0;
+    text-align: center;
+    font-size: 14.5px; line-height: 1.42; color: #3A332A;
+  }
+  .sub b { font-weight: 500; color: #1A1714; }
+  .stage {
+    position: absolute; left: 0; right: 0; top: 136px; bottom: 0;
+    background: #3E7F74;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  .stage::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(255, 255, 255, 0.10), transparent 70%);
+  }
+  .arrow { position: absolute; left: 254px; top: 182px; width: 152px; height: 40px; }
+  .hint {
+    position: absolute; left: 0; right: 0; bottom: 20px;
+    text-align: center;
+    font-size: 13px; font-style: italic; color: rgba(245, 239, 226, 0.78);
+  }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="eyebrow">Myna <span>·</span> Apple Silicon <span>·</span> macOS 14 or later</div>
+  <h1>Drag Myna into <em>Applications</em></h1>
+  <p class="sub">Then open Myna from Applications. On first launch it downloads its voice, <b>about 1&nbsp;GB</b>; after that, it speaks right on your Mac.</p>
+  <div class="stage"></div>
+  <svg class="arrow" viewBox="0 0 152 40" fill="none">
+    <path d="M 6 26 C 40 6, 104 6, 136 22" stroke="#F5EFE2" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="1 9"/>
+    <path d="M 124 12 L 139 23 L 122 31" stroke="#F5EFE2" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div class="hint">Updating? Replace the old Myna. Your settings and voice stay put.</div>
+</body>
+</html>

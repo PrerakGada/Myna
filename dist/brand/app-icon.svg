@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Myna's app icon. Source of truth for apps/macos/Resources/Assets.xcassets/
+    AppIcon.appiconset — regenerate the PNGs with dist/brand/render-icon.sh.
+    Standard macOS grid: an 824 pt rounded square centred on a 1024 canvas.
+  -->
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FBF7EE"/>
+      <stop offset="1" stop-color="#ECE1CB"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0.78" cy="0.34" r="0.55">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ink" x1="0.1" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#36312B"/>
+      <stop offset="0.55" stop-color="#1B1815"/>
+      <stop offset="1" stop-color="#0E0C0B"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#1A9985" stop-opacity="0.34"/>
+      <stop offset="0.6" stop-color="#1A9985" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#1A9985" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="beak" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F6BE45"/>
+      <stop offset="1" stop-color="#DE8A2C"/>
+    </linearGradient>
+    <linearGradient id="patch" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F3C24A"/>
+      <stop offset="1" stop-color="#E0A531"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <clipPath id="squircle">
+      <rect x="100" y="100" width="824" height="824" rx="185"/>
+    </clipPath>
+    <clipPath id="bust">
+      <path d="M 110 960 C 104 770, 140 610, 205 490 C 262 380, 336 296, 430 268 C 478 254, 512 262, 532 284 C 546 298, 542 318, 552 334 C 566 356, 574 378, 578 398 L 580 478 C 604 520, 618 580, 614 650 C 608 760, 574 860, 562 960 Z"/>
+    </clipPath>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#paper)"/>
+  </g>
+
+  <g clip-path="url(#squircle)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#light)"/>
+
+    <!-- voice -->
+    <g fill="none" stroke="#0F6B5C" stroke-width="26" stroke-linecap="round">
+      <path d="M 793.7 402.3 A 58 58 0 0 1 793.7 473.7"/>
+      <path d="M 829.95 373.9 A 104 104 0 0 1 829.95 502.1" stroke-opacity="0.66"/>
+      <path d="M 866.2 345.6 A 150 150 0 0 1 866.2 530.4" stroke-opacity="0.38"/>
+    </g>
+
+    <!-- bird -->
+    <path fill="url(#ink)" d="M 110 960 C 104 770, 140 610, 205 490 C 262 380, 336 296, 430 268 C 478 254, 512 262, 532 284 C 546 298, 542 318, 552 334 C 566 356, 574 378, 578 398 L 580 478 C 604 520, 618 580, 614 650 C 608 760, 574 860, 562 960 Z"/>
+    <g clip-path="url(#bust)">
+      <ellipse cx="560" cy="600" rx="150" ry="230" transform="rotate(-18 560 600)" fill="url(#sheen)"/>
+    </g>
+    <path fill="url(#beak)" d="M 568 392 C 625 392, 675 410, 715 438 C 675 460, 625 474, 572 478 C 560 450, 558 420, 568 392 Z"/>
+    <path d="M 574 437 C 622 441, 668 441, 712 438" fill="none" stroke="#8F4F17" stroke-opacity="0.35" stroke-width="4" stroke-linecap="round"/>
+    <path fill="url(#patch)" d="M 512 344 C 530 360, 526 388, 502 400 C 468 416, 416 404, 396 376 C 424 364, 472 330, 512 344 Z"/>
+    <circle cx="488" cy="370" r="19" fill="#120F0D"/>
+    <circle cx="495" cy="363" r="6" fill="#FBF7EE"/>
+  </g>
+</svg>

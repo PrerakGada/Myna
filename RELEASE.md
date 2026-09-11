@@ -8,8 +8,17 @@ git tag v0.1.0 && git push --tags
 ```
 
 …which triggers `.github/workflows/release.yml` and produces a signed,
-notarized DMG, attaches it to a GitHub Release, refreshes the Sparkle
-appcast, and bumps the Homebrew cask.
+notarized DMG, attaches it to a GitHub Release (twice: `Myna-X.Y.Z.dmg` for
+Sparkle and the cask, and `Myna.dmg` for the website's
+`/download` → `releases/latest/download/Myna.dmg` link), refreshes the
+Sparkle appcast, and bumps the Homebrew cask.
+
+The DMG window — background art, icon positions — is laid out by
+[dmgbuild](https://github.com/dmgbuild/dmgbuild) from `dist/dmg/settings.py`.
+The art is committed (`dist/dmg/background.tiff`); edit
+`dist/dmg/background.html` and run `dist/dmg/render-background.sh` to change
+it. The app icon works the same way: `dist/brand/app-icon.svg` →
+`dist/brand/render-icon.sh` → `apps/macos/Resources/Assets.xcassets`.
 
 ---
 
@@ -226,7 +235,7 @@ export APPLE_ID_APP_PASSWORD="abcd-efgh-ijkl-mnop"
 bash dist/notarize.sh
 
 # 4. Wrap in DMG
-brew install create-dmg   # one-time
+uv tool install dmgbuild==1.6.7   # one-time (or: pipx install dmgbuild==1.6.7)
 VERSION=0.1.0 bash dist/dmg.sh
 
 # 5. Sign the DMG, then notarize that too

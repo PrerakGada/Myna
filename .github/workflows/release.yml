@@ -230,8 +230,16 @@ jobs:
         run: |
           mkdir -p dist/export
           tar -xf myna-app-stapled.tar -C dist/export
-      - name: Install create-dmg
-        run: brew install create-dmg
+      - name: Install dmgbuild
+        # Lays out the DMG window (background art + icon positions) by writing
+        # its .DS_Store directly — no Finder or AppleScript on the runner.
+        # Pinned so a dmgbuild release can't change the window between builds;
+        # if this step fails the release fails, rather than shipping a DMG
+        # without its art.
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet dmgbuild==1.6.7
+          echo "DMGBUILD=$RUNNER_TEMP/dmgbuild/bin/dmgbuild" >> "$GITHUB_ENV"
       - name: Build DMG
         env:
           VERSION: ${{ needs.preflight.outputs.version }}
@@ -408,13 +416,27 @@ jobs:
           set -euo pipefail
           DMG="dist/out/Myna-$VERSION.dmg"
           TAG="v$VERSION"
+          # A second copy under a fixed name, so the website's download link —
+          # https://github.com/<repo>/releases/latest/download/Myna.dmg — always
+          # resolves to the newest release. Sparkle and the cask keep using the
+          # versioned file.
+          cp "$DMG" dist/out/Myna.dmg
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "**Download [Myna-$VERSION.dmg](https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/Myna-$VERSION.dmg)**, drag Myna into Applications, and open it. On first launch it installs its on-device voice (about 1 GB). Apple Silicon, macOS 14 or later."
+            echo
+            echo "Already using Myna? It updates itself. With Homebrew: \`brew upgrade --cask prerakgada/tap/myna\`."
+            echo
+            CHANGELOG="apps/macos/Resources/changelogs/v${VERSION%.*}.md"
+            if [ -f "$CHANGELOG" ]; then cat "$CHANGELOG"; fi
+          } > "$NOTES"
           # Idempotent: if the release already exists (re-run), update it.
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$DMG" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" "$DMG" dist/out/Myna.dmg --clobber --repo "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" "$DMG" \
+            gh release create "$TAG" "$DMG" dist/out/Myna.dmg \
               --title "Myna $VERSION" \
-              --notes "See appcast for Sparkle metadata. Install via Homebrew: \`brew install --cask myna\`" \
+              --notes-file "$NOTES" \
               --repo "$GITHUB_REPOSITORY"
           fi
       - name: Publish appcast.xml on dedicated `appcast` release

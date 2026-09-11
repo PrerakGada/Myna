@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
-# dist/dmg.sh — wrap Myna.app in a DMG.
+# dist/dmg.sh — wrap Myna.app in the drag-to-Applications disk image.
 #
 # Inputs (env):
-#   APP_PATH      — default dist/export/Myna.app
-#   VERSION       — default from tag / project.yml
-#   OUT_DIR       — default dist/out
-#   BACKGROUND    — optional path to a .png background (default dist/dmg-background.png)
-#   USE_CREATE_DMG — "1" to prefer the `create-dmg` brew package; default "auto"
-#                    (use create-dmg if installed, else fall back to hdiutil).
+#   APP_PATH   — default dist/export/Myna.app
+#   VERSION    — default from tag / project.yml
+#   OUT_DIR    — default dist/out
+#   DMGBUILD   — dmgbuild executable (default: found on PATH; `pip install dmgbuild`)
 #
 # Output:
 #   $OUT_DIR/Myna-$VERSION.dmg
+#
+# The window — background art, 112 pt icons, app left of the arrow and the
+# Applications link right of it — is laid out by dmgbuild from
+# dist/dmg/settings.py. dmgbuild writes the .DS_Store directly, with no Finder
+# or AppleScript, so it lays out identically on CI. The art is
+# dist/dmg/background.tiff (1x + 2x), rendered from background.html by
+# dist/dmg/render-background.sh.
+#
+# Without dmgbuild it falls back to a plain hdiutil image (app + Applications
+# link, no art), so a release never blocks on it.
 #
 # Usage:
 #   dist/dmg.sh [--dry-run] [--help]
 #
 # Notes:
-#   The DMG itself is NOT signed by this script. Use dist/sign.sh on the
-#   resulting .dmg afterwards (release.yml's sign-dmg job does this).
+#   The DMG itself is NOT signed by this script. release.yml's sign-dmg job
+#   signs and notarizes it.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,9 +38,11 @@ parse_common_args "$@"
 ROOT="$(repo_root)"
 APP_PATH="${APP_PATH:-$ROOT/dist/export/Myna.app}"
 OUT_DIR="${OUT_DIR:-$ROOT/dist/out}"
-BACKGROUND="${BACKGROUND:-$ROOT/dist/dmg-background.png}"
 VERSION="$(version_from_tag)"
-USE_CREATE_DMG="${USE_CREATE_DMG:-auto}"
+DMGBUILD="${DMGBUILD:-$(command -v dmgbuild 2>/dev/null || true)}"
+SETTINGS="$ROOT/dist/dmg/settings.py"
+BACKGROUND="$ROOT/dist/dmg/background.tiff"
+VOLUME_ICON="$APP_PATH/Contents/Resources/AppIcon.icns"
 
 DMG="$OUT_DIR/Myna-$VERSION.dmg"
 
@@ -46,42 +56,26 @@ fi
 run "mkdir -p '$OUT_DIR'"
 run "rm -f '$DMG'"
 
-# Decide which tool to use.
-tool="hdiutil"
-if [ "$USE_CREATE_DMG" = "1" ] || \
-   { [ "$USE_CREATE_DMG" = "auto" ] && command -v create-dmg >/dev/null 2>&1; }; then
-  tool="create-dmg"
-fi
-
-log "using: $tool"
-
-if [ "$tool" = "create-dmg" ]; then
-  bg_arg=""
-  if [ -f "$BACKGROUND" ]; then
-    bg_arg="--background '$BACKGROUND'"
+if [ -n "$DMGBUILD" ]; then
+  log "using: dmgbuild ($DMGBUILD)"
+  [ -f "$BACKGROUND" ] || die "missing DMG background at $BACKGROUND (run dist/dmg/render-background.sh)"
+  icon_define=""
+  if [ -f "$VOLUME_ICON" ]; then
+    icon_define="-D icon='$VOLUME_ICON'"
   else
-    warn "no background image at $BACKGROUND (DMG will use default)"
+    warn "no AppIcon.icns in the app — the mounted volume keeps the default disk icon"
   fi
-  # shellcheck disable=SC2086
-  run "create-dmg \
-        --volname 'Myna $VERSION' \
-        --window-pos 200 120 \
-        --window-size 600 380 \
-        --icon-size 100 \
-        --icon 'Myna.app' 150 190 \
-        --hide-extension 'Myna.app' \
-        --app-drop-link 450 190 \
-        --no-internet-enable \
-        $bg_arg \
-        '$DMG' \
-        '$APP_PATH'"
+  run "'$DMGBUILD' -s '$SETTINGS' \
+        -D app='$APP_PATH' \
+        -D background='$BACKGROUND' \
+        $icon_define \
+        'Myna $VERSION' '$DMG'"
 else
-  # Hand-rolled hdiutil. Build a staging dir with the .app + an Applications symlink.
+  warn "dmgbuild not found (pip install dmgbuild) — building a plain DMG without the window art"
   STAGE="$ROOT/dist/build/dmg-stage"
   run "rm -rf '$STAGE' && mkdir -p '$STAGE'"
-  run "cp -R '$APP_PATH' '$STAGE/'"
+  run "ditto '$APP_PATH' '$STAGE/Myna.app'"
   run "ln -s /Applications '$STAGE/Applications'"
-  # Create compressed DMG.
   run "hdiutil create \
         -volname 'Myna $VERSION' \
         -srcfolder '$STAGE' \
