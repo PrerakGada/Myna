@@ -46,6 +46,10 @@ DAEMON_VENV="$HOME/.venvs/myna-daemon"
 RUNTIME_DIR="$HOME/Library/Application Support/Myna/runtime"
 AGENT_LABEL="dev.myna.daemon"
 AGENT_PLIST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
+# The executable the LaunchAgent runs; start_standalone_daemon swaps in the
+# "Myna Voice" copy (see prepare_daemon_executable).
+DAEMON_PROGRAM="$DAEMON_VENV/bin/python"
+DAEMON_EXEC="$DAEMON_VENV/bin/Myna Voice"
 BREW_LABEL="homebrew.mxcl.myna-daemon"
 UID_NUM="$(id -u)"
 PY_VERSION="3.13"
@@ -280,7 +284,7 @@ write_agent_plist() {
   <key>Label</key><string>$AGENT_LABEL</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$DAEMON_VENV/bin/python</string>
+    <string>$DAEMON_PROGRAM</string>
     <string>-m</string>
     <string>myna</string>
   </array>
@@ -320,6 +324,17 @@ retire_legacy_engine_agent() {
   rm -f "$HOME/Library/LaunchAgents/dev.myna.engine.plist"
 }
 
+# macOS names a background item after its executable, so a daemon run as
+# bin/python appears as "python" in the "Background Items Added" notice and in
+# Login Items. Run it from a copy of the venv's interpreter called "Myna Voice"
+# instead; the copy still finds the venv through pyvenv.cfg.
+prepare_daemon_executable() {
+  local real
+  real="$("$DAEMON_VENV/bin/python" -c 'import os, sys; print(os.path.realpath(sys.executable))')" || return 1
+  cp -f "$real" "$DAEMON_EXEC.tmp" && chmod 755 "$DAEMON_EXEC.tmp" && mv -f "$DAEMON_EXEC.tmp" "$DAEMON_EXEC" || return 1
+  "$DAEMON_EXEC" -c 'import myna' >/dev/null 2>&1
+}
+
 start_standalone_daemon() {
   retire_legacy_engine_agent
   # A leftover Homebrew service would fight us for the port.
@@ -334,6 +349,12 @@ start_standalone_daemon() {
     install_daemon
   else
     say "Myna daemon $BUNDLED_VERSION already installed"
+  fi
+  if prepare_daemon_executable; then
+    DAEMON_PROGRAM="$DAEMON_EXEC"
+  else
+    DAEMON_PROGRAM="$DAEMON_VENV/bin/python"
+    warn "couldn't name the background service; it will show as \"python\" in Login Items"
   fi
   write_agent_plist
   load_agent || die "macOS didn't allow Myna's background service to start. Open System Settings → General → Login Items & Extensions, allow Myna, then try again."
@@ -472,11 +493,24 @@ say "Warming up the voice…"
 # existing; the first start imports MLX and can take a while on a cold disk.
 if wait_for engine_up 90; then
   # Prime the model into engine memory so the first real read is instant. The
-  # first synth pays the one-time model load, hence the generous timeout.
-  curl -sf -m 180 -X POST "http://127.0.0.1:${DAEMON_PORT}/v2/synthesize" \
-       -H 'Content-Type: application/json' \
-       -d '{"text":"Myna is ready.","voice":"af_heart","speed":1.0,"mode":"full"}' \
-       -o /dev/null 2>/dev/null || warn "the first warm-up read didn't finish; the first real read may take a few extra seconds"
+  # first synth pays the one-time model load, hence the generous timeout. Right
+  # after the engine comes up the daemon can still answer 502 while the engine
+  # is busy loading, so try a few times; otherwise that load lands on the
+  # user's first hotkey press (~15 s of silence on a fresh Mac).
+  warmed=0
+  for _ in 1 2 3; do
+    if curl -sf -m 180 -X POST "http://127.0.0.1:${DAEMON_PORT}/v2/synthesize" \
+         -H 'Content-Type: application/json' \
+         -d '{"text":"Myna is ready.","voice":"af_heart","speed":1.0,"mode":"full"}' \
+         -o /dev/null 2>/dev/null; then
+      warmed=1
+      break
+    fi
+    sleep 4
+  done
+  if [ "$warmed" != "1" ]; then
+    warn "the first warm-up read didn't finish; the first real read may take a few extra seconds"
+  fi
   finish "Ready"
 else
   warn "the voice engine is still starting — it will be ready in a moment"
