@@ -1,5 +1,7 @@
 <p align="center">
-  <img src="site/public/app-icon.png" width="128" height="128" alt="Myna">
+<img src="site/public/app-icon.png" width="128" height="128" alt="Myna">
+
+[Approved icon and brand assets](dist/brand/README.md)
 </p>
 
 <h1 align="center">Myna</h1>

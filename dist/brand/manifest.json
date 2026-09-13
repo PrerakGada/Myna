@@ -1,0 +1,652 @@
+{
+  "identity": "Myna full-bird soft-clay icon",
+  "approvedSourceSha256": "03aeb6548bf3670758a5bee9f5a443b4e261aeb34008669b57060854cbb47d33",
+  "sources": "sources/",
+  "assets": [
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "bytes": 1256,
+      "sha256": "399417d0b2fbf258cd3e62336cb1e4833a5998b248efcf256a873a7a69d4bd1d"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_128x128.png",
+      "bytes": 17753,
+      "sha256": "17f30090f788fd7466c1faa7d13c716cad9ffee3c57209ed3293aac0e5f7bf3d"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png",
+      "bytes": 60827,
+      "sha256": "8e9dcac177cf92a3fbedce01dc0cd658af260e8a9538d8fcd028334ef95a9c4f"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_16x16.png",
+      "bytes": 644,
+      "sha256": "370913c487bf5c1903d45a1e8fe226a146eb858df95db1ff53cc6d4a7eb3d8ec"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_16x16@2x.png",
+      "bytes": 1891,
+      "sha256": "62f69e89d86027f2ee937c0fd47ae8fcc8440198718651f8b053f9e7d6e85f05"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_256x256.png",
+      "bytes": 60827,
+      "sha256": "8e9dcac177cf92a3fbedce01dc0cd658af260e8a9538d8fcd028334ef95a9c4f"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png",
+      "bytes": 235317,
+      "sha256": "9a1c8ac7ada35c88c245a064ef2689caecb0fcc3463012d6e67ca01b1022b32a"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_32x32.png",
+      "bytes": 1891,
+      "sha256": "62f69e89d86027f2ee937c0fd47ae8fcc8440198718651f8b053f9e7d6e85f05"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_32x32@2x.png",
+      "bytes": 5454,
+      "sha256": "f8014c6a17e300df5763cf90dfb7dfdec1bf60ef13e248fd2f18df14ed78d859"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_512x512.png",
+      "bytes": 235317,
+      "sha256": "9a1c8ac7ada35c88c245a064ef2689caecb0fcc3463012d6e67ca01b1022b32a"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png",
+      "bytes": 886489,
+      "sha256": "80e8c630e8414d811a5c65505cf26a16c62b2e4430130666139cab1188259680"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaArtwork.imageset/Contents.json",
+      "bytes": 380,
+      "sha256": "9d4659e93efadfbdf156b1929fe32313916cc3659fe3af9d0aef8d8011285aae"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaArtwork.imageset/MynaArtwork@1x.png",
+      "bytes": 5454,
+      "sha256": "f8014c6a17e300df5763cf90dfb7dfdec1bf60ef13e248fd2f18df14ed78d859"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaArtwork.imageset/MynaArtwork@2x.png",
+      "bytes": 17753,
+      "sha256": "17f30090f788fd7466c1faa7d13c716cad9ffee3c57209ed3293aac0e5f7bf3d"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaArtwork.imageset/MynaArtwork@3x.png",
+      "bytes": 37230,
+      "sha256": "2e2a86acc49cfb1697db7436472f2d314d317c0f3afabba98204db1522a861d3"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaFilled.imageset/Contents.json",
+      "bytes": 444,
+      "sha256": "8f5db3836c37dfeef121161672c297c7000133c5a92a8c6d175df34ef144611f"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaFilled.imageset/MynaFilled@1x.png",
+      "bytes": 405,
+      "sha256": "726a8034099dc3230bb4597c86f97771c089e99f8c45c029870574eee71f1104"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaFilled.imageset/MynaFilled@2x.png",
+      "bytes": 731,
+      "sha256": "7a3ff60484117e3943793c9e2dc50e9b771217bb9fc31afe3827bf039ffec9a9"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaFilled.imageset/MynaFilled@3x.png",
+      "bytes": 1037,
+      "sha256": "d18b921d02cfe1946d194b50db90c8227041469b335c47b5cf5c7c1e8ca50ca3"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaOutline.imageset/Contents.json",
+      "bytes": 447,
+      "sha256": "a9f8fcdaf541daed09136d75da61e4050bc6a056ef8dfbbe1a4296d95aff94bf"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaOutline.imageset/MynaOutline@1x.png",
+      "bytes": 483,
+      "sha256": "7d343ebe0672aab83fe1d903faabeeda822eb99812a8fb443654e6e6cc1069e6"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaOutline.imageset/MynaOutline@2x.png",
+      "bytes": 1064,
+      "sha256": "e5b7f7583560f0070b890867c3477bbb3e51fde6655f6d401011296e7131ee45"
+    },
+    {
+      "path": "apps/macos/Resources/Assets.xcassets/MynaOutline.imageset/MynaOutline@3x.png",
+      "bytes": 1532,
+      "sha256": "c55258247ec22925bfccb07181972319b10954ff17d53dec290641182943c117"
+    },
+    {
+      "path": "dist/brand/app-icon.svg",
+      "bytes": 1522555,
+      "sha256": "f701f4f0cc84ad3339b861a9dbd4466b7f80669201a2e8bddbd5533793c6b398"
+    },
+    {
+      "path": "dist/brand/exports/mobile/myna-1024.png",
+      "bytes": 1235244,
+      "sha256": "ed07021502628eaa68e52eef0fd5fb2c29d55ad9e3259063030ce8b9a497b881"
+    },
+    {
+      "path": "dist/brand/exports/mobile/myna-180.png",
+      "bytes": 44179,
+      "sha256": "97432e873f1031cee7a32041ac943ea8ee114cd01d2363e30c89f36dd3c1a774"
+    },
+    {
+      "path": "dist/brand/exports/mobile/myna-192.png",
+      "bytes": 50316,
+      "sha256": "57982c96e5bbfc5c10707e5a7cd0a849770116d2d6788dd84903e9e67fa5bb0b"
+    },
+    {
+      "path": "dist/brand/exports/mobile/myna-512.png",
+      "bytes": 343878,
+      "sha256": "0f32d4d5154dc987c6acbec3c2dbc4172016393b006464e4f66999738092b7dd"
+    },
+    {
+      "path": "dist/brand/exports/myna-app-icon.png",
+      "bytes": 886489,
+      "sha256": "80e8c630e8414d811a5c65505cf26a16c62b2e4430130666139cab1188259680"
+    },
+    {
+      "path": "dist/brand/exports/myna-app-icon.svg",
+      "bytes": 1522555,
+      "sha256": "f701f4f0cc84ad3339b861a9dbd4466b7f80669201a2e8bddbd5533793c6b398"
+    },
+    {
+      "path": "dist/brand/exports/myna-app-icon.webp",
+      "bytes": 476550,
+      "sha256": "ac6fbe3b7b61dadb4db50e2fb7ec623a31341ee3fcb04ff4c018f4a437154702"
+    },
+    {
+      "path": "dist/brand/exports/myna-bordered.png",
+      "bytes": 818123,
+      "sha256": "ddc1578da73879e4e959dcc032673eba1cca075464650b0ef932dee79f1eb185"
+    },
+    {
+      "path": "dist/brand/exports/myna-bordered.svg",
+      "bytes": 2322542,
+      "sha256": "9f74deb6365423af71465e290f4ae04d1bb087ace430eb3db843f543ab99a8c7"
+    },
+    {
+      "path": "dist/brand/exports/myna-bordered.webp",
+      "bytes": 417698,
+      "sha256": "bccab248e8cddec4939c0cdcd4cc9754057452d03ff5c9c1035729477259032e"
+    },
+    {
+      "path": "dist/brand/exports/myna-clay-original.jpg",
+      "bytes": 174812,
+      "sha256": "2f47d96c2eee37c0d9298619be4083e840a357a94c5b2680c74ab90af7eed5a5"
+    },
+    {
+      "path": "dist/brand/exports/myna-clay-original.png",
+      "bytes": 1303546,
+      "sha256": "03aeb6548bf3670758a5bee9f5a443b4e261aeb34008669b57060854cbb47d33"
+    },
+    {
+      "path": "dist/brand/exports/myna-filled-white.svg",
+      "bytes": 4559,
+      "sha256": "8591bc3b07c6274aa98c454f9d12c67309c92e511de9c8495208c2a64c0eef4c"
+    },
+    {
+      "path": "dist/brand/exports/myna-filled.svg",
+      "bytes": 4559,
+      "sha256": "935d268a88bcba8ba82a6169e8441c39237721ff8dd6ed05c80e571b05e18c98"
+    },
+    {
+      "path": "dist/brand/exports/myna-outline-small.svg",
+      "bytes": 7960,
+      "sha256": "a1f11f8ba97b73bfc7b36b9c814d2461cee94e65884be7c5dbe9fa3b37caa808"
+    },
+    {
+      "path": "dist/brand/exports/myna-outline-white.svg",
+      "bytes": 7914,
+      "sha256": "236b47c8684ae7bc78ec55bb5800d8d1fcf3e96698972d9fa56a656deaa2eabb"
+    },
+    {
+      "path": "dist/brand/exports/myna-outline.svg",
+      "bytes": 7914,
+      "sha256": "9c59b4d81f2e5759b1d2be32cc87c347e8a88f122423f6aa1463dfeda798b87f"
+    },
+    {
+      "path": "dist/brand/exports/myna-social-card.png",
+      "bytes": 173664,
+      "sha256": "5d4eb122943638d3cba860aebb9537f8483f8cd0addeed34e330e4aa8c195fd6"
+    },
+    {
+      "path": "dist/brand/exports/myna-social-card.svg",
+      "bytes": 1183004,
+      "sha256": "d1a0340c6571cf1b0f442b3e2332d967f69c97386fec4b95869a91139d0983c8"
+    },
+    {
+      "path": "dist/brand/exports/Myna.icns",
+      "bytes": 1542800,
+      "sha256": "d871c989e72cf7569e0351d195126563ca73ce2eb586c396fc31050fd6c88e65"
+    },
+    {
+      "path": "dist/brand/exports/Myna.ico",
+      "bytes": 372526,
+      "sha256": "cf8c6f1857e0b4ff88f0a1f22258f66dca8c20013d9571e6a04393562cb9769d"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_128x128.png",
+      "bytes": 17753,
+      "sha256": "17f30090f788fd7466c1faa7d13c716cad9ffee3c57209ed3293aac0e5f7bf3d"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_128x128@2x.png",
+      "bytes": 60827,
+      "sha256": "8e9dcac177cf92a3fbedce01dc0cd658af260e8a9538d8fcd028334ef95a9c4f"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_16x16.png",
+      "bytes": 644,
+      "sha256": "370913c487bf5c1903d45a1e8fe226a146eb858df95db1ff53cc6d4a7eb3d8ec"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_16x16@2x.png",
+      "bytes": 1891,
+      "sha256": "62f69e89d86027f2ee937c0fd47ae8fcc8440198718651f8b053f9e7d6e85f05"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_256x256.png",
+      "bytes": 60827,
+      "sha256": "8e9dcac177cf92a3fbedce01dc0cd658af260e8a9538d8fcd028334ef95a9c4f"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_256x256@2x.png",
+      "bytes": 235317,
+      "sha256": "9a1c8ac7ada35c88c245a064ef2689caecb0fcc3463012d6e67ca01b1022b32a"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_32x32.png",
+      "bytes": 1891,
+      "sha256": "62f69e89d86027f2ee937c0fd47ae8fcc8440198718651f8b053f9e7d6e85f05"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_32x32@2x.png",
+      "bytes": 5454,
+      "sha256": "f8014c6a17e300df5763cf90dfb7dfdec1bf60ef13e248fd2f18df14ed78d859"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_512x512.png",
+      "bytes": 235317,
+      "sha256": "9a1c8ac7ada35c88c245a064ef2689caecb0fcc3463012d6e67ca01b1022b32a"
+    },
+    {
+      "path": "dist/brand/exports/Myna.iconset/icon_512x512@2x.png",
+      "bytes": 886489,
+      "sha256": "80e8c630e8414d811a5c65505cf26a16c62b2e4430130666139cab1188259680"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-app-1024.png",
+      "bytes": 886489,
+      "sha256": "80e8c630e8414d811a5c65505cf26a16c62b2e4430130666139cab1188259680"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-app-128.png",
+      "bytes": 17753,
+      "sha256": "17f30090f788fd7466c1faa7d13c716cad9ffee3c57209ed3293aac0e5f7bf3d"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-app-16.png",
+      "bytes": 644,
+      "sha256": "370913c487bf5c1903d45a1e8fe226a146eb858df95db1ff53cc6d4a7eb3d8ec"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-app-24.png",
+      "bytes": 1207,
+      "sha256": "8229457373f4a84428b78b2a0cfa72d6cdcfe77d0e01dcc24701412739e6df61"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-app-256.png",
+      "bytes": 60827,
+      "sha256": "8e9dcac177cf92a3fbedce01dc0cd658af260e8a9538d8fcd028334ef95a9c4f"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-app-32.png",
+      "bytes": 1891,
+      "sha256": "62f69e89d86027f2ee937c0fd47ae8fcc8440198718651f8b053f9e7d6e85f05"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-app-48.png",
+      "bytes": 3496,
+      "sha256": "2984eeccc77b2ec9f5e823c924a7db821e35383f8d5e5b93bfbcd731210e207d"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-app-512.png",
+      "bytes": 235317,
+      "sha256": "9a1c8ac7ada35c88c245a064ef2689caecb0fcc3463012d6e67ca01b1022b32a"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-app-64.png",
+      "bytes": 5454,
+      "sha256": "f8014c6a17e300df5763cf90dfb7dfdec1bf60ef13e248fd2f18df14ed78d859"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-1024.png",
+      "bytes": 36907,
+      "sha256": "5422535f862fce9b1839984b05689b25c54b5b0102e98f64b01ee3f81543daa7"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-128.png",
+      "bytes": 2638,
+      "sha256": "2efdf01bc3d2657f644f2e5db38ea43dd8ddddd1d332d1de6fb0cb90a8ee9ac0"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-16.png",
+      "bytes": 348,
+      "sha256": "09840b2efdbae9397ab5bb2aeae225f2bbe425d3dd184f97a17f8e4c01c95736"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-18.png",
+      "bytes": 405,
+      "sha256": "726a8034099dc3230bb4597c86f97771c089e99f8c45c029870574eee71f1104"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-20.png",
+      "bytes": 446,
+      "sha256": "e6592bce6fe5b733c434e99a1cb1e4d72ec56ef066100dc76bf682f14acd68e8"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-22.png",
+      "bytes": 483,
+      "sha256": "56f4551f13425d5a7bab3ab8eac535226e04c2009a7affffa6388cf4a241ed54"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-24.png",
+      "bytes": 510,
+      "sha256": "0a3e3f0f7c513d8dd4df085ad2e50b331c8c5b95310b807436b75ff6e6017d20"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-256.png",
+      "bytes": 5906,
+      "sha256": "24f5c1e5c6d9d5feee3cf11852c95f58c35592838a031dda6cb13029e467a43c"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-32.png",
+      "bytes": 637,
+      "sha256": "a9ce8536f3dd5eeab21a102676b8967b643cf2c62ce9e18416fcf0d21dd8035f"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-512.png",
+      "bytes": 14245,
+      "sha256": "9bc11637420b823910807ff5b058097066999c4729ab02fad9270705e8183690"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-64.png",
+      "bytes": 1275,
+      "sha256": "970687d1cafc210986751c4aeea7c1328f7122cd6dfcdbeca783318af060c632"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-1024.png",
+      "bytes": 28650,
+      "sha256": "576916f9e1739ac3e22009d2d087f32a3f56158e9e9a9224e2d079739c011e57"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-128.png",
+      "bytes": 2611,
+      "sha256": "fa132c14c6110b55781877d1642c933e321dd84d65bbe65ee4942e836840816a"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-16.png",
+      "bytes": 344,
+      "sha256": "0ca73582feaea228a496f8795da7d0402705988913c912bf0edba54aeec78faf"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-18.png",
+      "bytes": 394,
+      "sha256": "75c0bd0443f761a3a6a8adc4c20fc8cb4685bb66f8c5daefeb22a5063f51e841"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-20.png",
+      "bytes": 438,
+      "sha256": "ec8821db9c9289cf5c35ea9f9369b6ac4bca4cb209135c48bd413a6386c0af5d"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-22.png",
+      "bytes": 481,
+      "sha256": "c5a9d6258c9f383a3550b5c7770b92d598bc7a2746f61996b153aa1aaca28d7f"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-24.png",
+      "bytes": 506,
+      "sha256": "e8ea5af607c1dfb4d3684ba7617ff68f5c3c91576217cf507268a2b66b06e1dd"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-256.png",
+      "bytes": 5610,
+      "sha256": "0dc2d6e07a0f12eb869f0b633ca9991c8e95d0a014d911f11c2e163d93c8387b"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-32.png",
+      "bytes": 631,
+      "sha256": "86911dece120b47a365bf79bf708725e0aeab03155b7db12620e58d7adf4d5d4"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-512.png",
+      "bytes": 12577,
+      "sha256": "565b8e113b8e70da0d20d2ea1b59de528e5d3b4c093c797d7a3eaace4aa5bd4c"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-filled-white-64.png",
+      "bytes": 1272,
+      "sha256": "06eab7c61f53cbf3ee6b307c5e1785a692f49ca8dfab14c01e8a873ef7b802ad"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-1024.png",
+      "bytes": 43047,
+      "sha256": "aa5f23c22453287d2f08dea50cb43730417448bc21c9248e70dfe963e08f4f67"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-128.png",
+      "bytes": 3867,
+      "sha256": "aa43ef4762ad12c512fc34478ff44ba12cea541db3243539d7c63543bab8189f"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-16.png",
+      "bytes": 420,
+      "sha256": "32fdfe21da77eae3a12e2eb8ed24f94e432db76be34b75ad0dde33aeeb71743b"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-18.png",
+      "bytes": 483,
+      "sha256": "7d343ebe0672aab83fe1d903faabeeda822eb99812a8fb443654e6e6cc1069e6"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-20.png",
+      "bytes": 555,
+      "sha256": "7b2c0a3f05218325d7092a72c3f314922cf5e2e814e1037f884d1b1a171b5a1e"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-22.png",
+      "bytes": 607,
+      "sha256": "0145300ed20a5cff4b133983a911009762834ede7bf362ae09dd91ed3b081562"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-24.png",
+      "bytes": 672,
+      "sha256": "835bfe638538bbe11031d9fc5a6db7d617dcd05601a7292e24a93ae325e1af18"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-256.png",
+      "bytes": 8464,
+      "sha256": "25010844a752db7eaa09f819fc48705666f2868a95e22aad721edb0f211db1c6"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-32.png",
+      "bytes": 902,
+      "sha256": "1a7777f3fa3a50b8e41fe63467241d43d9bc43ab0f29041eeeb5701940b9b618"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-512.png",
+      "bytes": 18677,
+      "sha256": "d2af71509efa3f42828360ef10892bb6281de9d5eaf45113b749f2ca0333ec98"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-64.png",
+      "bytes": 1793,
+      "sha256": "aae912439a1d3d5a3af7efe4dd7441df626d4f647f5987f2c28f27f4a7ccc3f5"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-1024.png",
+      "bytes": 42515,
+      "sha256": "c89bfa7611fb5ffb26151d1e6e1cc132dca23ab32601869a5351a50253c5f474"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-128.png",
+      "bytes": 4059,
+      "sha256": "e679f2f50aceb9f84c6c3931d32b3dc624afa685ef1897ea203b59d467c91190"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-16.png",
+      "bytes": 432,
+      "sha256": "b257fcf96e9208a4becad584b2b6ba803d0a19a8e2a4605aea8cc5eca37e3c6b"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-18.png",
+      "bytes": 492,
+      "sha256": "defb926ce1e37f2dde92a36e17dc075bfbb014700094680e3606180183c46129"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-20.png",
+      "bytes": 567,
+      "sha256": "1d1a2ce502caadcdbabba47ea279253fd41522d3863d7cf33b7bdebf1d8bf050"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-22.png",
+      "bytes": 617,
+      "sha256": "30403abcf1a8d7c7be489a5241dbda73c7f4b884da7e6394830bcde9e5f1b342"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-24.png",
+      "bytes": 691,
+      "sha256": "bf951e00bf317e1ea70fef073434a795d6992f942cc2648882ea33ec09a250d0"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-256.png",
+      "bytes": 8901,
+      "sha256": "7f195bc76580380ad4e633369f08191e7b982faec4cf826db4d74da4a50dc238"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-32.png",
+      "bytes": 928,
+      "sha256": "016f740920a432b6d2752018aa7dfb4eccb96fdbcd7490f6a7d1cc7436da9535"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-512.png",
+      "bytes": 19402,
+      "sha256": "20a3c66ee6026373deded6ad91ab5c0528a707a3684a1ddd5249b312b57e6440"
+    },
+    {
+      "path": "dist/brand/exports/png/myna-outline-white-64.png",
+      "bytes": 1875,
+      "sha256": "950da1135d8bb1fbb416c7c20f36a7282791c0385d14478264042d84b3d3cce3"
+    },
+    {
+      "path": "dist/brand/exports/preview.html",
+      "bytes": 3318,
+      "sha256": "af31e13efbe9e2b5e4b737a64bd1a2e44a109ed8a0356b81249b8b28fcc8d378"
+    },
+    {
+      "path": "site/app/opengraph-image.png",
+      "bytes": 173664,
+      "sha256": "5d4eb122943638d3cba860aebb9537f8483f8cd0addeed34e330e4aa8c195fd6"
+    },
+    {
+      "path": "site/app/twitter-image.png",
+      "bytes": 173664,
+      "sha256": "5d4eb122943638d3cba860aebb9537f8483f8cd0addeed34e330e4aa8c195fd6"
+    },
+    {
+      "path": "site/public/app-icon.png",
+      "bytes": 886489,
+      "sha256": "80e8c630e8414d811a5c65505cf26a16c62b2e4430130666139cab1188259680"
+    },
+    {
+      "path": "site/public/apple-touch-icon.png",
+      "bytes": 44179,
+      "sha256": "97432e873f1031cee7a32041ac943ea8ee114cd01d2363e30c89f36dd3c1a774"
+    },
+    {
+      "path": "site/public/brand/app-192.png",
+      "bytes": 50316,
+      "sha256": "57982c96e5bbfc5c10707e5a7cd0a849770116d2d6788dd84903e9e67fa5bb0b"
+    },
+    {
+      "path": "site/public/brand/app-512.png",
+      "bytes": 343878,
+      "sha256": "0f32d4d5154dc987c6acbec3c2dbc4172016393b006464e4f66999738092b7dd"
+    },
+    {
+      "path": "site/public/brand/favicon-16.png",
+      "bytes": 789,
+      "sha256": "f64fdd06e0691b9e913765c67c0b1b371498ebe805ee8d255f68967bbc5ca39c"
+    },
+    {
+      "path": "site/public/brand/favicon-32.png",
+      "bytes": 2125,
+      "sha256": "1cd43e8b58c6d032c144936be00ecc52c87c11d7578120c7884edd1215308418"
+    },
+    {
+      "path": "site/public/brand/favicon-48.png",
+      "bytes": 3991,
+      "sha256": "32f0f04a05b0635ceeb7310c23e93676fc37b30ab068b658a74f9fa069856e41"
+    },
+    {
+      "path": "site/public/brand/favicon-64.png",
+      "bytes": 6093,
+      "sha256": "90b048b8d5c0111310a81d11054765b426b19b5b175198fad9dc58498b9a7d52"
+    },
+    {
+      "path": "site/public/brand/myna-bordered.png",
+      "bytes": 179485,
+      "sha256": "19f8311cc6cd377de517553514a72be2f7f127b4567a0525ada169e757f8d8e3"
+    },
+    {
+      "path": "site/public/brand/myna-filled-white.svg",
+      "bytes": 4559,
+      "sha256": "8591bc3b07c6274aa98c454f9d12c67309c92e511de9c8495208c2a64c0eef4c"
+    },
+    {
+      "path": "site/public/brand/myna-filled.svg",
+      "bytes": 4559,
+      "sha256": "935d268a88bcba8ba82a6169e8441c39237721ff8dd6ed05c80e571b05e18c98"
+    },
+    {
+      "path": "site/public/brand/myna-outline-small.svg",
+      "bytes": 7960,
+      "sha256": "a1f11f8ba97b73bfc7b36b9c814d2461cee94e65884be7c5dbe9fa3b37caa808"
+    },
+    {
+      "path": "site/public/brand/myna-outline-white.svg",
+      "bytes": 7914,
+      "sha256": "236b47c8684ae7bc78ec55bb5800d8d1fcf3e96698972d9fa56a656deaa2eabb"
+    },
+    {
+      "path": "site/public/brand/myna-outline.svg",
+      "bytes": 7914,
+      "sha256": "9c59b4d81f2e5759b1d2be32cc87c347e8a88f122423f6aa1463dfeda798b87f"
+    },
+    {
+      "path": "site/public/brand/safari-pinned-tab.svg",
+      "bytes": 4559,
+      "sha256": "935d268a88bcba8ba82a6169e8441c39237721ff8dd6ed05c80e571b05e18c98"
+    },
+    {
+      "path": "site/public/dmg-window.png",
+      "bytes": 1065280,
+      "sha256": "64d747ec283096eb5d1aef79b37c6e70f2ff7ecdeb6e6cdab19f1a454b2fd8a2"
+    },
+    {
+      "path": "site/public/favicon.ico",
+      "bytes": 15086,
+      "sha256": "b9386ba6e605d7b52919c0238d333808eec2923e34310604941878c74c48f90e"
+    },
+    {
+      "path": "site/public/favicon.svg",
+      "bytes": 70633,
+      "sha256": "5290aadfcbdedc8b2ce92ddc8851ddcffb456b1d4f1111a0ee5bca1e7019faae"
+    }
+  ]
+}

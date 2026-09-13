@@ -2,18 +2,18 @@
 type Props = { className?: string; size?: number };
 
 /**
- * Myna's mark — the app icon's rounded square (public/favicon.svg, cropped
- * from dist/brand/app-icon.svg). Used in the nav and footer.
+ * The selected full-bird clay icon. Monochrome UI glyphs live in mac/Glyphs
+ * and share the native app's exports.
  */
 export function MynaMark({ className, size = 28 }: Props) {
   return (
     <img
-      src="/favicon.svg"
+      src="/app-icon.png"
       width={size}
       height={size}
       alt=""
       aria-hidden="true"
-      className={`shrink-0 rounded-[22%] shadow-[0_1px_2px_rgba(26,23,20,0.18)] ${className ?? ""}`}
+      className={`shrink-0 ${className ?? ""}`}
       style={{ width: size, height: size }}
     />
   );

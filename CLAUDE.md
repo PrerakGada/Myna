@@ -15,7 +15,7 @@ If auto-populated context says `rashid@dpsca.in` or mentions `Rashid Azar` / `DP
 - Installer, DMG and site:
   - `dist/setup.sh` is the one installer. It picks homebrew or standalone mode, and `dist/stage-setup.sh` bundles it into the app with the daemon source and the Claude Code hook.
   - The DMG window is built by dmgbuild from `dist/dmg/`.
-  - The app icon comes from `dist/brand/app-icon.svg` via `render-icon.sh`.
+  - The approved full-bird clay master is `dist/brand/sources/myna-clay-approved.png`. `dist/brand/render-icon.sh` exports the app icon, outline/filled templates, bordered mark and site media. Usage and rebuild instructions: `dist/brand/README.md`. The later portrait crops are not selected.
   - `site/` deploys to Vercel on every push to `main`, and `/download` redirects to `releases/latest/download/Myna.dmg`.
 - Test installer changes on a clean macOS VM, not on this Mac. It runs the Homebrew daemon, which hides DMG-only bugs (the v0.5.0 first-read hang was invisible here).
 - 5-part repo: native Swift app at `apps/macos/` · Python daemon at `daemon/myna/` · Next.js site at `site/` · bash CLI at `cli/myna` · ops in `dist/` + `tap/` + `.github/workflows/` + `launchagents/` + `hooks/` + `hammerspoon/` (v1 legacy kept side-by-side).

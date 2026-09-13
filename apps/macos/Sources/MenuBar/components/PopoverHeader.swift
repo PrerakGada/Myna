@@ -13,9 +13,10 @@ public struct PopoverHeader: View {
 
     public var body: some View {
         HStack(spacing: 8) {
-            BirdIcon.image
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(PopoverDesign.bodyColor)
+            BirdIcon.artwork
+                .resizable()
+                .scaledToFit()
+                .frame(width: 28, height: 28)
             Text("Myna")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(PopoverDesign.bodyColor)

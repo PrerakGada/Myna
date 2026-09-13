@@ -507,6 +507,7 @@ export default async function Page() {
             </span>
           </div>
           <nav className="flex flex-wrap items-center justify-center gap-5 font-mono text-[0.78rem] text-ink-muted" aria-label="Footer">
+            <a href="/brand/Myna-Brand-Assets.zip" download className="transition-colors hover:text-ink">brand assets</a>
             <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-ink">github</a>
             <a href={`${GITHUB_URL}/releases`} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-ink">releases</a>
             <a href={`${GITHUB_URL}/issues`} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-ink">issues</a>

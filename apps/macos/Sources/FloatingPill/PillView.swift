@@ -373,8 +373,10 @@ public struct PillView: View {
     // MARK: - bird badge
 
     private func birdBadge(diameter: CGFloat) -> some View {
-        Image(systemName: "bird.fill")
-            .font(.system(size: diameter * 0.58, weight: .medium))
+        BirdIcon.filledImage
+            .resizable()
+            .scaledToFit()
+            .frame(width: diameter * 0.58, height: diameter * 0.58)
             .foregroundStyle(.white)
             .frame(width: diameter, height: diameter)
             .background(

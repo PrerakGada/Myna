@@ -49,7 +49,10 @@ export const metadata: Metadata = {
   authors: [{ name: "Prerak Gada", url: "https://github.com/PrerakGada" }],
   creator: "Prerak Gada",
   icons: {
-    icon: "/favicon.svg",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
     apple: "/apple-touch-icon.png",
   },
 };
@@ -67,6 +70,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${fraunces.variable} ${newsreader.variable} ${jetbrains.variable}`}
     >
+      <head>
+        <link rel="mask-icon" href="/brand/safari-pinned-tab.svg" color="#55134f" />
+      </head>
       <body className="bg-paper text-ink antialiased">
         <div className="grain-overlay" aria-hidden="true" />
         {children}

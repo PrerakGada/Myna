@@ -32,9 +32,17 @@ function Svg({ size = 16, className, children, fill = "none" }: GlyphProps & { c
 
 export function BirdGlyph({ size = 16, className }: GlyphProps) {
   return (
-    <Svg size={size} className={className} fill="currentColor">
-      <path d="M2.8 13.2c0-4.4 3.5-7.6 7.7-7.6 2.4 0 4.3 1 5.4 2.5l5.3-.9-3.4 2.9c.3.8.4 1.6.3 2.5-.4 3.9-3.6 6.6-7.5 6.6H4.8l2.5-2.5c-2.8-.6-4.5-1.8-4.5-3.5Z" />
-    </Svg>
+    <span
+      aria-hidden="true"
+      className={`inline-block shrink-0 ${className ?? ""}`}
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: "currentColor",
+        mask: 'url("/brand/myna-filled.svg") center / contain no-repeat',
+        WebkitMask: 'url("/brand/myna-filled.svg") center / contain no-repeat',
+      }}
+    />
   );
 }
 

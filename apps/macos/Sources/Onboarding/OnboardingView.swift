@@ -130,13 +130,11 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var birdGlyph: some View {
-        // Plain SF Symbol — no animation. v0.2.1 hotfix lesson:
-        // SwiftUI animation on the menu-bar bird burned 99% CPU.
-        // Here we just show the glyph; the speaking-dot row below
-        // is the "alive" signal.
-        Image(systemName: "bird.fill")
-            .font(.system(size: 28, weight: .medium))
-            .foregroundStyle(PopoverDesign.accent)
+        // Static artwork; the separate speaking indicator carries live state.
+        BirdIcon.artwork
+            .resizable()
+            .scaledToFit()
+            .frame(width: 64, height: 64)
             .accessibilityHidden(true)
     }
 

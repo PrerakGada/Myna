@@ -43,7 +43,7 @@ targets:
       - path: Resources/setup
         type: folder
         buildPhase: resources
-      # AppIcon — rendered from dist/brand/app-icon.svg by dist/brand/render-icon.sh
+      # Approved clay icon and template glyphs, exported by dist/brand/render-icon.sh
       - path: Resources/Assets.xcassets
     info:
       path: Resources/Info.plist

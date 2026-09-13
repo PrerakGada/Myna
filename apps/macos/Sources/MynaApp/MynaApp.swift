@@ -48,7 +48,7 @@ struct MynaApp: App {
 }
 
 /// Bird label for the MenuBarExtra. Renders the state-driven SwiftUI
-/// bird while bootstrap is complete; falls back to the static SF Symbol
+/// bird while bootstrap is complete; falls back to the static brand glyph
 /// during launch / test-host.
 ///
 /// Also the place we attach the floating-pill controller. The label

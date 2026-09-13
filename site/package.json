@@ -3,14 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "brand:build": "node scripts/build-brand.mjs",
+    "brand:check": "node scripts/check-brand.mjs",
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/check-brand.mjs --site && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "next": "^16.2.6",
+    "next": "^16.3.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -19,7 +21,10 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
+    "png-to-ico": "^3.0.2",
     "postcss": "^8.4.49",
+    "potrace": "^2.1.8",
+    "sharp": "^0.35.4",
     "tailwindcss": "^3.4.16",
     "typescript": "^5.7.2"
   }

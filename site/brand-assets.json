@@ -1,0 +1,110 @@
+{
+  "approvedSourceSha256": "03aeb6548bf3670758a5bee9f5a443b4e261aeb34008669b57060854cbb47d33",
+  "files": [
+    {
+      "path": "app/opengraph-image.png",
+      "bytes": 173664,
+      "sha256": "5d4eb122943638d3cba860aebb9537f8483f8cd0addeed34e330e4aa8c195fd6"
+    },
+    {
+      "path": "app/twitter-image.png",
+      "bytes": 173664,
+      "sha256": "5d4eb122943638d3cba860aebb9537f8483f8cd0addeed34e330e4aa8c195fd6"
+    },
+    {
+      "path": "public/app-icon.png",
+      "bytes": 886489,
+      "sha256": "80e8c630e8414d811a5c65505cf26a16c62b2e4430130666139cab1188259680"
+    },
+    {
+      "path": "public/apple-touch-icon.png",
+      "bytes": 44179,
+      "sha256": "97432e873f1031cee7a32041ac943ea8ee114cd01d2363e30c89f36dd3c1a774"
+    },
+    {
+      "path": "public/brand/app-192.png",
+      "bytes": 50316,
+      "sha256": "57982c96e5bbfc5c10707e5a7cd0a849770116d2d6788dd84903e9e67fa5bb0b"
+    },
+    {
+      "path": "public/brand/app-512.png",
+      "bytes": 343878,
+      "sha256": "0f32d4d5154dc987c6acbec3c2dbc4172016393b006464e4f66999738092b7dd"
+    },
+    {
+      "path": "public/brand/favicon-16.png",
+      "bytes": 789,
+      "sha256": "f64fdd06e0691b9e913765c67c0b1b371498ebe805ee8d255f68967bbc5ca39c"
+    },
+    {
+      "path": "public/brand/favicon-32.png",
+      "bytes": 2125,
+      "sha256": "1cd43e8b58c6d032c144936be00ecc52c87c11d7578120c7884edd1215308418"
+    },
+    {
+      "path": "public/brand/favicon-48.png",
+      "bytes": 3991,
+      "sha256": "32f0f04a05b0635ceeb7310c23e93676fc37b30ab068b658a74f9fa069856e41"
+    },
+    {
+      "path": "public/brand/favicon-64.png",
+      "bytes": 6093,
+      "sha256": "90b048b8d5c0111310a81d11054765b426b19b5b175198fad9dc58498b9a7d52"
+    },
+    {
+      "path": "public/brand/myna-bordered.png",
+      "bytes": 179485,
+      "sha256": "19f8311cc6cd377de517553514a72be2f7f127b4567a0525ada169e757f8d8e3"
+    },
+    {
+      "path": "public/brand/myna-filled-white.svg",
+      "bytes": 4559,
+      "sha256": "8591bc3b07c6274aa98c454f9d12c67309c92e511de9c8495208c2a64c0eef4c"
+    },
+    {
+      "path": "public/brand/myna-filled.svg",
+      "bytes": 4559,
+      "sha256": "935d268a88bcba8ba82a6169e8441c39237721ff8dd6ed05c80e571b05e18c98"
+    },
+    {
+      "path": "public/brand/myna-outline-small.svg",
+      "bytes": 7960,
+      "sha256": "a1f11f8ba97b73bfc7b36b9c814d2461cee94e65884be7c5dbe9fa3b37caa808"
+    },
+    {
+      "path": "public/brand/myna-outline-white.svg",
+      "bytes": 7914,
+      "sha256": "236b47c8684ae7bc78ec55bb5800d8d1fcf3e96698972d9fa56a656deaa2eabb"
+    },
+    {
+      "path": "public/brand/myna-outline.svg",
+      "bytes": 7914,
+      "sha256": "9c59b4d81f2e5759b1d2be32cc87c347e8a88f122423f6aa1463dfeda798b87f"
+    },
+    {
+      "path": "public/brand/safari-pinned-tab.svg",
+      "bytes": 4559,
+      "sha256": "935d268a88bcba8ba82a6169e8441c39237721ff8dd6ed05c80e571b05e18c98"
+    },
+    {
+      "path": "public/dmg-window.png",
+      "bytes": 1065280,
+      "sha256": "64d747ec283096eb5d1aef79b37c6e70f2ff7ecdeb6e6cdab19f1a454b2fd8a2"
+    },
+    {
+      "path": "public/favicon.ico",
+      "bytes": 15086,
+      "sha256": "b9386ba6e605d7b52919c0238d333808eec2923e34310604941878c74c48f90e"
+    },
+    {
+      "path": "public/favicon.svg",
+      "bytes": 70633,
+      "sha256": "5290aadfcbdedc8b2ce92ddc8851ddcffb456b1d4f1111a0ee5bca1e7019faae"
+    },
+    {
+      "path": "public/brand/Myna-Brand-Assets.zip",
+      "bytes": 19976562,
+      "sha256": "d19d93121a135121f25873556b065e106b27fdde32b7e017776e4e6d72e845c2"
+    }
+  ]
+}

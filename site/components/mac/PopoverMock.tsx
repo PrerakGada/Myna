@@ -1,5 +1,4 @@
 import {
-  BirdGlyph,
   ChevronGlyph,
   DocGlyph,
   DownloadGlyph,
@@ -14,6 +13,7 @@ import {
   StopGlyph,
   SYSTEM_FONT,
 } from "./Glyphs";
+import { MynaMark } from "../MynaMark";
 
 /**
  * A recreation of the menu-bar popover (apps/macos/Sources/MenuBar/
@@ -30,9 +30,9 @@ export function PopoverMock({ className }: { className?: string }) {
       <div className="flex flex-col gap-3">
         {/* header */}
         <div className="flex items-center gap-2">
-          <BirdGlyph size={15} />
+          <MynaMark size={28} />
           <span className="text-[14px] font-semibold">Myna</span>
-          <span className="text-[11px] text-white/55">v0.5.0</span>
+          <span className="text-[11px] text-white/55">v0.5.1</span>
           <span className="flex-1" />
           <span className="h-1.5 w-1.5 rounded-full bg-[#4CD964]" />
           <span className="text-[11px] text-white/55">speaking</span>

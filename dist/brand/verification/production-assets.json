@@ -1,0 +1,116 @@
+{
+  "domain": "https://myna.prerakgada.in",
+  "homeStatus": 200,
+  "brandDownloadLinked": true,
+  "download": {
+    "status": 307,
+    "location": "https://github.com/PrerakGada/Myna/releases/latest/download/Myna.dmg"
+  },
+  "assets": [
+    {
+      "asset": "app/opengraph-image.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "app/twitter-image.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/app-icon.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/apple-touch-icon.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/app-192.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/app-512.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/favicon-16.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/favicon-32.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/favicon-48.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/favicon-64.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/myna-bordered.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/myna-filled-white.svg",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/myna-filled.svg",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/myna-outline-small.svg",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/myna-outline-white.svg",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/myna-outline.svg",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/safari-pinned-tab.svg",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/dmg-window.png",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/favicon.ico",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/favicon.svg",
+      "status": 200,
+      "matchesApproved": true
+    },
+    {
+      "asset": "public/brand/Myna-Brand-Assets.zip",
+      "status": 200,
+      "matchesApproved": true
+    }
+  ]
+}

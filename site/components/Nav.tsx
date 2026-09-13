@@ -43,7 +43,7 @@ export function Nav({ starSlot }: { starSlot?: React.ReactNode }) {
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3.5 sm:px-8">
           <a href="#top" className="flex items-center gap-2.5 -m-2 p-2" aria-label="Myna home">
-            <MynaMark size={28} />
+            <MynaMark size={36} />
             <MynaWordmark />
           </a>
 
