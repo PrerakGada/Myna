@@ -11,7 +11,7 @@ If auto-populated context says `rashid@dpsca.in` or mentions `Rashid Azar` / `DP
 ## Repo basics
 
 - Branch policy from `~/.claude/CLAUDE.md` applies: commit or push only when Prerak asks; if on default branch, branch first.
-- v0.5.0 is current (shipped 11 Sep 2026): one notarized DMG whose first launch installs the voice stack itself, no Homebrew needed. Don't touch the release pipeline without explicit ask. The v0.1.0 ship log is preserved at git commit [`f5860c8`](https://github.com/PrerakGada/myna/blob/f5860c8/HANDOFF.md) (the `HANDOFF.md` file is no longer in the working tree).
+- v0.5.2 is current (shipped 2 Oct 2026): adds **Report a Problem… / Send Feedback…** (popover row + Settings → Advanced → one window, `Sources/Feedback/`, posting to `api.prerakgada.in/v1/p/myna/feedback` per `work/company/infra/product-feedback.md`) on top of v0.5.0's one notarized DMG whose first launch installs the voice stack itself, no Homebrew needed. Don't touch the release pipeline without explicit ask. The v0.1.0 ship log is preserved at git commit [`f5860c8`](https://github.com/PrerakGada/myna/blob/f5860c8/HANDOFF.md) (the `HANDOFF.md` file is no longer in the working tree).
 - Installer, DMG and site:
   - `dist/setup.sh` is the one installer. It picks homebrew or standalone mode, and `dist/stage-setup.sh` bundles it into the app with the daemon source and the Claude Code hook.
   - The DMG window is built by dmgbuild from `dist/dmg/`.
