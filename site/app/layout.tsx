@@ -72,8 +72,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <head>
         <link rel="mask-icon" href="/brand/safari-pinned-tab.svg" color="#55134f" />
-        {/* Cookieless page-view + download counter shared by every product site. */}
-        <script defer src="https://api.prerakgada.in/v1/p/tracker.js" data-product="myna" />
+        {/* Cookieless page-view + download counter shared by every product site, with its optional download form. */}
+        <script
+          defer
+          src="https://api.prerakgada.in/v1/p/tracker.js?v=2"
+          data-product="myna"
+          data-form=""
+          data-name="Myna"
+          data-accent="#1A1714"
+        />
       </head>
       <body className="bg-paper text-ink antialiased">
         <div className="grain-overlay" aria-hidden="true" />
