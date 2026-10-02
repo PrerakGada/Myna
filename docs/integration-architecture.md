@@ -89,8 +89,10 @@ live) and the four part-specific architecture docs
 
 All runtime traffic is `127.0.0.1`-local. There is no telemetry, no
 cloud sync, no third-party SDK in the user-facing surface. The only
-internet traffic is (a) Sparkle's daily check of the appcast URL, and
-(b) the user clicking a Download button on the marketing site.
+internet traffic is (a) Sparkle's daily check of the appcast URL,
+(b) the user clicking a Download button on the marketing site, and
+(c) feedback the user sends from Report a Problem… / Send Feedback…
+(one HTTPS POST to `api.prerakgada.in`, only when they press Send).
 
 ## 2. Integration points (canonical inventory)
 

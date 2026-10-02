@@ -206,7 +206,8 @@ failure-mode chart, see
 - **Recordable hotkeys** — every action is rebindable from the
   Settings → Hotkeys tab; backed by `sindresorhus/KeyboardShortcuts`.
 - **Sparkle 2 auto-updates** — EdDSA-signed, daily check.
-- **Privacy** — no API calls, no telemetry, no third-party SDK.
+- **Privacy** — no API calls except feedback the user chooses to send,
+  no telemetry, no third-party SDK.
   Loopback-only. Signed + notarized so Gatekeeper trusts the binary.
 - **Roadmap commitment** — open Windows decision rule (build at 100
   reactions on issue #1; close at <30 after 90 days).

@@ -2,6 +2,8 @@
 
 Myna is a local-only macOS application. It does not send your text or audio to any third-party server. Your selections are transmitted only over `127.0.0.1` to a local daemon and a local Kokoro-82M TTS engine, both of which run on your machine.
 
+The one thing you type that does leave your Mac is feedback. When you press **Send** in **Report a Problem…** or **Send Feedback…**, the message (and your name and email, if you added them) goes over HTTPS to the developer's own server, `api.prerakgada.in`, with the app version, build, macOS version and Mac model. Nothing is sent before you press Send, nothing else is attached, and the form shows that list.
+
 ## Threat model
 
 Myna requires two macOS permissions that are sensitive:

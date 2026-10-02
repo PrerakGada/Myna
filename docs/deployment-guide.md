@@ -222,6 +222,8 @@ See `architecture-ops.md §8` for what `install.sh` actually does. This path ins
 
 Myna is a local-only app. No analytics SDKs, no crash reporters that phone home, no usage pings. The only outbound network connections any installed copy makes are:
 
+- First-launch setup downloads: uv and Python (GitHub), the engine packages (PyPI) and the Kokoro model (Hugging Face).
+- Feedback, and only when the user presses **Send** in **Report a Problem…** / **Send Feedback…**: one HTTPS `POST https://api.prerakgada.in/v1/p/myna/feedback` carrying the typed message, optional name and email, app version, build, platform, macOS version and Mac model (`hw.model`). No retries, no queue, no background sending. `AppDelegate.bootstrap()` installs the real `FeedbackClient`; tests and every pre-bootstrap path keep `OfflineFeedbackSender`, which never touches the network. Spec: `work/company/infra/product-feedback.md`.
 - The Sparkle update check (HTTPS GET of `appcast.xml` from GitHub Releases) — Apple's own SUUpdater code.
 - Daemon HTTP calls between `Myna.app`, `myna-daemon` (`:8766`), and the local Kokoro/mlx-audio engine (`:8765`) — all on `127.0.0.1`.
 - `trafilatura`'s URL fetch when the user hits the "Read Chrome article" hotkey (HTTPS GET of the URL the user just opened in Chrome).

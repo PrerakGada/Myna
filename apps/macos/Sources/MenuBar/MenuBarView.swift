@@ -76,6 +76,7 @@ public struct MenuBarView: View {
             if showFloatingPill {
                 resetPillPositionRow
             }
+            FeedbackRow()
             Divider()
                 .overlay(Color.white.opacity(0.08))
                 .padding(.horizontal, -PopoverDesign.popoverHorizontalPadding)

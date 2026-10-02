@@ -102,6 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
         self.hotkeys = HotkeyManager()
         self.updates = UpdateController()
+        // The real feedback sender exists only in an interactive launch; it
+        // touches the network only when the user presses Send.
+        FeedbackLauncher.shared.sender = FeedbackClient()
         self.menuController = MenuBarController(
             client: client,
             player: player,

@@ -23,7 +23,7 @@ const ITEMS: Item[] = [
   },
   {
     q: "Does what I read leave my Mac?",
-    a: <>The voice is generated on your Mac by the Kokoro model, so the text you read is never sent to a speech service, and summaries run through Ollama on your own machine. Myna does touch the network in three specific cases: downloading its voice during setup, checking GitHub for app updates, and, when you use <em>Read article</em>, fetching that page from the web the way your browser did. The app has no analytics and no telemetry. This website counts page views and downloads with its own cookieless counter: no cookies, no IP addresses stored, nothing shared.</>,
+    a: <>The voice is generated on your Mac by the Kokoro model, so the text you read is never sent to a speech service, and summaries run through Ollama on your own machine. Myna does touch the network in four specific cases: downloading its voice during setup, checking GitHub for app updates, fetching the page when you use <em>Read article</em>, the way your browser did, and, only when you press Send in <em>Report a Problem</em> or <em>Send Feedback</em>, sending what you typed there to Prerak with the app and macOS versions and your Mac model. The app has no analytics and no telemetry. This website counts page views and downloads with its own cookieless counter: no cookies, no IP addresses stored, nothing shared.</>,
   },
   {
     q: "Which voices can I use?",

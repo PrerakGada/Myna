@@ -104,11 +104,17 @@ myna doctor                            # are the daemon and engine up?
 
 The voice is generated on your Mac, so the text you read is never sent to a
 speech service, and there is no analytics or telemetry. Myna uses the network
-in three specific cases:
+in four specific cases:
 
 - **Setup** downloads uv and Python (GitHub), the engine packages (PyPI) and the Kokoro model (Hugging Face).
 - **Updates** are checked against GitHub Releases by Sparkle.
 - **Read article** has the daemon fetch that page from the web, as your browser did.
+- **Report a Problem… / Send Feedback…** sends what you typed in that form (your
+  name and email only if you added them) to Prerak's server, `api.prerakgada.in`,
+  with the app version, build, macOS version and Mac model. Nothing goes until
+  you press Send, and the form lists exactly what goes with your message. Like
+  any web request it arrives from your IP address; the server stores no IP, only
+  the rough location (country, region, city) its network edge reports.
 
 The daemon and the engine listen on `127.0.0.1` only. Summaries go to Ollama on
 your own Mac.

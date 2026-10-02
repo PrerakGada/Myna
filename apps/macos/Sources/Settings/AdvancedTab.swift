@@ -1,4 +1,4 @@
-// AdvancedTab.swift — log level picker, "Open Logs Folder" button,
+// AdvancedTab.swift — log level picker, "Open Logs Folder" button, Feedback,
 // "Clear Cache" button, "Reset All Settings".
 import AppKit
 import SwiftUI
@@ -38,6 +38,12 @@ public struct AdvancedTab: View {
                 }
                 Button("Open Logs folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([LogFileMirror.shared.currentLogURL])
+                }
+            }
+            Section("Feedback") {
+                HStack {
+                    Button("Report a Problem…") { FeedbackLauncher.shared.present(kind: .problem) }
+                    Button("Send Feedback…") { FeedbackLauncher.shared.present(kind: .idea) }
                 }
             }
             Section("Cache") {
