@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { MynaMark, MynaWordmark } from "./MynaMark";
 import { GitHubStarButton } from "./GitHubStar";
+import { DOWNLOAD_URL } from "@/lib/download";
 
 const SECTIONS = [
   { id: "features", label: "Features" },
@@ -62,7 +63,7 @@ export function Nav({ starSlot }: { starSlot?: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <div className="hidden sm:block">{starSlot}</div>
             <a
-              href="/download"
+              href={DOWNLOAD_URL}
               className="hidden md:inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 font-display text-[0.95rem] text-paper hover:bg-ink-soft transition-colors"
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
