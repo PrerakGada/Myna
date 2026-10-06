@@ -122,7 +122,7 @@ public struct VoiceSpeedRow: View {
     }
 
     /// Groups shown in the top-level menu rather than a submenu.
-    static func inlineGroups(_ groups: [VoiceGroup], total: Int) -> Set<String> {
+    nonisolated static func inlineGroups(_ groups: [VoiceGroup], total: Int) -> Set<String> {
         if total <= 16 { return Set(groups.map(\.name)) }
         var names = Set(groups.filter(\.isUserMade).map(\.name))
         if let firstBuiltIn = groups.first(where: { !$0.isUserMade }) {
