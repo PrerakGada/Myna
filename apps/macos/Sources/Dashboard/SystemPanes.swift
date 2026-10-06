@@ -196,6 +196,12 @@ struct AccountPane: View {
                     title: "Update checks",
                     detail: "Sparkle asks GitHub for the appcast. No identifiers, no usage data.",
                     tint: DashboardDesign.info)
+                NetworkRow(
+                    systemImage: "exclamationmark.bubble",
+                    title: "Feedback",
+                    detail: "Only when you press Send in Report a Problem or Send Feedback: "
+                        + "your message, plus the Myna and macOS versions and Mac model the form shows.",
+                    tint: DashboardDesign.info)
             }
         }
     }
@@ -221,6 +227,13 @@ struct AccountPane: View {
                         if let url = URL(string: "https://myna.prerakgada.in") {
                             NSWorkspace.shared.open(url)
                         }
+                    }
+                }
+                DashDivider()
+                DashRow("Feedback", help: "Goes straight to Prerak, who makes Myna.") {
+                    HStack(spacing: 8) {
+                        Button("Report a Problem…") { FeedbackLauncher.shared.present(kind: .problem) }
+                        Button("Send Feedback…") { FeedbackLauncher.shared.present(kind: .idea) }
                     }
                 }
                 DashDivider()

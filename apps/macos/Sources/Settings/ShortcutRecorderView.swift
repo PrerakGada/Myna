@@ -87,7 +87,11 @@ struct ShortcutRecorderView: NSViewRepresentable {
             }
         }
 
+        // Called from dismantleNSView: SwiftUI can tear the recorder down long
+        // before the coordinator deinits, and a live observer would keep
+        // rewriting a recorder that is gone.
         func invalidate() {
+            // swiftlint:disable:next notification_center_detachment
             NotificationCenter.default.removeObserver(self)
         }
 

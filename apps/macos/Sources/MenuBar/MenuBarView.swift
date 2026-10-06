@@ -98,6 +98,9 @@ public struct MenuBarView: View {
                 .frame(width: PopoverDesign.popoverWidth, alignment: .leading)
             }
             FeedbackRow()
+                .padding(.horizontal, PopoverDesign.popoverHorizontalPadding - 8)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Divider()
                 .overlay(Color.white.opacity(0.08))
             FooterBar(

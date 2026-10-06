@@ -222,6 +222,35 @@ assert_ok "service stopped by the user: upgraded but not started" \
 brew_update_case fail 1
 assert_ok "brew upgrade fails: exits non-zero with the manual command" \
   bash -c "[ $rc != 0 ] && grep -q 'brew upgrade prerakgada/tap/myna-daemon' '$STUB_LOG.out'"
+# An engine installed by an older Myna (mlx-audio below the 0.5.7 pin) must be
+# upgraded in place, and the service restarted even when the formula didn't
+# move, since the engine runs as the daemon's child. Fake HOME holding a stub
+# engine python (stale until uv "installs") and a stub pinned uv.
+ENG_HOME="$BREW_T/home"
+mkdir -p "$ENG_HOME/.venvs/mlx-audio/bin" "$ENG_HOME/Library/Application Support/Myna/runtime/uv-0.12.9"
+cat > "$ENG_HOME/.venvs/mlx-audio/bin/python" <<'SH'
+#!/bin/bash
+[ "$1" = "-c" ] && [ "$2" = "import sys" ] && exit 0
+[ "$1" = "-" ] && cat >/dev/null
+[ -f "$HOME/engine-upgraded" ]
+SH
+cat > "$ENG_HOME/Library/Application Support/Myna/runtime/uv-0.12.9/uv" <<'SH'
+#!/bin/bash
+echo "uv $*" >> "$STUB_LOG"
+touch "$HOME/engine-upgraded"
+SH
+chmod +x "$ENG_HOME/.venvs/mlx-audio/bin/python" "$ENG_HOME/Library/Application Support/Myna/runtime/uv-0.12.9/uv"
+HOME="$ENG_HOME" brew_update_case none 1
+assert_ok "stale engine: upgraded to the pinned stack, service restarted" \
+  bash -c "[ $rc = 0 ] && grep -q 'uv pip install.*mlx-audio\[server\]>=0.5.7' '$STUB_LOG' \
+    && grep -q 'brew services restart myna-daemon' '$STUB_LOG'"
+rm -f "$ENG_HOME/engine-upgraded"
+printf '#!/bin/bash\necho "uv $*" >> "$STUB_LOG"; exit 1\n' \
+  > "$ENG_HOME/Library/Application Support/Myna/runtime/uv-0.12.9/uv"
+HOME="$ENG_HOME" brew_update_case none 1
+assert_ok "engine upgrade fails: warns, daemon update still exits 0, no restart" \
+  bash -c "[ $rc = 0 ] && grep -q 'couldn.t upgrade the voice engine' '$STUB_LOG.out' \
+    && ! grep -q 'services restart' '$STUB_LOG'"
 kill "$health_pid" 2>/dev/null || true
 wait "$health_pid" 2>/dev/null || true
 rm -rf "$BREW_T"

@@ -154,6 +154,11 @@ need = ["mlx_audio", "misaki", "num2words", "spacy", "en_core_web_sm",
         "sentencepiece"]
 if not all(u.find_spec(m) is not None for m in need):
     sys.exit(1)
+# The engine catalog is tuned against mlx-audio 0.5.7 (see ENGINE_PKGS); an
+# older install from before the pin counts as stale so it gets upgraded.
+from importlib.metadata import version
+if tuple(int(p) for p in version("mlx-audio").split(".")[:3] if p.isdigit()) < (0, 5, 7):
+    sys.exit(1)
 # Functional gate, not just presence: the exact import that explodes with an
 # incompatible misaki/phonemizer pair, so a broken install gets repaired.
 try:
@@ -253,6 +258,40 @@ PY
     "$UV" pip install --quiet --python "$ENGINE_VENV/bin/python" "$url"
   else
     "$ENGINE_VENV/bin/python" -m pip install --quiet "$url"
+  fi
+}
+
+# Install ENGINE_PKGS into the engine venv. Without --upgrade, pip still moves
+# any package whose installed version falls outside its pin (mlx-audio <0.5.7).
+install_engine_pkgs() {
+  local pip_up=""
+  if [ "${MYNA_FORCE_ENGINE:-0}" = "1" ]; then pip_up="--upgrade"; fi
+  if [ -n "$UV" ]; then
+    say "Installing the voice engine — about 600 MB the first time…"
+    # shellcheck disable=SC2086
+    "$UV" pip install --quiet --python "$ENGINE_VENV/bin/python" $pip_up "${ENGINE_PKGS[@]}"
+  else
+    say "Installing the voice engine with pip — this can take a few minutes…"
+    "$ENGINE_VENV/bin/python" -m pip install --quiet --upgrade pip
+    # shellcheck disable=SC2086
+    "$ENGINE_VENV/bin/python" -m pip install --quiet $pip_up "${ENGINE_PKGS[@]}"
+  fi
+}
+
+# --update-daemon only: an engine installed by an older Myna (before mlx-audio
+# was pinned to 0.5.7 and sentencepiece added) runs Kokoro but not the other
+# engines. Upgrade it in place. No venv at all is the app's full-setup case,
+# not this one. Failure is a warning: the old engine still speaks.
+ENGINE_UPGRADED=0
+refresh_stale_engine() {
+  [ -x "$ENGINE_VENV/bin/python" ] || return 0
+  engine_ready && return 0
+  say "Upgrading the voice engine for this version of Myna…"
+  ensure_uv || true
+  if install_engine_pkgs && ensure_spacy_model && engine_ready; then
+    ENGINE_UPGRADED=1
+  else
+    warn "couldn't upgrade the voice engine; Kokoro keeps working. Run Myna's setup again to retry."
   fi
 }
 
@@ -381,7 +420,7 @@ update_brew_daemon() {
   HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1 "$BREW" upgrade prerakgada/tap/myna-daemon \
     || die "brew couldn't upgrade myna-daemon. Run: brew upgrade prerakgada/tap/myna-daemon"
   after="$(readlink "$keg_link" || true)"
-  if [ "$before" = "$after" ]; then
+  if [ "$before" = "$after" ] && [ "$ENGINE_UPGRADED" != 1 ]; then
     skip "Homebrew has no newer myna-daemon yet"
     return 0
   fi
@@ -397,6 +436,9 @@ update_brew_daemon() {
 
 if [ "${1:-}" = "--update-daemon" ]; then
   begin service "Updating the background service"
+  # Before the daemon restarts: the engine is its child, so the restart below
+  # is what puts an upgraded engine into use.
+  refresh_stale_engine
   if [ "$MODE" = "homebrew" ]; then
     update_brew_daemon
     exit 0
@@ -450,20 +492,7 @@ if [ "${MYNA_FORCE_ENGINE:-0}" != "1" ] && engine_ready; then
   finish "Already installed"
 else
   make_venv "$ENGINE_VENV"
-  pip_up=""
-  if [ "${MYNA_FORCE_ENGINE:-0}" = "1" ]; then pip_up="--upgrade"; fi
-  if [ -n "$UV" ]; then
-    say "Installing the voice engine — about 600 MB the first time…"
-    # shellcheck disable=SC2086
-    "$UV" pip install --quiet --python "$ENGINE_VENV/bin/python" $pip_up "${ENGINE_PKGS[@]}" \
-      || die "couldn't install the voice engine. Check your internet connection and try again."
-  else
-    say "Installing the voice engine with pip — this can take a few minutes…"
-    "$ENGINE_VENV/bin/python" -m pip install --quiet --upgrade pip
-    # shellcheck disable=SC2086
-    "$ENGINE_VENV/bin/python" -m pip install --quiet $pip_up "${ENGINE_PKGS[@]}" \
-      || die "couldn't install the voice engine. Check your internet connection and try again."
-  fi
+  install_engine_pkgs || die "couldn't install the voice engine. Check your internet connection and try again."
   ensure_spacy_model \
     || die "couldn't download the English language model for the voice. Check your internet connection and try again."
   engine_ready || die "the voice engine installed but doesn't load. Try again, or report it at github.com/PrerakGada/Myna/issues."

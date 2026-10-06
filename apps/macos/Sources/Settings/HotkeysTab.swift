@@ -51,7 +51,8 @@ public struct HotkeysTab: View {
                 Text("Global shortcuts")
             } footer: {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Click a recorder and press the chord you want. Press Delete to clear an action, Escape to cancel. Pasting text is not allowed.")
+                    Text("Click a recorder and press the chord you want. Press Delete to clear an action, "
+                        + "Escape to cancel. Pasting text is not allowed.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     HStack {
@@ -59,7 +60,8 @@ public struct HotkeysTab: View {
                         Button("Reset to Defaults") {
                             KeyboardShortcuts.reset(KeyboardShortcuts.Name.allMynaShortcuts)
                         }
-                        .help("Restore every Myna shortcut to its original default (⌥⇧⌘S, ⌥⇧⌘A, …). Use this if a shortcut stops responding after a bad chord.")
+                        .help("Restore every Myna shortcut to its original default (⌥⇧⌘S, ⌥⇧⌘A, …). "
+                            + "Use this if a shortcut stops responding after a bad chord.")
                     }
                 }
             }

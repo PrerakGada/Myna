@@ -96,6 +96,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         log.info("Myna launched (bundle \(Bundle.main.bundleIdentifier ?? "?"))")
     }
 
+    /// v0.2: trackpad gestures, opt-in. The router is held strong
+    /// by the monitor (which holds it strong); we keep our own
+    /// reference so the AppDelegate test surface can introspect it.
+    private func bootstrapGestures() {
+        self.gestureRouter = GestureRouter(
+            target: dispatcher,
+            soundEnabled: { [weak settings] in settings?.gestureEarconEnabled ?? true }
+        )
+        self.gestures = GestureMonitor(router: gestureRouter)
+        // Observe the settings toggle so the monitor starts/stops in
+        // real time when the user flips the switch in Settings.
+        gestureSettingsObserver = settings.$trackpadGesturesEnabled
+            .sink { [weak self] enabled in
+                Task { @MainActor [weak self] in
+                    self?.applyGestureToggle(enabled)
+                }
+            }
+        applyGestureToggle(settings.trackpadGesturesEnabled)
+    }
+
     /// Construct all the long-lived singletons. Called only outside
     /// of XCTest contexts.
     private func bootstrap() {
@@ -143,23 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             settings: settings)
         self.handsFree?.start(observing: menuController)
         bootstrapDashboard()
-        // v0.2: trackpad gestures, opt-in. The router is held strong
-        // by the monitor (which holds it strong); we keep our own
-        // reference so the AppDelegate test surface can introspect it.
-        self.gestureRouter = GestureRouter(
-            target: dispatcher,
-            soundEnabled: { [weak settings] in settings?.gestureEarconEnabled ?? true }
-        )
-        self.gestures = GestureMonitor(router: gestureRouter)
-        // Observe the settings toggle so the monitor starts/stops in
-        // real time when the user flips the switch in Settings.
-        gestureSettingsObserver = settings.$trackpadGesturesEnabled
-            .sink { [weak self] enabled in
-                Task { @MainActor [weak self] in
-                    self?.applyGestureToggle(enabled)
-                }
-            }
-        applyGestureToggle(settings.trackpadGesturesEnabled)
+        bootstrapGestures()
         self.didBootstrap = true
         // First-run gate (S11):
         //   • Truly fresh install (state.json missing OR last_seen_version

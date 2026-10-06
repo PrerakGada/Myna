@@ -193,7 +193,8 @@ final class FloatingPillWindowTrackTests: XCTestCase {
         XCTAssertTrue(returned === big,
                       "Drag initiator must be the FIRST past-threshold event, not a later one.")
         XCTAssertEqual(q.events.count, 1,
-                       "The function must stop reading events once it returns .drag — the trailing mouseUp should still be in the queue for performDrag to consume.")
+                       "The function must stop reading events once it returns .drag — the trailing mouseUp "
+                       + "should still be in the queue for performDrag to consume.")
         XCTAssertTrue(q.events.first === trailingMouseUp,
                       "The single remaining event must be the trailing mouseUp.")
     }
