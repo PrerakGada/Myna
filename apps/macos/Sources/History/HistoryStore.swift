@@ -244,7 +244,7 @@ public final class HistoryStore: ObservableObject {
     /// RFC 4180 escaping. A leading `=`/`+`/`-`/`@` is also prefixed with
     /// a single quote so Excel and Numbers treat a read title as text
     /// rather than executing it as a formula.
-    static func csvEscape(_ field: String) -> String {
+    nonisolated static func csvEscape(_ field: String) -> String {
         var value = field
         if let first = value.first, "=+-@".contains(first) {
             value = "'" + value
