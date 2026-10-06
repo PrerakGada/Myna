@@ -9,6 +9,9 @@
 # Triggered MANUALLY (workflow_dispatch). The per-release flow in release.yml
 # does NOT call this — it appends incrementally.
 #
+# Each item's sparkle:version is read from the CFBundleVersion inside that
+# release's DMG, so the rebuilt feed advertises the real build numbers.
+#
 # Required secrets (same as release.yml's appcast job):
 #   SPARKLE_EDDSA_PRIVATE_KEY
 name: Refresh appcast
@@ -79,8 +82,22 @@ jobs:
               --pattern "Myna-$version.dmg" \
               --dir dist/out \
               --clobber
+            # sparkle:version must be the build number inside THIS DMG — Sparkle
+            # compares it against the installed CFBundleVersion. Omitting it made
+            # appcast.sh emit build 1 for every item, which reads as older than
+            # every installed copy and silently stops all updates. Read it from
+            # the app itself (project.yml at HEAD only knows the newest build).
+            mnt=$(mktemp -d)
+            hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "dist/out/Myna-$version.dmg" </dev/null >/dev/null
+            build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$mnt/Myna.app/Contents/Info.plist" || true)
+            hdiutil detach "$mnt" >/dev/null
+            case "$build" in
+              ''|*[!0-9]*) echo "::error::$tag: couldn't read CFBundleVersion from the DMG (got '$build')"; exit 1 ;;
+            esac
+            echo "    build $build"
             DMG_PATH="dist/out/Myna-$version.dmg" \
             VERSION="$version" \
+            BUILD="$build" \
             DOWNLOAD_BASE_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag" \
             RELEASE_NOTES_URL="https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag" \
               bash dist/appcast.sh

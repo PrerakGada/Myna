@@ -1,6 +1,8 @@
-// SelectionServiceTests.swift — verifies clipboard save/restore and the
-// "no selection → nil" path. Real CGEvent posting is stubbed so the
-// test host doesn't need Accessibility.
+// SelectionServiceTests.swift — verifies the ⌘C path's clipboard
+// save/restore and the "no selection → nil" path. Real CGEvent posting is
+// stubbed so the test host doesn't need Accessibility. Every test runs in
+// `.copyOnly` mode so no real AX read happens; the AX-first chain is
+// covered by SelectionCaptureTests.
 import AppKit
 import XCTest
 
@@ -11,7 +13,7 @@ final class SelectionServiceTests: XCTestCase {
         let pasteboard = FakePasteboard()
         let poster = FakeKeyPoster(onPost: { pasteboard.simulateAppPlacingOnClipboard("hello") })
         let service = SelectionService(pasteboard: pasteboard, keyPoster: poster, copyWaitNanos: 1_000_000)
-        let text = await service.captureSelectedText()
+        let text = await service.capture(mode: .copyOnly)?.text
         XCTAssertEqual(text, "hello")
     }
 
@@ -20,7 +22,7 @@ final class SelectionServiceTests: XCTestCase {
         pasteboard.seed(with: "before")
         let poster = FakeKeyPoster(onPost: { pasteboard.simulateAppPlacingOnClipboard("selection") })
         let service = SelectionService(pasteboard: pasteboard, keyPoster: poster, copyWaitNanos: 1_000_000)
-        _ = await service.captureSelectedText()
+        _ = await service.capture(mode: .copyOnly)
         XCTAssertEqual(pasteboard.pasteboardString, "before")
         XCTAssertEqual(pasteboard.restoreCallCount, 1)
     }
@@ -29,7 +31,7 @@ final class SelectionServiceTests: XCTestCase {
         let pasteboard = FakePasteboard()
         let poster = FakeKeyPoster()  // no injection — pasteboard stays empty
         let service = SelectionService(pasteboard: pasteboard, keyPoster: poster, copyWaitNanos: 1_000_000)
-        let text = await service.captureSelectedText()
+        let text = await service.capture(mode: .copyOnly)?.text
         XCTAssertNil(text)
     }
 
@@ -38,7 +40,7 @@ final class SelectionServiceTests: XCTestCase {
         pasteboard.seed(with: "before")
         let poster = FakeKeyPoster(succeed: false)
         let service = SelectionService(pasteboard: pasteboard, keyPoster: poster, copyWaitNanos: 1_000_000)
-        let text = await service.captureSelectedText()
+        let text = await service.capture(mode: .copyOnly)?.text
         XCTAssertNil(text)
         // Clipboard must still be exactly what it was.
         XCTAssertEqual(pasteboard.pasteboardString, "before")
@@ -59,7 +61,7 @@ final class SelectionServiceTests: XCTestCase {
             copyWaitNanos: 1_000_000,
             modifiersHeld: { mods.heldThenRelease() }
         )
-        let text = await service.captureSelectedText()
+        let text = await service.capture(mode: .copyOnly)?.text
         XCTAssertEqual(text, "delayed")           // waited, then captured cleanly
         XCTAssertGreaterThan(mods.callCount, 1)    // the wait loop actually polled
     }
@@ -70,7 +72,7 @@ final class SelectionServiceTests: XCTestCase {
 /// Mimics NSPasteboard's snapshot/restore semantics. Tests inject a
 /// "what the app would have placed on the clipboard during Cmd+C" string
 /// via `simulateAppPlacingOnClipboard(_:)`.
-private final class FakePasteboard: PasteboardProtocol, @unchecked Sendable {
+final class FakePasteboard: PasteboardProtocol, @unchecked Sendable {
     private var current: String?
     var restoreCallCount = 0
 
@@ -106,7 +108,7 @@ private final class FakePasteboard: PasteboardProtocol, @unchecked Sendable {
     }
 }
 
-private struct FakeKeyPoster: KeyPostingProtocol {
+struct FakeKeyPoster: KeyPostingProtocol {
     let succeed: Bool
     let onPost: (@Sendable () -> Void)?
 

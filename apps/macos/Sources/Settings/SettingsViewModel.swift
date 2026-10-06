@@ -43,6 +43,19 @@ public enum SettingsKey: String, CaseIterable, Sendable {
     /// synthesizes later chunks). Default ON. OFF restores streaming
     /// (fast first-audio, chunks play as they arrive).
     case oneShotPlayback = "dev.myna.app.oneShotPlayback"
+    /// Read only the **bold** claims of a Claude Code reply (falls back to
+    /// the whole reply when it has none). Default OFF — it only pays off
+    /// when the writer bolds whole claims, not keywords.
+    case ccBoldClaimsOnly = "dev.myna.app.ccBoldClaimsOnly"
+    /// How the read shortcut captures the selection: "automatic"
+    /// (Accessibility, then ⌘C) or "copy" (⌘C only). See SelectionService.
+    case selectionCapture = "dev.myna.app.selectionCapture"
+    /// Clean text up before reading it (markdown, code, URLs, citation
+    /// marks). Default ON. Per-source switches below; see TextCleanupSettings.
+    case textCleanup = "dev.myna.app.textCleanup"
+    case textCleanupClaudeCode = "dev.myna.app.textCleanupClaudeCode"
+    case textCleanupArticles = "dev.myna.app.textCleanupArticles"
+    case textCleanupSelection = "dev.myna.app.textCleanupSelection"
 }
 
 /// Built-in defaults — must mirror the daemon's config defaults so the
@@ -74,6 +87,17 @@ public enum SettingsDefaults {
     /// whole clip ready and gap-free over fast-but-stuttering first
     /// audio. Power users can flip it off for streaming.
     public static let oneShotPlayback: Bool = true
+    /// Bold-claims-only reading of Claude Code replies default OFF. See
+    /// SettingsKey docs.
+    public static let ccBoldClaimsOnly: Bool = false
+    /// Accessibility first: it leaves the clipboard alone. "Copy only" is
+    /// the escape hatch for an app whose AX answer is wrong.
+    public static let selectionCapture: SelectionCaptureMode = .automatic
+    /// Text cleanup defaults ON, for every source.
+    public static let textCleanup: Bool = true
+    public static let textCleanupClaudeCode: Bool = true
+    public static let textCleanupArticles: Bool = true
+    public static let textCleanupSelection: Bool = true
 }
 
 /// Thin wrapper over UserDefaults so tests can inject an ephemeral
@@ -168,6 +192,30 @@ public final class SettingsViewModel: ObservableObject {
     @Published public var oneShotPlayback: Bool {
         didSet { store.set(.oneShotPlayback, oneShotPlayback) }
     }
+    /// Read only the bold claims of a Claude Code reply. Read by the
+    /// toast/menu Play (MenuBarController) and the pill's Play
+    /// (PillController) via RegistryV2Item.spokenText(boldClaimsOnly:).
+    @Published public var ccBoldClaimsOnly: Bool {
+        didSet { store.set(.ccBoldClaimsOnly, ccBoldClaimsOnly) }
+    }
+    /// Read by AppDispatcher.speakSelection on every read, so a change
+    /// applies to the next read without a relaunch.
+    @Published public var selectionCaptureMode: SelectionCaptureMode {
+        didSet { store.set(.selectionCapture, selectionCaptureMode.rawValue) }
+    }
+    /// Text cleanup, sent with every read as `prep` (textPrep(for:)).
+    @Published public var textCleanup: Bool {
+        didSet { store.set(.textCleanup, textCleanup) }
+    }
+    @Published public var textCleanupClaudeCode: Bool {
+        didSet { store.set(.textCleanupClaudeCode, textCleanupClaudeCode) }
+    }
+    @Published public var textCleanupArticles: Bool {
+        didSet { store.set(.textCleanupArticles, textCleanupArticles) }
+    }
+    @Published public var textCleanupSelection: Bool {
+        didSet { store.set(.textCleanupSelection, textCleanupSelection) }
+    }
 
     /// Most recent validation error for the daemon URL field. Settings
     /// UI displays this inline. Nil = currently valid.
@@ -193,6 +241,19 @@ public final class SettingsViewModel: ObservableObject {
             store.bool(.pillAlwaysVisible) ?? SettingsDefaults.pillAlwaysVisible
         self.oneShotPlayback =
             store.bool(.oneShotPlayback) ?? SettingsDefaults.oneShotPlayback
+        self.ccBoldClaimsOnly =
+            store.bool(.ccBoldClaimsOnly) ?? SettingsDefaults.ccBoldClaimsOnly
+        // An unknown value (a newer build's mode) degrades to the default.
+        self.selectionCaptureMode =
+            store.string(.selectionCapture).flatMap(SelectionCaptureMode.init(rawValue:))
+            ?? SettingsDefaults.selectionCapture
+        self.textCleanup = store.bool(.textCleanup) ?? SettingsDefaults.textCleanup
+        self.textCleanupClaudeCode =
+            store.bool(.textCleanupClaudeCode) ?? SettingsDefaults.textCleanupClaudeCode
+        self.textCleanupArticles =
+            store.bool(.textCleanupArticles) ?? SettingsDefaults.textCleanupArticles
+        self.textCleanupSelection =
+            store.bool(.textCleanupSelection) ?? SettingsDefaults.textCleanupSelection
     }
 
     /// Validate that the given URL string is localhost-only (we never
@@ -258,6 +319,12 @@ public final class SettingsViewModel: ObservableObject {
         trackpadGesturesEnabled = SettingsDefaults.trackpadGesturesEnabled
         pillAlwaysVisible = SettingsDefaults.pillAlwaysVisible
         oneShotPlayback = SettingsDefaults.oneShotPlayback
+        ccBoldClaimsOnly = SettingsDefaults.ccBoldClaimsOnly
+        selectionCaptureMode = SettingsDefaults.selectionCapture
+        textCleanup = SettingsDefaults.textCleanup
+        textCleanupClaudeCode = SettingsDefaults.textCleanupClaudeCode
+        textCleanupArticles = SettingsDefaults.textCleanupArticles
+        textCleanupSelection = SettingsDefaults.textCleanupSelection
         daemonURLError = nil
     }
 

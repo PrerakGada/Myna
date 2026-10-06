@@ -10,8 +10,8 @@
 //   GET  /v2/registry/list       returns RegistryListResponse
 //      → { pending: [ RegistryV2Item ] }
 //
-//   POST /v2/registry/play/{id}  no body; daemon kicks off playback
-//      → { ok: bool, reason?: string }
+//   POST /v2/registry/play/{id}  optional body: RegistryPlayRequest
+//      → daemon kicks off playback; { ok: bool, reason?: string }
 //
 // This file is the SOURCE OF TRUTH for the Swift side of this contract.
 // Track B implements the matching Python types in `daemon/myna/v2_types.py`
@@ -36,6 +36,18 @@ public struct RegistryV2Item: Codable, Sendable, Identifiable, Equatable, Hashab
     public let text: String?
     public let announcedAtMs: Int  // unix ms timestamp
     public let ttlS: Int  // suggested time-to-live in seconds
+    // Claude Code hands-free fields. All optional: daemons before Sep 2026
+    // don't send them, and nil reads as a plain reply.
+    /// "reply" (Stop hook) or "attention" (Notification hook: a session needs you).
+    public let kind: String?
+    /// Claude Code session the entry came from.
+    public let sessionId: String?
+    /// Attention only: Claude Code's notification_type, e.g. "permission_prompt".
+    public let notificationType: String?
+    /// Bundle id of the app the session runs in (iTerm, Terminal, VS Code…).
+    public let hostBundleId: String?
+    /// The unheard rest of a reply Myna began reading aloud while you were away.
+    public let partlyHeard: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -45,6 +57,11 @@ public struct RegistryV2Item: Codable, Sendable, Identifiable, Equatable, Hashab
         case text
         case announcedAtMs = "announced_at_ms"
         case ttlS = "ttl_s"
+        case kind
+        case sessionId = "session_id"
+        case notificationType = "notification_type"
+        case hostBundleId = "host_bundle_id"
+        case partlyHeard = "partly_heard"
     }
 
     public init(
@@ -54,7 +71,12 @@ public struct RegistryV2Item: Codable, Sendable, Identifiable, Equatable, Hashab
         title: String,
         text: String? = nil,
         announcedAtMs: Int,
-        ttlS: Int
+        ttlS: Int,
+        kind: String? = nil,
+        sessionId: String? = nil,
+        notificationType: String? = nil,
+        hostBundleId: String? = nil,
+        partlyHeard: Bool? = nil
     ) {
         self.id = id
         self.source = source
@@ -63,13 +85,65 @@ public struct RegistryV2Item: Codable, Sendable, Identifiable, Equatable, Hashab
         self.text = text
         self.announcedAtMs = announcedAtMs
         self.ttlS = ttlS
+        self.kind = kind
+        self.sessionId = sessionId
+        self.notificationType = notificationType
+        self.hostBundleId = hostBundleId
+        self.partlyHeard = partlyHeard
     }
+
+    /// True for a Notification-hook entry ("a session needs you"), false for a reply.
+    public var isAttention: Bool { kind == "attention" }
 
     /// The text to actually speak: the full body when present, else the
     /// first-line preview. Never empty-coalesces away a real title.
     public var spokenText: String {
         if let text = text, !text.isEmpty { return text }
         return title
+    }
+
+    /// What to speak under the "Read only the bold claims" setting: the
+    /// reply's bold claims when it has any, otherwise the whole reply.
+    public func spokenText(boldClaimsOnly: Bool) -> String {
+        guard boldClaimsOnly, let claims = BoldClaims.spokenText(from: spokenText) else {
+            return spokenText
+        }
+        return claims
+    }
+}
+
+/// Optional body for `POST /v2/registry/play/{id}`: speak `text` instead of
+/// the stored reply. Daemons that predate it ignore the body and read the
+/// whole reply.
+public struct RegistryPlayRequest: Codable, Sendable, Equatable {
+    public let text: String
+
+    public init(text: String) {
+        self.text = text
+    }
+}
+
+/// Body for `POST /v2/registry/partly_heard/{id}`: the part of an
+/// auto-read reply the user hasn't heard yet.
+public struct RegistryPartlyHeardRequest: Codable, Sendable, Equatable {
+    public let text: String
+
+    public init(text: String) {
+        self.text = text
+    }
+}
+
+/// `POST /v2/registry/partly_heard/{id}` result. `id` names the fresh
+/// pending entry; `reason` explains an `ok: false` ("not_pending", "empty").
+public struct RegistryPartlyHeardResponse: Codable, Sendable, Equatable {
+    public let ok: Bool
+    public let id: String?
+    public let reason: String?
+
+    public init(ok: Bool, id: String? = nil, reason: String? = nil) {
+        self.ok = ok
+        self.id = id
+        self.reason = reason
     }
 }
 

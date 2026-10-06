@@ -15,7 +15,11 @@ public struct SectionHeader: View {
     public let trailing: String?
     /// Optional color for the trailing badge. Defaults to secondary.
     public let trailingColor: Color
-    @Binding public var isExpanded: Bool
+    /// Nil for a section that is always open — the header then renders as a
+    /// plain caption with no chevron and no click target. Added with the
+    /// v0.6 rework, where SPEED stopped being a disclosure: one number
+    /// behind a chevron is a click charged for nothing.
+    private let expansion: Binding<Bool>?
 
     public init(
         title: String,
@@ -26,36 +30,67 @@ public struct SectionHeader: View {
         self.title = title
         self.trailing = trailing
         self.trailingColor = trailingColor
-        self._isExpanded = isExpanded
+        self.expansion = isExpanded
+    }
+
+    /// Static header for an always-visible section.
+    public init(
+        title: String,
+        trailing: String? = nil,
+        trailingColor: Color = PopoverDesign.secondaryColor
+    ) {
+        self.title = title
+        self.trailing = trailing
+        self.trailingColor = trailingColor
+        self.expansion = nil
     }
 
     public var body: some View {
+        if let expansion {
+            collapsible(expansion)
+        } else {
+            label(isExpanded: true, showChevron: false)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func label(isExpanded: Bool, showChevron: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(title.uppercased())
+                .font(PopoverDesign.sectionHeaderFont)
+                .tracking(0.5)
+                .foregroundStyle(PopoverDesign.sectionHeaderColor)
+            Spacer(minLength: 0)
+            if let trailing {
+                Text(trailing)
+                    .font(PopoverDesign.captionFont)
+                    .foregroundStyle(trailingColor)
+            }
+            if showChevron {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(PopoverDesign.secondaryColor)
+                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func collapsible(_ isExpanded: Binding<Bool>) -> some View {
         HoverableRow(
             cornerRadius: 6,
             horizontalPadding: 8,
             verticalPadding: 6,
             action: {
                 withAnimation(.easeInOut(duration: 0.18)) {
-                    isExpanded.toggle()
+                    isExpanded.wrappedValue.toggle()
                 }
             },
             content: {
-                HStack(spacing: 8) {
-                    Text(title.uppercased())
-                        .font(PopoverDesign.sectionHeaderFont)
-                        .tracking(0.5)
-                        .foregroundStyle(PopoverDesign.sectionHeaderColor)
-                    Spacer(minLength: 0)
-                    if let trailing {
-                        Text(trailing)
-                            .font(PopoverDesign.captionFont)
-                            .foregroundStyle(trailingColor)
-                    }
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(PopoverDesign.secondaryColor)
-                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                }
+                label(isExpanded: isExpanded.wrappedValue, showChevron: true)
             }
         )
     }

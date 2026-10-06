@@ -53,6 +53,32 @@ def test_v2_synthesize_part_headers_include_index_and_text():
         assert len(decoded) > 0
 
 
+def test_v2_synthesize_part_headers_carry_the_full_chunk_text():
+    # One long sentence, so the rest chunk is far over the 200-char preview.
+    # The app's transcript needs every word the chunk speaks.
+    client, fp, app = make_client(config_overrides={"chunk_chars": 1500})
+    spoken: list[str] = []
+
+    def _record(text, **kw):
+        spoken.append(text)
+        return b"RIFFfake"
+
+    app.state.synthesize = _record
+    long_sentence = " ".join(["word%d, café" % i for i in range(80)]) + "."
+    text = "Short opener. " + long_sentence
+    r, parts = _do_synth(client, {"text": text})
+    assert r.status_code == 200
+    audio_parts = [p for p in parts if p["headers"].get("Content-Type") == "audio/wav"]
+    assert len(audio_parts) == 2
+    full = [urllib.parse.unquote(p["headers"]["X-Chunk-Text-Full"]) for p in audio_parts]
+    assert full == ["Short opener.", long_sentence]
+    # The preview is unchanged: still capped at 200 characters.
+    preview = urllib.parse.unquote(audio_parts[1]["headers"]["X-Chunk-Text"])
+    assert preview == long_sentence[:200]
+    # The header carries exactly what the engine was asked to speak.
+    assert spoken == full
+
+
 def test_v2_synthesize_returns_wav_bytes():
     client, fp, app = make_client()
     r, parts = _do_synth(client, {"text": "Hello there.", "mode": "full"})

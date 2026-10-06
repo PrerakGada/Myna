@@ -1,6 +1,6 @@
 // DaemonService.swift — the launchd side of Myna's daemon: which job runs it
-// on this Mac, restarting it, and keeping a standalone install's daemon in
-// step with the app after an update.
+// on this Mac, restarting it, and keeping the daemon in step with the app
+// after an update.
 //
 // dist/setup.sh installs the daemon one of two ways:
 //   • homebrew    the `myna-daemon` formula, launchd job homebrew.mxcl.myna-daemon
@@ -17,6 +17,29 @@ public enum DaemonService {
         let plist = NSHomeDirectory() + "/Library/LaunchAgents/\(standaloneLabel).plist"
         guard let text = try? String(contentsOfFile: plist, encoding: .utf8) else { return false }
         return text.contains("/.venvs/myna-daemon/")
+    }
+
+    /// True when Homebrew's `myna-daemon` service runs the daemon (the cask
+    /// install). `brew services start` writes this LaunchAgent; a developer
+    /// checkout never has it.
+    public static var isHomebrewService: Bool {
+        FileManager.default.fileExists(
+            atPath: NSHomeDirectory() + "/Library/LaunchAgents/\(homebrewLabel).plist"
+        )
+    }
+
+    /// Last Homebrew daemon update attempt: ["version": bundled, "at": Date].
+    static let brewAttemptKey = "DaemonService.lastBrewUpdateAttempt"
+    /// The tap is bumped minutes after the appcast, and `brew update` can fail
+    /// offline — retry, but don't run brew on every launch.
+    static let brewRetryInterval: TimeInterval = 6 * 60 * 60
+
+    /// Whether to try `brew upgrade` again for this bundled version.
+    static func brewUpdateDue(bundled: String, last: [String: Any]?, now: Date) -> Bool {
+        guard let last, last["version"] as? String == bundled,
+              let at = last["at"] as? Date
+        else { return true }
+        return now.timeIntervalSince(at) >= brewRetryInterval
     }
 
     /// Version of the daemon source bundled inside this copy of Myna.
@@ -47,19 +70,29 @@ public enum DaemonService {
         return "No Myna daemon service found. Quit and reopen Myna to run setup."
     }
 
-    /// A standalone install keeps running the daemon it was set up with, even
-    /// after Sparkle updates the app. When the bundled daemon is newer, reinstall
-    /// it in the background (a few seconds; the script restarts the service).
+    /// Sparkle updates the app, but the daemon keeps running the version it was
+    /// installed at. When the bundled daemon is newer, bring it up to date in
+    /// the background; the script restarts the service. Standalone installs
+    /// reinstall from the bundled source (a few seconds); Homebrew installs
+    /// `brew upgrade` the formula, retried every few hours until the tap has it.
     @MainActor
-    public static func updateIfStale(runningVersion: String) {
-        guard isStandaloneInstall,
+    public static func updateIfStale(runningVersion: String, defaults: UserDefaults = .standard) {
+        let homebrew = !isStandaloneInstall && isHomebrewService
+        guard isStandaloneInstall || homebrew,
               let bundled = bundledVersion(),
               let bundledSemver = Semver(bundled),
               let runningSemver = Semver(runningVersion),
               runningSemver < bundledSemver,
               let script = SetupController.bundledScriptPath()
         else { return }
-        Log(.app).info("DaemonService: updating the daemon \(runningVersion) → \(bundled)")
+        if homebrew {
+            let now = Date()
+            guard brewUpdateDue(bundled: bundled, last: defaults.dictionary(forKey: brewAttemptKey), now: now)
+            else { return }
+            defaults.set(["version": bundled, "at": now], forKey: brewAttemptKey)
+        }
+        let via = homebrew ? " via Homebrew" : ""
+        Log(.app).info("DaemonService: updating the daemon\(via) \(runningVersion) → \(bundled)")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [script, "--update-daemon"]

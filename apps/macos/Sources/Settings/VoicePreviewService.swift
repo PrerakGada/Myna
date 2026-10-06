@@ -2,7 +2,9 @@
 // Settings Voice tab (S09). Responsibilities:
 //
 //   • Fetch WAV from /v2/voices/preview/{voice_id} via DaemonClient
-//   • Play it through an isolated AVAudioPlayer at -6dB
+//   • Play it through an isolated AVAudioPlayer at -6dB, at the main
+//     player's current speed (a preview at 1× while reads run at 1.5×
+//     isn't a preview of what you'll hear)
 //   • Duck the existing main playback (AudioPlayer) to 30% during preview
 //   • Cancel + restart cleanly when the user clicks a different voice
 //   • Debounce 300ms / queue depth 1 on spam clicks
@@ -63,6 +65,28 @@ public final class VoicePreviewService: ObservableObject {
     /// ~100ms per S09 AC #4. Spam-click debounce (300ms) drops calls
     /// closer together than the threshold.
     public func preview(voiceId: String) {
+        start(stateId: voiceId, followsSpeed: true) { client in
+            try await client.voicePreview(voiceId: voiceId)
+        }
+    }
+
+    /// State id a library sample plays under, so it never lights up the
+    /// tile of a real voice.
+    public static func librarySampleId(_ libraryId: String) -> String { "library:\(libraryId)" }
+
+    /// Play a voice-library clip's original recording — the voice a copy
+    /// aims for. At 1×: it is a person speaking, not a preview of a read.
+    public func previewLibrarySample(id libraryId: String) {
+        start(stateId: Self.librarySampleId(libraryId), followsSpeed: false) { client in
+            try await client.voiceLibrarySample(id: libraryId)
+        }
+    }
+
+    private func start(
+        stateId: String,
+        followsSpeed: Bool,
+        fetch: @escaping @Sendable (DaemonClient) async throws -> Data
+    ) {
         let now = Date()
         if now.timeIntervalSince(lastClickAt) < Self.debounceInterval {
             return
@@ -71,9 +95,9 @@ public final class VoicePreviewService: ObservableObject {
 
         // Cancel anything in flight first.
         cancel()
-        state = .loading(voiceId: voiceId)
+        state = .loading(voiceId: stateId)
         currentTask = Task { [weak self] in
-            await self?.runPreview(voiceId: voiceId)
+            await self?.runPreview(voiceId: stateId, followsSpeed: followsSpeed, fetch: fetch)
         }
     }
 
@@ -93,10 +117,14 @@ public final class VoicePreviewService: ObservableObject {
 
     // MARK: - private
 
-    private func runPreview(voiceId: String) async {
+    private func runPreview(
+        voiceId: String,
+        followsSpeed: Bool,
+        fetch: @Sendable (DaemonClient) async throws -> Data
+    ) async {
         let data: Data
         do {
-            data = try await client.voicePreview(voiceId: voiceId)
+            data = try await fetch(client)
         } catch DaemonError.engineDown {
             await flashWarming(voiceId: voiceId)
             return
@@ -105,17 +133,17 @@ public final class VoicePreviewService: ObservableObject {
             return
         }
         if Task.isCancelled { return }
-        await play(data: data, voiceId: voiceId)
+        await play(data: data, voiceId: voiceId, followsSpeed: followsSpeed)
     }
 
-    private func play(data: Data, voiceId: String) async {
+    private func play(data: Data, voiceId: String, followsSpeed: Bool) async {
         // Duck the main playback to 30% while preview plays.
         if let sink = sink {
             let restore = sink.duck(to: Self.duckFactor)
             pendingRestore = restore
         }
         let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("myna-preview-\(voiceId)-\(UUID().uuidString).wav")
+            .appendingPathComponent("myna-preview-\(UUID().uuidString).wav")
         defer {
             try? FileManager.default.removeItem(at: tmp)
         }
@@ -123,6 +151,11 @@ public final class VoicePreviewService: ObservableObject {
             try data.write(to: tmp)
             let player = try AVAudioPlayer(contentsOf: tmp)
             player.volume = Self.previewGainLinear
+            // AVAudioPlayer time-stretches without shifting pitch, like
+            // the main player's TimePitch unit. enableRate must be set
+            // before play(); rate is clamped to the same 0.5–2.0 range.
+            player.enableRate = true
+            player.rate = followsSpeed ? Float(max(0.5, min(2.0, sink?.speed ?? 1.0))) : 1.0
             currentPlayer = player
             state = .playing(voiceId: voiceId)
             player.play()
@@ -162,4 +195,7 @@ public protocol AudioDuckable: AnyObject {
     /// closure the caller must invoke when the preview is done to restore
     /// the prior gain.
     func duck(to factor: Float) -> () -> Void
+    /// The main playback speed; previews play at it. AudioPlayer's own
+    /// `speed` satisfies this.
+    var speed: Double { get }
 }

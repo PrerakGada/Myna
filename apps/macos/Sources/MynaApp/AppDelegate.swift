@@ -11,6 +11,8 @@
 //   7. HotkeyManager (wires the five global shortcuts to dispatcher)
 //   8. UpdateController (Sparkle)
 //   9. MenuBarController (begins /v2/status polling)
+//  10. MynaServicesProvider ("Read with Myna" in the Services menu), last,
+//      because a service request can arrive the moment it is registered
 import AppKit
 import ApplicationServices
 import Combine
@@ -36,8 +38,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private(set) var updates: UpdateController!
     private(set) var menuController: MenuBarController!
     private(set) var gestures: GestureMonitor!
+    /// Durable log of every read — the Dashboard's whole data layer.
+    private(set) var history: HistoryStore!
+    /// Bridges dispatcher + player lifecycle into history records.
+    private(set) var historyRecorder: HistoryRecorder!
+    /// Claude Code hands-free: reads replies / says "needs you" while away.
+    private var handsFree: AutoReadController?
     private var gestureRouter: GestureRouter!
     private var gestureSettingsObserver: AnyCancellable?
+    /// Answers the Services menu. NSApp holds it too; kept here so its
+    /// lifetime doesn't depend on that.
+    private var servicesProvider: MynaServicesProvider?
     /// @Published so the MenuBarExtra view re-renders when bootstrap
     /// completes. Plain stored IUOs don't fire objectWillChange, so the
     /// menu was permanently stuck on the "Myna initialising…" fallback.
@@ -75,8 +86,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             .readChromeArticle: { [weak self] in self?.dispatcher.readChrome() },
             .pauseResume: { [weak self] in self?.dispatcher.togglePause() },
             .stop: { [weak self] in self?.dispatcher.stop() },
+            .skipToNext: { [weak self] in self?.dispatcher.skip() },
+            .previousSentence: { TranscriptStore.shared.previousSentence() },
+            .nextSentence: { TranscriptStore.shared.nextSentence() },
         ])
         menuController.start()
+        registerServices()
         FileHandle.standardError.write(Data("[Myna] launch complete\n".utf8))
         log.info("Myna launched (bundle \(Bundle.main.bundleIdentifier ?? "?"))")
     }
@@ -87,15 +102,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         self.settings = SettingsViewModel()
         let baseURL = settings.fullDaemonBaseURL ?? DaemonClient.defaultBaseURL
         self.client = DaemonClient(baseURL: baseURL)
+        RenderClient.shared = RenderClient(baseURL: baseURL)
         self.player = AudioPlayer()
         self.selection = SelectionService()
         self.chrome = ChromeService()
+        bootstrapHistory()
         self.dispatcher = AppDispatcher(
             client: client,
             player: player,
             selection: selection,
             chrome: chrome,
-            settings: settings
+            settings: settings,
+            history: historyRecorder
         )
         self.urlHandler = URLSchemeHandler(dispatcher: dispatcher) { msg in
             Log(.urlscheme).warn(msg)
@@ -114,6 +132,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         // Late-attach the menu controller into the dispatcher so the
         // recents/now-reading state populates when speakSelection runs.
         self.dispatcher.attach(menuController: self.menuController)
+        // …and the reverse edge, so the popover's own actions (read the
+        // clipboard, read the front Chrome tab) reach the same pipeline the
+        // hotkeys use. Weak on the controller side — the dispatcher outlives
+        // it and already holds a weak reference back.
+        self.menuController.actions = self.dispatcher
+        self.handsFree = AutoReadController(
+            player: player, client: client,
+            sink: ReadQueueSink(),
+            settings: settings)
+        self.handsFree?.start(observing: menuController)
+        bootstrapDashboard()
         // v0.2: trackpad gestures, opt-in. The router is held strong
         // by the monitor (which holds it strong); we keep our own
         // reference so the AppDelegate test surface can introspect it.
@@ -188,6 +217,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
+    /// Park the Dashboard's dependencies. The window itself is built
+    /// lazily, the first time something asks for it (the popover's footer,
+    /// its OPTIONS row, or `myna://dashboard`).
+    private func bootstrapDashboard() {
+        DashboardLauncher.shared.context = DashboardContext(
+            client: client,
+            player: player,
+            settings: settings,
+            history: history,
+            menuController: menuController,
+            updates: updates
+        )
+        // The transcript follows the player from launch, so a read's text
+        // is there whenever the panel is opened (and it can open itself).
+        TranscriptPanelController.shared.install(player: player)
+    }
+
+    /// Load the reading history and stand up its recorder.
+    ///
+    /// Retention is applied at launch rather than on a timer: the only
+    /// moment the user can change the window is in the Dashboard, and a
+    /// once-per-launch sweep is enough to honour "keep 90 days".
+    private func bootstrapHistory() {
+        self.history = HistoryStore.shared
+        let retentionDays = UserDefaults.standard.integer(
+            forKey: "dev.myna.app.historyRetentionDays")
+        if retentionDays > 0 { history.prune(olderThanDays: retentionDays) }
+        self.historyRecorder = HistoryRecorder(store: history, player: player)
+    }
+
+    /// Register the Services menu handler and ask macOS to rescan, so
+    /// "Read with Myna" shows up without a logout after the first launch.
+    /// See ServicesProvider.swift for how the entry reaches the menu.
+    private func registerServices() {
+        let provider = MynaServicesProvider { [weak self] text, mode in
+            self?.dispatcher.speakServiceText(text, mode: mode)
+        }
+        servicesProvider = provider
+        NSApp.servicesProvider = provider
+        NSUpdateDynamicServices()
+    }
+
     private func applyGestureToggle(_ enabled: Bool) {
         guard let gestures else { return }
         if enabled {
@@ -236,6 +307,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         gestures?.stop()
         gestureSettingsObserver?.cancel()
         player.stop()
+        // Closes any still-open record and writes through the debounce.
+        historyRecorder?.flush()
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {

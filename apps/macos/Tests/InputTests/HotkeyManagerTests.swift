@@ -39,9 +39,27 @@ final class HotkeyManagerTests: XCTestCase {
         }
     }
 
-    func test_all_five_actions_present() {
-        XCTAssertEqual(HotkeyAction.allCases.count, 5)
-        XCTAssertEqual(KeyboardShortcuts.Name.allMynaShortcuts.count, 5)
+    func test_all_eight_actions_present() {
+        // The five v1 actions, skip-to-next (read queue), and previous /
+        // next sentence (transcript).
+        XCTAssertEqual(HotkeyAction.allCases.count, 8)
+        XCTAssertEqual(KeyboardShortcuts.Name.allMynaShortcuts.count, 8)
+    }
+
+    func test_skip_to_next_has_no_default_chord() {
+        // New since v1: no chord is taken from the user's apps until they
+        // record one in the Shortcuts pane.
+        XCTAssertNil(KeyboardShortcuts.Name.skipToNext.defaultShortcut)
+        XCTAssertEqual(HotkeyAction.skipToNext.name, .skipToNext)
+    }
+
+    func test_sentence_skip_has_no_default_chord() {
+        XCTAssertNil(KeyboardShortcuts.Name.previousSentence.defaultShortcut)
+        XCTAssertNil(KeyboardShortcuts.Name.nextSentence.defaultShortcut)
+        XCTAssertEqual(HotkeyAction.previousSentence.name, .previousSentence)
+        XCTAssertEqual(HotkeyAction.nextSentence.name, .nextSentence)
+        XCTAssertEqual(HotkeyAction.previousSentence.rawValue, "previous_sentence")
+        XCTAssertEqual(HotkeyAction.nextSentence.rawValue, "next_sentence")
     }
 
     func test_handler_invoked_on_shortcut_press() {

@@ -405,3 +405,60 @@ def test_default_ttl_is_600(tmp_path):
     assert entry is not None
     assert entry["ttl_s"] == 600
     assert entry["source"] == "claude-code"
+
+
+def test_play_route_speaks_override_text_when_given(tmp_path):
+    """The app sends the reply's bold claims as `text` when "Read only the
+    bold claims" is on. The override is what gets synthesised; the stored
+    body is left alone for a later full replay.
+    """
+    seen_texts: list[str] = []
+
+    def fake_synth(text, **kw):
+        seen_texts.append(text)
+        return b"RIFF"
+
+    client, fp, app = make_client(
+        registry_path=tmp_path / "r.json",
+        synthesize=fake_synth,
+    )
+    client.post(
+        "/v2/registry/announce",
+        json={
+            "id": "u_bold",
+            "project_id": "myna",
+            "title": "Done.",
+            "text": "Done. **The fix is live.** Some detail nobody reads.",
+        },
+    )
+    r = client.post("/v2/registry/play/u_bold", json={"text": "The fix is live."})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    _, args, kwargs = [c for c in fp.calls if c[0] == "play"][0]
+    list(args[0] if args else kwargs["producer"])
+    assert seen_texts == ["The fix is live."]
+    snap = app.state.v2_registry.snapshot()
+    stored = next(e for e in snap["played"] if e["id"] == "u_bold")
+    assert "Some detail nobody reads." in stored["text"]
+
+
+def test_play_route_blank_override_falls_back_to_stored_text(tmp_path):
+    seen_texts: list[str] = []
+
+    def fake_synth(text, **kw):
+        seen_texts.append(text)
+        return b"RIFF"
+
+    client, fp, app = make_client(
+        registry_path=tmp_path / "r.json",
+        synthesize=fake_synth,
+    )
+    client.post(
+        "/v2/registry/announce",
+        json={"id": "u_ws", "project_id": "p", "title": "t", "text": "The whole reply."},
+    )
+    r = client.post("/v2/registry/play/u_ws", json={"text": "   "})
+    assert r.status_code == 200
+    _, args, kwargs = [c for c in fp.calls if c[0] == "play"][0]
+    list(args[0] if args else kwargs["producer"])
+    assert seen_texts == ["The whole reply."]

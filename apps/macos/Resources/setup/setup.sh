@@ -14,7 +14,7 @@
 #   engine   mlx-audio + the Kokoro G2P stack in ~/.venvs/mlx-audio (~600 MB)
 #   service  the Myna daemon, which supervises the engine
 #   model    the Kokoro-82M voice model (~340 MB, downloaded once)
-#   claude   the Claude Code Stop hook, only if Claude Code is installed
+#   claude   the Claude Code Stop + Notification hook, only if Claude Code is installed
 #
 # The daemon is managed one of two ways, picked automatically:
 #   homebrew    the cask installed the `myna-daemon` formula; setup (re)starts
@@ -25,8 +25,9 @@
 #   Override with MYNA_INSTALL_MODE=homebrew|standalone.
 #
 # Flags:
-#   --update-daemon   standalone only: reinstall the daemon from the bundled
-#                     source and restart it. The app runs this after an update.
+#   --update-daemon   bring the daemon up to this app's version and restart it.
+#                     Standalone: reinstall from the bundled source. Homebrew:
+#                     brew upgrade the formula. The app runs this after an update.
 #
 # Env:
 #   MYNA_FORCE_ENGINE=1   reinstall the engine stack with --upgrade
@@ -138,14 +139,19 @@ done
 # install grabs the latest. misaki >=0.8 calls `EspeakWrapper.set_data_path()`,
 # which the plain `phonemizer` we install does not have — Kokoro's G2P crashes
 # at import and EVERY synthesize 502s. 0.7.x is the proven-good line.
-ENGINE_PKGS=('mlx-audio[server]' 'misaki<0.8' num2words spacy phonemizer espeakng-loader)
+#
+# mlx-audio is pinned to the 0.5 line: the engine catalog (daemon/myna/engines.py)
+# tunes each model's settings against 0.5.7, where the four engines were
+# measured. sentencepiece is Pocket TTS's tokenizer; mlx-audio doesn't pull it.
+ENGINE_PKGS=('mlx-audio[server]>=0.5.7,<0.6' 'misaki<0.8' num2words spacy phonemizer espeakng-loader sentencepiece)
 
 engine_ready() {
   [ -x "$ENGINE_VENV/bin/python" ] || return 1
   "$ENGINE_VENV/bin/python" - <<'PY' >/dev/null 2>&1
 import importlib.util as u, sys
 need = ["mlx_audio", "misaki", "num2words", "spacy", "en_core_web_sm",
-        "phonemizer", "espeakng_loader", "uvicorn", "fastapi", "webrtcvad"]
+        "phonemizer", "espeakng_loader", "uvicorn", "fastapi", "webrtcvad",
+        "sentencepiece"]
 if not all(u.find_spec(m) is not None for m in need):
     sys.exit(1)
 # Functional gate, not just presence: the exact import that explodes with an
@@ -363,12 +369,38 @@ start_standalone_daemon() {
 
 # ── --update-daemon ──────────────────────────────────────────────────────────
 
+# Sparkle updates the app on a Homebrew install too, but the daemon there is the
+# myna-daemon formula: only brew can move it, and `brew upgrade` leaves a running
+# service on the old code until something restarts it.
+update_brew_daemon() {
+  local keg_link before after
+  keg_link="$(dirname "$(dirname "$BREW")")/opt/myna-daemon"
+  before="$(readlink "$keg_link" || true)"
+  say "Upgrading Homebrew's myna-daemon"
+  "$BREW" update --quiet >/dev/null 2>&1 || warn "brew update failed; trying the upgrade anyway"
+  HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_ENV_HINTS=1 "$BREW" upgrade prerakgada/tap/myna-daemon \
+    || die "brew couldn't upgrade myna-daemon. Run: brew upgrade prerakgada/tap/myna-daemon"
+  after="$(readlink "$keg_link" || true)"
+  if [ "$before" = "$after" ]; then
+    skip "Homebrew has no newer myna-daemon yet"
+    return 0
+  fi
+  # Restart only a service that was running; never start one the user stopped.
+  if launchctl print "gui/$UID_NUM/$BREW_LABEL" >/dev/null 2>&1; then
+    "$BREW" services restart myna-daemon >/dev/null 2>&1 \
+      || launchctl kickstart -k "gui/$UID_NUM/$BREW_LABEL" 2>/dev/null \
+      || die "restart it manually: brew services restart myna-daemon"
+    wait_for daemon_up 30 || die "myna-daemon didn't come back. Run: brew services restart myna-daemon"
+  fi
+  finish "Daemon ${after##*/}"
+}
+
 if [ "${1:-}" = "--update-daemon" ]; then
-  if [ "$MODE" != "standalone" ]; then
-    say "Homebrew manages the Myna daemon on this Mac — nothing to update here."
+  begin service "Updating the background service"
+  if [ "$MODE" = "homebrew" ]; then
+    update_brew_daemon
     exit 0
   fi
-  begin service "Updating the background service"
   ensure_uv || die "couldn't download the Python installer. Check your internet connection and try again."
   start_standalone_daemon force
   finish "Daemon $BUNDLED_VERSION"
@@ -551,22 +583,34 @@ except Exception as exc:
     print(f"warn: ~/.claude/settings.json isn't valid JSON ({exc}); leaving it untouched")
     sys.exit(1)
 hook, cmd = os.environ["HOOK"], os.environ["HOOK_CMD"]
-stop = data.setdefault("hooks", {}).setdefault("Stop", [])
-found = False
-for group in stop:
-    for h in group.get("hooks", []):
-        if "myna-cc-announce.py" in h.get("command", ""):
-            found = True
-            if h["command"] != cmd:
-                h["command"] = cmd
-if not found:
-    stop.append({"hooks": [{"type": "command", "command": cmd}]})
+hooks = data.setdefault("hooks", {}) if isinstance(data, dict) else None
+if not isinstance(hooks, dict):
+    print("warn: ~/.claude/settings.json has an unexpected \"hooks\" shape; leaving it untouched")
+    sys.exit(1)
+# One script handles both events (it reads hook_event_name). Stop announces
+# replies; Notification announces "needs you" prompts. Re-running setup
+# rewrites a stale command in place and never adds a second entry.
+for event in ("Stop", "Notification"):
+    groups = hooks.setdefault(event, [])
+    if not isinstance(groups, list):
+        print(f"warn: ~/.claude/settings.json has an unexpected {event} hook list; leaving it untouched")
+        sys.exit(1)
+    found = False
+    for group in groups:
+        entries = group.get("hooks", []) if isinstance(group, dict) else []
+        for h in entries if isinstance(entries, list) else []:
+            if isinstance(h, dict) and "myna-cc-announce.py" in str(h.get("command", "")):
+                found = True
+                if h["command"] != cmd:
+                    h["command"] = cmd
+    if not found:
+        groups.append({"hooks": [{"type": "command", "command": cmd}]})
 fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".settings.", suffix=".json")
 with os.fdopen(fd, "w") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
 os.replace(tmp, p)
-print("\033[1;35m==>\033[0m Claude Code hook registered in ~/.claude/settings.json")
+print("\033[1;35m==>\033[0m Claude Code hooks (Stop, Notification) registered in ~/.claude/settings.json")
 PY
     then
       finish "Connected"

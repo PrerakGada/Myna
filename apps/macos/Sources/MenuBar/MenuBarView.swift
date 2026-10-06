@@ -1,22 +1,37 @@
-// MenuBarView.swift — v0.2.1 custom popover replacing the v0.2.0 NSMenu.
+// MenuBarView.swift — the menu-bar popover.
 //
-// The popover is hosted by MenuBarExtra using `.menuBarExtraStyle(.window)`
-// (set in MynaApp.swift). In `.window` style SwiftUI hands us a plain
-// NSWindow surface — no NSMenu chrome — so we own the entire look:
-// dark surface, hero card, disclosure-style sections (which don't
-// collapse on poll rebuilds the way NSMenu submenus did), and a custom
-// footer.
+// Hosted by MenuBarExtra using `.menuBarExtraStyle(.window)` (set in
+// MynaApp.swift). In `.window` style SwiftUI hands us a plain NSWindow
+// surface — no NSMenu chrome — so we own the entire look.
 //
 // Polling note: MenuBarController is an ObservableObject with @Published
-// properties. We bind via @ObservedObject; SwiftUI's diff handles
-// partial updates and our local @State (e.g. `voicesExpanded`) survives
-// every refresh tick. This is the architectural fix for the v0.2.0
-// "submenus collapse on each poll" bug.
+// properties. We bind via @ObservedObject; SwiftUI's diff handles partial
+// updates and our local @State (e.g. `ccExpanded`) survives every
+// refresh tick. This is the architectural fix for the v0.2.0 "submenus
+// collapse on each poll" bug, and it's why sections here are SwiftUI
+// disclosure state rather than NSMenu submenus.
 //
-// All actions still route through MenuBarController so existing hotkey
-// handlers and AppDispatcher hooks work unchanged. The data model
-// (PopoverModel + PopoverModelBuilder) is preserved verbatim — only the
-// rendering changes.
+// ── v0.6 rework ──────────────────────────────────────────────────────
+// The v0.2.1 popover was a readout: it told you the state and then told
+// you which keyboard shortcut to press. Four of its rows were accordions
+// hiding a single value each, "Reset pill position" sat at top level as
+// an orphaned debug row, and the footer ranked Quit, Open Logs and
+// Settings as equally likely. What changed:
+//
+//   • Quick actions — the popover can now start a read (clipboard, a
+//     summary of it, or the front Chrome tab). See QuickActions.swift
+//     for why "read selection" is deliberately not among them.
+//   • The 130pt idle hero is gone; idle is the action row plus one line.
+//   • Voice and speed share one row (VoiceSpeedRow): two menus and a
+//     preview glyph. They used to be a tile grid plus a chip row, ~150pt
+//     for two settings that are set once and left alone.
+//   • OPTIONS carries the toggles that used to need the seven-tab
+//     Settings window, and absorbs the orphaned pill row.
+//   • An engine-down warning strip: the bird already went red for this,
+//     but the popover went on saying READY.
+//
+// All actions still route through MenuBarController, so hotkey handlers
+// and AppDispatcher hooks work unchanged.
 import AppKit
 import SwiftUI
 
@@ -24,113 +39,96 @@ public struct MenuBarView: View {
     @ObservedObject var controller: MenuBarController
     @ObservedObject var player: AudioPlayer
     @ObservedObject var toastCenter: LangMismatchToastCenter = .shared
+    @ObservedObject var readQueue: ReadQueue = .shared
 
-    /// Voices loaded lazily — same lazy-pattern as v0.2.0. Held at the
-    /// top-level view so the network round-trip happens once per popover
-    /// session, not per section render.
+    /// Voice previews, played at -6dB with the main playback ducked to 30%.
+    /// Same service the Settings Voice tab uses; the popover just never had
+    /// one, so its tiles rendered without the preview affordance.
+    @StateObject private var voicePreview: VoicePreviewService
+
+    /// Voices loaded lazily — the network round-trip happens once per
+    /// popover session, not per section render.
     @State private var voices: [Voice] = []
 
-    /// Mirror of the floating-pill master toggle so the popover can
-    /// hide the "Reset pill position" row when the pill is disabled.
-    /// @AppStorage gives us free UserDefaults binding without a
-    /// dependency on PillController / SettingsViewModel.
-    @AppStorage("dev.myna.app.showFloatingPill") private var showFloatingPill: Bool = true
-
     // Section open/closed state. SwiftUI persists this across poll-driven
-    // re-renders, which is the whole point of the v0.2.1 redesign.
-    @State private var voicesExpanded = false
-    @State private var speedExpanded = false
+    // re-renders, which is the whole point of the v0.2.1 architecture.
     @State private var ccExpanded = true
     @State private var recentsExpanded = false
+    @State private var optionsExpanded = false
 
     public init(controller: MenuBarController) {
         self.controller = controller
         self.player = controller.player
+        _voicePreview = StateObject(
+            wrappedValue: VoicePreviewService(client: controller.client, sink: controller.player)
+        )
     }
 
     public var body: some View {
         let model = controller.popoverModel()
-        // The popover is wrapped in a ScrollView so a fully-expanded set
-        // of accordions scrolls instead of clipping off the bottom of the
-        // screen. The content is measured (see GeometryReader below) and
-        // the outer frame is sized to min(content, usable screen height):
-        // short content sizes the popover to fit (no scrollbar); tall
-        // content caps at the screen and scrolls.
-        ScrollView(.vertical, showsIndicators: true) {
-        VStack(alignment: .leading, spacing: PopoverDesign.sectionSpacing) {
-            PopoverHeader(iconState: controller.iconState)
-            // Transient lang-mismatch hint (only when langid signalled a
-            // detected language different from the configured voice's).
-            if let metadata = toastCenter.latest, let lang = metadata.detectedLang {
-                langMismatchChip(detectedLang: lang)
-            }
-            heroSection(model: model)
-            voiceSection
-            speedSection
-            if model.showClaudeCodeSubmenu {
-                claudeCodeSection(items: model.ccItems)
-            }
-            if !model.recents.isEmpty {
-                recentsSection(items: model.recents)
-            }
-            if showFloatingPill {
-                resetPillPositionRow
+        // Fixed height: the sections scroll inside it and the footer is
+        // pinned underneath, so the window no longer grows and shrinks as
+        // sections open, and Quit / Updates never scroll out of reach.
+        VStack(spacing: 0) {
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: PopoverDesign.sectionSpacing) {
+                    PopoverHeader(iconState: controller.iconState)
+                    if model.engineWarning {
+                        EngineWarningStrip(onRestart: controller.restartDaemon)
+                    }
+                    if let metadata = toastCenter.latest, let lang = metadata.detectedLang {
+                        langMismatchChip(detectedLang: lang)
+                    }
+                    heroSection(model: model)
+                    if !readQueue.items.isEmpty {
+                        QueueSection(queue: readQueue)
+                    }
+                    actionsSection(model: model)
+                    voiceSpeedRow
+                    if model.showClaudeCodeSubmenu {
+                        claudeCodeSection(items: model.ccItems)
+                    }
+                    if !model.recents.isEmpty {
+                        recentsSection(items: model.recents)
+                    }
+                    optionsSection
+                }
+                .padding(.horizontal, PopoverDesign.popoverHorizontalPadding)
+                .padding(.vertical, PopoverDesign.popoverVerticalPadding)
+                .frame(width: PopoverDesign.popoverWidth, alignment: .leading)
             }
             FeedbackRow()
             Divider()
                 .overlay(Color.white.opacity(0.08))
-                .padding(.horizontal, -PopoverDesign.popoverHorizontalPadding)
             FooterBar(
                 updates: controller.updates,
-                onSettings: controller.openSettings,
-                onWhatsNew: Self.openWhatsNew,
-                onRestartDaemon: controller.restartDaemon,
-                onOpenLogs: controller.openLogs
+                onDashboard: { controller.openDashboard() },
+                onWhatsNew: Self.openWhatsNew
             )
+            .padding(.horizontal, PopoverDesign.popoverHorizontalPadding)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, PopoverDesign.popoverHorizontalPadding)
-        .padding(.vertical, PopoverDesign.popoverVerticalPadding)
-        .frame(width: PopoverDesign.popoverWidth, alignment: .leading)
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: PopoverContentHeightKey.self,
-                    value: geo.size.height
-                )
-            }
-        )
-        }
-        .frame(width: PopoverDesign.popoverWidth, height: resolvedPopoverHeight)
+        .frame(width: PopoverDesign.popoverWidth, height: Self.popoverHeight)
         .background(PopoverDesign.surface)
-        .onPreferenceChange(PopoverContentHeightKey.self) { measuredContentHeight = $0 }
         .task { await loadVoices() }
+        // A preview left running after the popover closes keeps the main
+        // playback ducked to 30% with nothing visible to explain why.
+        .onDisappear { voicePreview.cancel() }
     }
 
     // MARK: - popover sizing
 
-    /// Natural content height, measured by the GeometryReader behind the
-    /// content VStack. 0 until the first layout pass completes.
-    @State private var measuredContentHeight: CGFloat = 0
-
-    /// Resolved outer height: nil (size-to-content) until measured, then
-    /// clamped to the usable screen height so a fully-expanded popover
-    /// scrolls instead of running off the bottom of the screen.
-    private var resolvedPopoverHeight: CGFloat? {
-        guard measuredContentHeight > 0 else { return nil }
-        return min(measuredContentHeight, Self.maxPopoverHeight)
-    }
-
-    /// Usable vertical space for the popover. `visibleFrame` already
-    /// excludes the menu bar and Dock; we leave a small margin so the
-    /// popover never butts against the screen edge.
-    private static var maxPopoverHeight: CGFloat {
+    /// The design height, clamped to the usable screen height. `visibleFrame`
+    /// already excludes the menu bar and Dock; the margin keeps the popover
+    /// off the screen edge on a small display.
+    private static var popoverHeight: CGFloat {
         let usable = NSScreen.main?.visibleFrame.height ?? 800
-        return max(320, usable - 24)
+        return min(PopoverDesign.popoverHeight, max(320, usable - 24))
     }
 
     /// Open the public changelog / release notes on the website. The
-    /// in-app "What's New" window is reserved for the auto-shown
-    /// upgrade dialog; the footer button points at the site instead.
+    /// in-app "What's New" window is reserved for the auto-shown upgrade
+    /// dialog; the footer button points at the site instead.
     static func openWhatsNew() {
         guard let url = URL(string: "https://myna.prerakgada.in") else { return }
         NSWorkspace.shared.open(url)
@@ -138,12 +136,10 @@ public struct MenuBarView: View {
 
     // MARK: - lang-mismatch chip
     //
-    // Small dismissible row that appears at the top of the popover when
-    // the daemon's langid detector signalled `X-Myna-Lang-Mismatch: 1`
-    // on the last synthesize. Tapping the chip opens Settings (where the
-    // user can change voice or wire a Voice Wardrobe rule); the × dismisses
-    // the toast for this session. Intentionally minimal — full UX (slide-in
-    // animation, snooze, "switch voice" inline action) belongs in v0.3.
+    // Appears when the daemon's langid detector signalled
+    // `X-Myna-Lang-Mismatch: 1` on the last synthesize. Tapping opens
+    // Settings (change voice, or wire a Voice Wardrobe rule); the × dismisses
+    // for this session.
     @ViewBuilder
     private func langMismatchChip(detectedLang: String) -> some View {
         HStack(spacing: 8) {
@@ -170,123 +166,122 @@ public struct MenuBarView: View {
                 .fill(Color.accentColor.opacity(0.12))
         )
         .onTapGesture {
-            controller.openSettings()
+            controller.openDashboard(pane: .voices)
             toastCenter.dismiss()
         }
     }
 
-    // MARK: - hero (Now Playing / Idle / Error)
+    // MARK: - hero (Now Playing / Preparing / Error)
+    //
+    // Idle renders nothing. The quick-action row below is the idle hero —
+    // the card that used to live here existed only to say "No audio playing".
 
     @ViewBuilder
     private func heroSection(model: PopoverModel) -> some View {
         switch model.status {
         case .idle:
-            IdleHero(speakHotkey: HotkeyLabel.display(for: .speakSelectionFull))
+            EmptyView()
         case .loading(let title):
             LoadingHero(previewTitle: title)
-        case .playing(let nr):
-            NowPlayingCard(
-                nowReading: nr,
-                isPaused: false,
-                pauseHotkey: HotkeyLabel.display(for: .pauseResume),
-                stopHotkey: HotkeyLabel.display(for: .stop),
-                onTogglePause: controller.togglePause,
-                onStop: controller.stopPlayback,
-                onSkipBack: { controller.seek(delta: -15) },
-                onSkipForward: { controller.seek(delta: 15) }
-            )
-        case .paused(let nr):
-            NowPlayingCard(
-                nowReading: nr,
-                isPaused: true,
-                pauseHotkey: HotkeyLabel.display(for: .pauseResume),
-                stopHotkey: HotkeyLabel.display(for: .stop),
-                onTogglePause: controller.togglePause,
-                onStop: controller.stopPlayback,
-                onSkipBack: { controller.seek(delta: -15) },
-                onSkipForward: { controller.seek(delta: 15) }
-            )
+        case .playing(let nowReading):
+            nowPlaying(nowReading, isPaused: false)
+        case .paused(let nowReading):
+            nowPlaying(nowReading, isPaused: true)
         case .error(let msg):
-            ErrorHero(message: msg, onSetup: { _ = SetupLauncher.shared.present() })
+            ErrorHero(
+                message: msg,
+                onSetup: { _ = SetupLauncher.shared.present() },
+                onRestart: controller.restartDaemon
+            )
         }
     }
 
-    // MARK: - VOICE
+    private func nowPlaying(_ nowReading: PopoverModel.NowReading, isPaused: Bool) -> some View {
+        NowPlayingCard(
+            nowReading: nowReading,
+            isPaused: isPaused,
+            pauseHotkey: HotkeyLabel.display(for: .pauseResume),
+            stopHotkey: HotkeyLabel.display(for: .stop),
+            onTogglePause: controller.togglePause,
+            onStop: controller.stopPlayback,
+            onSkipBack: { controller.seek(delta: -15) },
+            onSkipForward: { controller.seek(delta: 15) },
+            onNext: readQueue.items.isEmpty ? nil : { readQueue.skip() },
+            nextHotkey: HotkeyLabel.display(for: .skipToNext)
+        )
+    }
+
+    // MARK: - quick actions
 
     @ViewBuilder
-    private var voiceSection: some View {
-        let currentLabel = currentVoiceLabel()
-        VStack(spacing: 6) {
-            SectionHeader(
-                title: "Voice",
-                trailing: currentLabel,
-                trailingColor: PopoverDesign.bodyColor,
-                isExpanded: $voicesExpanded
+    private func actionsSection(model: PopoverModel) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            QuickActions(
+                clipboard: ClipboardProbe.text(),
+                // Daemon unreachable or engine down: a read started now
+                // would spin and fail, so don't invite it.
+                isEnabled: !model.engineWarning && !isDaemonError(model),
+                onReadClipboard: { controller.readClipboard(mode: .full) },
+                onSummarizeClipboard: { controller.readClipboard(mode: .summary) },
+                onReadChrome: controller.readChromeTab
             )
-            if voicesExpanded {
-                voiceGrid
+            if model.status.isIdle {
+                ReadyHint(speakHotkey: HotkeyLabel.display(for: .speakSelectionFull))
             }
         }
     }
 
+    private func isDaemonError(_ model: PopoverModel) -> Bool {
+        if case .error = model.status { return true }
+        return false
+    }
+
+    // MARK: - VOICE + SPEED
+    //
+    // One row. Both are set once and left alone, so they get a line, not
+    // a section each.
+
     @ViewBuilder
-    private var voiceGrid: some View {
-        if voices.isEmpty {
-            HoverableRow(
-                cornerRadius: 6,
-                horizontalPadding: 8,
-                verticalPadding: 8,
-                action: { Task { await loadVoices() } },
-                content: {
-                    Text("Refresh voice list")
-                        .font(PopoverDesign.bodyFont)
-                        .foregroundStyle(PopoverDesign.bodyColor)
-                }
+    private var voiceSpeedRow: some View {
+        VStack(spacing: 4) {
+            VoiceSpeedRow(
+                voices: voices,
+                selectedVoiceId: controller.settings?.voice,
+                speed: player.speed,
+                onSelectVoice: { controller.settings?.voice = $0 },
+                onPreview: {
+                    if let id = controller.settings?.voice {
+                        voicePreview.preview(voiceId: id)
+                    }
+                },
+                onSelectSpeed: { controller.setSpeed($0) },
+                onRefreshVoices: { Task { await loadVoices() } }
             )
-        } else {
-            let columns = [
-                GridItem(.flexible(), spacing: 6),
-                GridItem(.flexible(), spacing: 6),
-                GridItem(.flexible(), spacing: 6),
-            ]
-            LazyVGrid(columns: columns, spacing: 6) {
-                ForEach(voices) { voice in
-                    VoiceTile(
-                        voice: voice,
-                        isSelected: controller.settings?.voice == voice.id,
-                        onSelect: { controller.settings?.voice = voice.id }
-                    )
-                }
-            }
-            .padding(.horizontal, 2)
+            previewStatusLine
         }
     }
 
-    private func currentVoiceLabel() -> String {
-        guard let id = controller.settings?.voice else { return "—" }
-        if let match = voices.first(where: { $0.id == id }) {
-            return match.label
+    /// Mirrors the Settings tab's inline preview feedback. A cold engine
+    /// takes a couple of seconds to answer the first preview, and silence
+    /// is indistinguishable from a dead button.
+    @ViewBuilder
+    private var previewStatusLine: some View {
+        switch voicePreview.state {
+        case .warming:
+            previewNote("Engine warming…", color: PopoverDesign.dotThinking)
+        case .failed:
+            previewNote("Couldn't play that preview.", color: PopoverDesign.dotError)
+        case .loading, .playing, .idle:
+            EmptyView()
         }
-        return id
     }
 
-    // MARK: - SPEED
-
-    @ViewBuilder
-    private var speedSection: some View {
-        let value = player.speed
-        VStack(spacing: 6) {
-            SectionHeader(
-                title: "Speed",
-                trailing: String(format: "%.2g×", value),
-                trailingColor: PopoverDesign.bodyColor,
-                isExpanded: $speedExpanded
-            )
-            if speedExpanded {
-                SpeedChips(current: value) { controller.setSpeed($0) }
-                    .padding(.horizontal, 2)
-            }
-        }
+    private func previewNote(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(PopoverDesign.captionFont)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - CLAUDE CODE
@@ -301,7 +296,7 @@ public struct MenuBarView: View {
                 isExpanded: $ccExpanded
             )
             if ccExpanded {
-                VStack(spacing: 6) {
+                VStack(spacing: 4) {
                     ForEach(items) { item in
                         CCToastCard(
                             item: item,
@@ -334,36 +329,23 @@ public struct MenuBarView: View {
         }
     }
 
-    // MARK: - reset pill position
+    // MARK: - OPTIONS
 
-    /// Tiny inline row that resets the floating-pill's persisted
-    /// frame and re-snaps it to bottom-centre of the screen-under-
-    /// cursor. Posts a Notification so MenuBarView doesn't need to
-    /// hold a reference to PillController (which would require
-    /// plumbing through MynaApp — outside this lane's allow-list).
     @ViewBuilder
-    private var resetPillPositionRow: some View {
-        HoverableRow(
-            cornerRadius: 6,
-            horizontalPadding: 8,
-            verticalPadding: 6,
-            action: {
-                NotificationCenter.default.post(
-                    name: PillController.resetPositionNotification,
-                    object: nil
-                )
-            },
-            content: {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.uturn.left.circle")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(PopoverDesign.bodyColor.opacity(0.8))
-                    Text("Reset pill position")
-                        .font(PopoverDesign.bodyFont)
-                        .foregroundStyle(PopoverDesign.bodyColor)
+    private var optionsSection: some View {
+        if let settings = controller.settings {
+            VStack(spacing: 6) {
+                SectionHeader(title: "Options", isExpanded: $optionsExpanded)
+                if optionsExpanded {
+                    OptionsSection(
+                        settings: settings,
+                        onRestartDaemon: controller.restartDaemon,
+                        onOpenLogs: controller.openLogs,
+                        onOpenSettings: { controller.openDashboard(pane: .shortcuts) }
+                    )
                 }
             }
-        )
+        }
     }
 
     // MARK: - voice loading
@@ -374,14 +356,5 @@ public struct MenuBarView: View {
         } catch {
             // Quietly leave empty — user can hit "Refresh voice list".
         }
-    }
-}
-
-/// Carries the popover's natural content height up from the inner
-/// GeometryReader so the outer frame can clamp it to the screen.
-private struct PopoverContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }

@@ -16,15 +16,15 @@ from myna.app import create_app
 from tests.v2_helpers import make_client, parse_multipart
 
 
-# ----- 🔴 #1 — /v2/voices happy path key-set must match fixture exactly -----
+# ----- 🔴 #1 — /v2/voices happy path must not leak `engine: null` -----
 
 def test_v2_voices_engine_up_response_has_no_engine_key():
-    """Happy path: response body keys must be exactly {voices}."""
+    """Happy path: {voices, active_engine} — and never an `engine` key."""
     client, _, _ = make_client()
     r = client.get("/v2/voices")
     assert r.status_code == 200
     body = r.json()
-    assert set(body) == {"voices"}, f"unexpected keys: {set(body)}"
+    assert set(body) == {"voices", "active_engine"}, f"unexpected keys: {set(body)}"
     assert "engine" not in body, "engine field must be absent on happy path"
 
 

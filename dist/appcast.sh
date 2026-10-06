@@ -10,7 +10,7 @@
 #   APPCAST_PATH                 — file to append item to (default dist/out/appcast.xml)
 #   DOWNLOAD_BASE_URL            — base URL where DMG will live
 #                                  (default https://github.com/<owner>/myna/releases/download/v$VERSION)
-#   MIN_SYSTEM_VERSION           — default 13.0
+#   MIN_SYSTEM_VERSION           — default 14.0 (the voice engine needs Sonoma; setup.sh refuses older)
 #   RELEASE_NOTES_URL            — optional; link to release notes
 #   SIGN_UPDATE_BIN              — optional override for Sparkle's `sign_update`
 #   OPENSSL_BIN                  — optional override for openssl. The script
@@ -54,7 +54,7 @@ fi
 BUILD="${BUILD:-1}"
 DMG_PATH="${DMG_PATH:-$ROOT/dist/out/Myna-$VERSION.dmg}"
 APPCAST_PATH="${APPCAST_PATH:-$ROOT/dist/out/appcast.xml}"
-MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-13.0}"
+MIN_SYSTEM_VERSION="${MIN_SYSTEM_VERSION:-14.0}"
 RELEASE_NOTES_URL="${RELEASE_NOTES_URL:-}"
 DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL:-https://github.com/PrerakGada/myna/releases/download/v$VERSION}"
 

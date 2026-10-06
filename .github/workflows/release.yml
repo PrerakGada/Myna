@@ -425,7 +425,10 @@ jobs:
           {
             echo "**Download [Myna-$VERSION.dmg](https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/Myna-$VERSION.dmg)**, drag Myna into Applications, and open it. On first launch it installs its on-device voice (about 1 GB). Apple Silicon, macOS 14 or later."
             echo
-            echo "Already using Myna? It updates itself. With Homebrew: \`brew upgrade --cask prerakgada/tap/myna\`."
+            # Sparkle updates the app; on its first launch the app brings the
+            # voice service up to match, Homebrew installs included
+            # (DaemonService.updateIfStale → setup.sh --update-daemon).
+            echo "Already using Myna? It updates itself, voice included."
             echo
             CHANGELOG="apps/macos/Resources/changelogs/v${VERSION%.*}.md"
             if [ -f "$CHANGELOG" ]; then cat "$CHANGELOG"; fi

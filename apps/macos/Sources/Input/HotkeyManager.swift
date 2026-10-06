@@ -36,14 +36,25 @@ extension KeyboardShortcuts.Name {
         "stop",
         default: .init(.period, modifiers: [.command, .option, .shift])
     )
+    /// End the current read and start the next queued one. No default
+    /// chord: it's new since v1, and any chord we picked could already mean
+    /// something in the user's apps. Record one in the Shortcuts pane.
+    public static let skipToNext = Self("skipToNext")
+    /// Sentence skip, for the transcript. No default chord, for the same
+    /// reason as skipToNext.
+    public static let previousSentence = Self("previousSentence")
+    public static let nextSentence = Self("nextSentence")
 
-    /// All five Myna shortcut names, in declaration order.
+    /// Every Myna shortcut name, in declaration order.
     public static let allMynaShortcuts: [KeyboardShortcuts.Name] = [
         .speakSelectionFull,
         .speakSelectionSummary,
         .readChromeArticle,
         .pauseResume,
         .stop,
+        .skipToNext,
+        .previousSentence,
+        .nextSentence,
     ]
 }
 
@@ -54,6 +65,9 @@ public enum HotkeyAction: String, CaseIterable, Sendable {
     case readChromeArticle = "read_chrome_article"
     case pauseResume = "pause_resume"
     case stop
+    case skipToNext = "skip_to_next"
+    case previousSentence = "previous_sentence"
+    case nextSentence = "next_sentence"
 
     public var name: KeyboardShortcuts.Name {
         switch self {
@@ -62,6 +76,9 @@ public enum HotkeyAction: String, CaseIterable, Sendable {
         case .readChromeArticle: return .readChromeArticle
         case .pauseResume: return .pauseResume
         case .stop: return .stop
+        case .skipToNext: return .skipToNext
+        case .previousSentence: return .previousSentence
+        case .nextSentence: return .nextSentence
         }
     }
 }

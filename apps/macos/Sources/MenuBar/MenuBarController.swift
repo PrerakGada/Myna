@@ -55,6 +55,10 @@ public final class MenuBarController: ObservableObject, CCToastActions {
     public let player: AudioPlayer
     public let updates: UpdateController
     public weak var settings: SettingsViewModel?
+    /// The app dispatcher, for popover rows that start a read. Weak because
+    /// the dispatcher outlives the controller and already holds a weak
+    /// reference back to it. Nil in tests and until AppDelegate wires it.
+    public weak var actions: (any MenuBarActionTarget)?
     public let toasts: CCToastController = CCToastController()
     private let recentsStore: RecentItemsStore
 
@@ -141,7 +145,8 @@ public final class MenuBarController: ObservableObject, CCToastActions {
         // (Lane B) and may 404 pre-merge. registryListV2 swallows 404 → [].
         do {
             let list = try await client.registryListV2()
-            self.ccPending = list.pending
+            // "Needs you" alerts only surface once hands-free alerts are on.
+            self.ccPending = HandsFreeSettings.visiblePending(list.pending)
         } catch {
             self.ccPending = []
         }
@@ -212,7 +217,12 @@ public final class MenuBarController: ObservableObject, CCToastActions {
             reachability: reachability,
             hotkeyLabelFor: HotkeyLabel.display(for:),
             isPlayerLoading: player.isLoading,
-            loadingTitle: lastReadTitle
+            loadingTitle: lastReadTitle,
+            // A reachable daemon whose engine is down already turns the menu
+            // bar bird red; before this the popover went on saying "READY".
+            // `nil` status means we haven't heard from the daemon at all —
+            // that's the reachability path's job, not a warning of its own.
+            isEngineUp: status.map(\.isEngineUp) ?? true
         )
     }
 
@@ -272,6 +282,28 @@ public final class MenuBarController: ObservableObject, CCToastActions {
         player.setSpeed(value)
     }
 
+    /// Read whatever is on the clipboard. This is the popover's primary
+    /// action: unlike speak-selection it doesn't depend on which app is
+    /// frontmost, so it still does the right thing with the popover open
+    /// and focus sitting on Myna.
+    public func readClipboard(mode: SynthesizeMode = .full) {
+        guard let text = ClipboardProbe.text() else {
+            showNotice(
+                title: "Nothing on the clipboard",
+                hint: "Copy some text first, then choose Read clipboard."
+            )
+            return
+        }
+        actions?.speakText(text, mode: mode)
+    }
+
+    /// Read the front Chrome tab — same path as the ⌥⇧⌘R hotkey. Safe from
+    /// the popover because it asks Chrome over AppleEvents rather than
+    /// reading whatever app happens to be frontmost.
+    public func readChromeTab() {
+        actions?.readChrome()
+    }
+
     public func seek(delta: TimeInterval) {
         player.seek(delta: delta)
     }
@@ -295,6 +327,21 @@ public final class MenuBarController: ObservableObject, CCToastActions {
         if let text = item.text { info["text"] = text }
         if let url = item.url { info["url"] = url }
         NotificationCenter.default.post(name: .mynaReplayRecent, object: nil, userInfo: info)
+    }
+
+    /// Replay a row from the Dashboard's History pane. Same notification
+    /// the Recent submenu uses, so both paths land in AppDispatcher's one
+    /// replay handler.
+    public func replay(event: ReadEvent) {
+        var info: [String: String] = ["title": event.title, "voice": event.voice]
+        if let text = event.text { info["text"] = text }
+        if let url = event.url { info["url"] = url }
+        NotificationCenter.default.post(name: .mynaReplayRecent, object: nil, userInfo: info)
+    }
+
+    /// Open the Dashboard window, optionally at a specific pane.
+    public func openDashboard(pane: DashboardPane? = nil) {
+        DashboardLauncher.shared.present(pane: pane)
     }
 
     public func openSettings() {
@@ -326,10 +373,24 @@ public final class MenuBarController: ObservableObject, CCToastActions {
 
     // MARK: - CCToastActions
 
+    /// Play a CC reply (toast or popover card) through the IN-PROCESS player,
+    /// the same .mynaReplayRecent → AppDispatcher wire the pill's prompt uses.
+    /// Asking the daemon to speak it instead played the audio in another
+    /// process: the pill never saw processing/playing, its transport couldn't
+    /// stop it, and the read never reached History. The daemon is only told
+    /// to drop the item from pending (dismiss, which every daemon since S08
+    /// has and which never speaks — so no double audio on an older daemon).
     public nonisolated func play(item: RegistryV2Item) {
-        Task { [weak self] in
+        Task { @MainActor [weak self] in
+            let boldOnly = self?.settings?.ccBoldClaimsOnly ?? false
+            NotificationCenter.default.post(
+                name: .mynaReplayRecent, object: nil,
+                userInfo: [
+                    "title": item.spokenText(boldClaimsOnly: boldOnly),
+                    "source": ReadSource.claudeCode.rawValue,
+                ])
             do {
-                _ = try await self?.client.registryPlayV2(id: item.id)
+                _ = try await self?.client.registryDismissV2(id: item.id)
             } catch {
                 // Logged elsewhere; menu/poll refresh will re-sync.
             }

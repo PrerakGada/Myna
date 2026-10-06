@@ -19,6 +19,8 @@ def test_model_status_shape():
         "daemon_rss_mb",
         "daemon_pid",
         "suspend_supported",
+        "engine_memory_mb",
+        "engine_pid",
     }
 
 

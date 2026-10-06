@@ -21,6 +21,8 @@ public final class PillViewModel: ObservableObject {
     private let player: AudioPlayer
     private let settings: SettingsViewModel
     private let bridge: PillBridge
+    /// Reads waiting their turn — drives the "+2 queued" chip and Skip.
+    private let queue: ReadQueue
     /// MenuBarController supplies the recents ring + the replay hook. Weak —
     /// it's an app-lifetime singleton the pill doesn't own. Optional so tests
     /// and previews can construct the view-model without a menu bar.
@@ -67,6 +69,10 @@ public final class PillViewModel: ObservableObject {
     /// and pushes the current value here via setPrompt.
     @Published public private(set) var pendingPrompt: RegistryV2Item?
 
+    /// "+2 queued" while reads are waiting, nil otherwise. Mirrors
+    /// ReadQueue.countLabel so every surface says it the same way.
+    @Published public private(set) var queuedLabel: String?
+
     /// Set by PillController so the prompt buttons route through its handled-id
     /// bookkeeping (and the in-process synth for Play).
     public var onPlayPrompt: ((RegistryV2Item) -> Void)?
@@ -88,12 +94,14 @@ public final class PillViewModel: ObservableObject {
         player: AudioPlayer,
         settings: SettingsViewModel,
         bridge: PillBridge = .shared,
-        menuController: MenuBarController? = nil
+        menuController: MenuBarController? = nil,
+        queue: ReadQueue = .shared
     ) {
         self.player = player
         self.settings = settings
         self.bridge = bridge
         self.menuController = menuController
+        self.queue = queue
 
         #if DEBUG
         // In preview-only mode skip live subscriptions so the forced state in
@@ -132,6 +140,11 @@ public final class PillViewModel: ObservableObject {
         player.$speed
             .receive(on: RunLoop.main)
             .sink { [weak self] s in self?.speed = s }
+            .store(in: &cancellables)
+
+        queue.$items
+            .receive(on: RunLoop.main)
+            .sink { [weak self] items in self?.queuedLabel = ReadQueue.countLabel(for: items.count) }
             .store(in: &cancellables)
 
         // Recents ring from the menu bar — drives the pinned transcript list.
@@ -248,8 +261,15 @@ public final class PillViewModel: ObservableObject {
     }
 
     /// Stop button — ends the session (player goes idle, pill collapses/hides).
+    /// The queue hears about it through AudioPlayer.sessionEnds and drops
+    /// every waiting read too: Stop means everything.
     public func stop() {
         player.stop()
+    }
+
+    /// Skip button — end this read and start the next queued one.
+    public func skipToNext() {
+        queue.skip()
     }
 
     /// Seek to an absolute position in seconds (scrubber commit).
@@ -288,11 +308,16 @@ public final class PillViewModel: ObservableObject {
         case .idle:
             isSpeaking = false
             isPaused = false
-            // Stopping clears the user's pin/hover so the next session starts
-            // collapsed; clear the bridge so stale preview text doesn't show.
-            isPinned = false
-            isHovering = false
-            bridge.clear()
+            // The player also idles for a moment between two queued reads (and
+            // when a read starts). Only when nothing is left to read: clear the
+            // user's pin/hover so the next session starts collapsed, and clear
+            // the bridge so stale preview text doesn't show. Mid-queue, keeping
+            // them lets a hovered pill stay open across Skip.
+            if !queue.isBusy {
+                isPinned = false
+                isHovering = false
+                bridge.clear()
+            }
         }
         refreshLayout()
     }

@@ -62,6 +62,21 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: dev.myna.urlscheme
             CFBundleURLSchemes: [myna]
+        # Services menu entries (right-click ▸ Services). Handled by
+        # Sources/Input/ServicesProvider.swift, which explains each key.
+        # NSRequiredContext must stay present even though it is empty:
+        # without it macOS registers the service but never shows it.
+        NSServices:
+          - NSMenuItem: { default: "Read with Myna" }
+            NSMessage: readSelection
+            NSPortName: Myna
+            NSSendTypes: [NSStringPboardType, public.utf8-plain-text]
+            NSRequiredContext: {}
+          - NSMenuItem: { default: "Summarize with Myna" }
+            NSMessage: summarizeSelection
+            NSPortName: Myna
+            NSSendTypes: [NSStringPboardType, public.utf8-plain-text]
+            NSRequiredContext: {}
         SUFeedURL: "https://github.com/PrerakGada/myna/releases/download/appcast/appcast.xml"
         SUPublicEDKey: "lEoEYOBRVnzZC9bysaAYSRpEuXSDmd/FagSmzv2ozHg="
         SUEnableAutomaticChecks: YES

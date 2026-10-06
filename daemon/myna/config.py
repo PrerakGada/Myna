@@ -22,6 +22,11 @@ DEFAULTS = {
     "voice": "af_heart",
     "lang_code": "a",
     "model": "prince-canuma/Kokoro-82M",
+    # Which catalog engine (myna.engines) speaks. `model` follows it; older
+    # configs without this key are resolved from `model` instead.
+    "engine": None,
+    # Last voice used on each engine, so switching back restores it.
+    "engine_voices": {},
     "summary_model": "qwen3.5:4b",
     "summary_think": False,
     "summary_timeout": 60.0,
@@ -46,3 +51,22 @@ def load_config() -> dict:
     if CONFIG_PATH.exists():
         cfg.update(json.loads(CONFIG_PATH.read_text()))
     return cfg
+
+
+def save_config(updates: dict) -> None:
+    """Merge `updates` into the user's config.json, atomically.
+
+    Only the user file is rewritten — never DEFAULTS — so keys the user never
+    set keep following future default changes.
+    """
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    current: dict = {}
+    if CONFIG_PATH.exists():
+        try:
+            current = json.loads(CONFIG_PATH.read_text())
+        except (OSError, json.JSONDecodeError):
+            current = {}
+    current.update(updates)
+    tmp = CONFIG_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(current, indent=2) + "\n")
+    tmp.replace(CONFIG_PATH)

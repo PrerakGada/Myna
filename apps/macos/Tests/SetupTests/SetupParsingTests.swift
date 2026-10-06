@@ -46,6 +46,17 @@ final class SetupParsingTests: XCTestCase {
         XCTAssertNil(DaemonService.parseVersion("VERSION = 1\n"))
     }
 
+    func test_brew_daemon_update_retries_every_few_hours_per_version() {
+        let now = Date()
+        let recent: [String: Any] = ["version": "0.6.0", "at": now.addingTimeInterval(-60)]
+        let stale: [String: Any] = ["version": "0.6.0", "at": now.addingTimeInterval(-DaemonService.brewRetryInterval)]
+        XCTAssertTrue(DaemonService.brewUpdateDue(bundled: "0.6.0", last: nil, now: now))
+        XCTAssertFalse(DaemonService.brewUpdateDue(bundled: "0.6.0", last: recent, now: now))
+        XCTAssertTrue(DaemonService.brewUpdateDue(bundled: "0.6.0", last: stale, now: now))
+        // A newer app tries straight away, whatever happened for the last one.
+        XCTAssertTrue(DaemonService.brewUpdateDue(bundled: "0.6.1", last: recent, now: now))
+    }
+
     func test_setup_script_only_announces_steps_the_window_knows() throws {
         let repo = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // SetupTests

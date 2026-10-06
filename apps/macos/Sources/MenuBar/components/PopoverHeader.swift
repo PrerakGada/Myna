@@ -1,5 +1,11 @@
 // PopoverHeader.swift — top row of the popover. Bird glyph + product
-// name + version + colored status dot indicating the current IconState.
+// name + version, and a tinted status pill on the right.
+//
+// The status used to be a bare dot and a lowercase word, immediately
+// above a hero card whose entire job was to restate the same thing
+// ("READY / No audio playing"). With the hero gone in the idle case,
+// this pill is the only status readout — so it carries its own tint and
+// says the state in words a person would use.
 import SwiftUI
 
 public struct PopoverHeader: View {
@@ -16,23 +22,32 @@ public struct PopoverHeader: View {
             BirdIcon.artwork
                 .resizable()
                 .scaledToFit()
-                .frame(width: 28, height: 28)
+                .frame(width: 26, height: 26)
             Text("Myna")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(PopoverDesign.bodyColor)
             Text("v\(versionString)")
                 .font(PopoverDesign.captionFont)
-                .foregroundStyle(PopoverDesign.secondaryColor)
+                .foregroundStyle(PopoverDesign.secondaryColor.opacity(0.7))
             Spacer(minLength: 0)
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(dotColor)
-                    .frame(width: 6, height: 6)
-                Text(statusLabel)
-                    .font(PopoverDesign.captionFont)
-                    .foregroundStyle(PopoverDesign.secondaryColor)
-            }
+            statusPill
         }
+    }
+
+    private var statusPill: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 6, height: 6)
+            Text(statusLabel)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(dotColor)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(dotColor.opacity(0.14)))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Status: \(statusLabel)")
     }
 
     private var dotColor: Color {
@@ -45,13 +60,15 @@ public struct PopoverHeader: View {
         }
     }
 
+    /// Words, not enum names. "thinking" told the user nothing about what
+    /// Myna was doing with their text.
     private var statusLabel: String {
         switch iconState {
-        case .idle: return "idle"
-        case .speaking: return "speaking"
-        case .thinking: return "thinking"
-        case .paused: return "paused"
-        case .error: return "offline"
+        case .idle: return "Ready"
+        case .speaking: return "Reading"
+        case .thinking: return "Preparing"
+        case .paused: return "Paused"
+        case .error: return "Offline"
         }
     }
 

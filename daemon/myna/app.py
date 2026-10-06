@@ -1,25 +1,30 @@
 import asyncio
 import concurrent.futures
 import contextlib
+import dataclasses
 import json
 import logging
 import os
 import pathlib
+import threading
 import time
 import urllib.parse
 import uuid
 
 import httpx
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__, chunking, engine
+from . import engines as engine_catalog
 from . import extract as extract_mod
 from . import lang_detect
+from . import speakable as speakable_mod
+from . import voice_library as voice_library_mod
 from . import summarize as summarize_mod
-from .config import load_config
+from .config import load_config, save_config
+from .engine_store import EngineStore, phys_footprint_mb, pid_listening_on
 from .player import Player
 from .registry import Registry
 from .state import StateMachine
@@ -34,7 +39,12 @@ from .voice_previews import (
 from .v2_types import (
     V2ConfigInfo,
     V2DaemonInfo,
+    V2Engine,
+    V2EngineActivateResp,
     V2EngineInfo,
+    V2Engines,
+    V2EngineStats,
+    V2EngineVoice,
     V2ExtractReq,
     V2ExtractResp,
     V2Health,
@@ -46,26 +56,34 @@ from .v2_types import (
     V2RegistryInfo,
     V2RegistryItem,
     V2RegistryListResp,
+    V2RegistryPartlyHeardReq,
+    V2RegistryPartlyHeardResp,
+    V2RegistryPlayReq,
+    V2SpeakableReq,
+    V2SpeakableResp,
     V2Status,
     V2SummarizeReq,
     V2SummarizeResp,
     V2SynthesizeReq,
     V2V1PlayerInfo,
+    V2BlendReq,
+    V2Library,
+    V2LibraryVoice,
     V2Voice,
+    V2VoiceRenameReq,
+    V2Voices,
+    V2VoicesEngine,
     V2VoiceWardrobe,
     V2VoiceWardrobeEntry,
-    V2Voices,
 )
+from .voice_store import VoiceStore, VoiceStoreError
 from .voice_wardrobe import VoiceWardrobe, resolve_voice
 
 logger = logging.getLogger(__name__)
 
 # Cache TTLs
+_SPEAKABLE_MAX_CHARS = 2_000_000  # the render-job limit
 _ENGINE_CHECK_TTL_S = 1.0       # /v2/health and /v2/status reuse a check this fresh
-_VOICES_CACHE_TTL_S = 300.0     # 5 minutes
-
-# Fallback list when Kokoro doesn't expose voices via /v1/voices
-_KOKORO_FALLBACK_VOICE_IDS = ["af_heart", "af_bella", "am_michael", "am_adam"]
 
 
 class SpeakReq(BaseModel):
@@ -75,6 +93,8 @@ class SpeakReq(BaseModel):
     voice: str | None = None
     speed: float | None = None
     source: str | None = None
+    # "literal" reads the text as written; see myna.speakable.
+    prep: str | None = None
 
 
 class AnnounceReq(BaseModel):
@@ -87,29 +107,6 @@ class SpeedReq(BaseModel):
     value: float
 
 
-def _voice_label(voice_id: str) -> str:
-    """Human-friendly label for a Kokoro voice id.
-
-    Format: "Name (gender)". Naming convention follows Kokoro's `<lang><gender>_<name>`.
-    """
-    # Strip the lang/gender prefix (e.g., "af_heart" -> "heart").
-    name = voice_id.split("_", 1)[-1] if "_" in voice_id else voice_id
-    gender = "unknown"
-    if voice_id.startswith("af") or voice_id.startswith("bf"):
-        gender = "female"
-    elif voice_id.startswith("am") or voice_id.startswith("bm"):
-        gender = "male"
-    return f"{name.capitalize()} ({gender})"
-
-
-def _voice_lang(voice_id: str) -> str:
-    """Best-effort language code from Kokoro voice id ("af_heart" -> "en")."""
-    # Kokoro voice ids start with a/b for English (American/British) — both "en".
-    if voice_id[:1] in {"a", "b"}:
-        return "en"
-    return "unknown"
-
-
 async def _warm_voice_previews(app) -> None:
     """Pre-synthesize top voices at boot. Fire-and-forget; per-voice
     failures are logged and skipped (engine may be cold).
@@ -119,7 +116,9 @@ async def _warm_voice_previews(app) -> None:
     """
     cache = app.state.voice_preview_cache
     cfg = app.state.cfg
-    for voice_id in WARM_VOICES:
+    spec = engine_catalog.active_spec(cfg)
+    warm = WARM_VOICES if spec.id == "kokoro" else [v.id for v in spec.voices]
+    for voice_id in warm:
         if cache.get(voice_id) is not None:
             continue
         sentence = sample_for_voice(voice_id)
@@ -127,11 +126,9 @@ async def _warm_voice_previews(app) -> None:
             wav = await asyncio.to_thread(
                 app.state.synthesize,
                 sentence,
-                voice=voice_id,
                 speed=1.0,
                 base_url=cfg["engine_url"],
-                model=cfg["model"],
-                lang_code=cfg["lang_code"],
+                **app.state.engine_kwargs(voice_id),
             )
         except Exception as exc:
             logger.info("voice preview warm skip %s: %s", voice_id, exc)
@@ -139,7 +136,7 @@ async def _warm_voice_previews(app) -> None:
         cache.put(voice_id, wav)
 
 
-def create_app(config: dict | None = None) -> FastAPI:
+def create_app(config: dict | None = None, *, persist_config: bool | None = None) -> FastAPI:
     @contextlib.asynccontextmanager
     async def _lifespan(app: FastAPI):
         # The daemon supervises the mlx-audio engine as a child process so the
@@ -180,17 +177,13 @@ def create_app(config: dict | None = None) -> FastAPI:
                 engine_sup.stop()
 
     app = FastAPI(title="Myna", lifespan=_lifespan)
-    # DNS-rebinding defence: the daemon is reachable only on 127.0.0.1
-    # but a browser the user opens can be coerced into resolving an
-    # attacker's hostname to 127.0.0.1 and POSTing through it. Reject
-    # any Host header that isn't a local-loopback name so cross-origin
-    # browser-driven attackers can't reach our routes even with a
-    # rebinding DNS server. The list mirrors what `myna` actually binds
-    # (uvicorn defaults to 127.0.0.1 from our launchagent).
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["127.0.0.1", "localhost"],
-    )
+    # Who may call: callers on this Mac must use a loopback Host name (the
+    # DNS-rebinding defence), and other devices, only once the API pane turns
+    # on local-network access, may reach /v1/* with the API key and nothing
+    # else. See myna.api_access.
+    from .api_access import AccessMiddleware
+
+    app.add_middleware(AccessMiddleware)
     cfg = config or load_config()
     app.state.cfg = cfg
     app.state.speed = cfg["speed"]
@@ -212,6 +205,7 @@ def create_app(config: dict | None = None) -> FastAPI:
     app.state.karaoke = make_karaoke_emitter(cfg)
     app.state.synthesize = engine.synthesize
     app.state.engine_up = engine.engine_up
+    app.state.loaded_models = engine.loaded_models
     app.state.summarize = summarize_mod.summarize
     app.state.extract = extract_mod.extract_article
     # Voice wardrobe: optional per-bundle-id voice overrides. Lives in
@@ -220,12 +214,88 @@ def create_app(config: dict | None = None) -> FastAPI:
     app.state.wardrobe = VoiceWardrobe()
     app.state.detect_language = lang_detect.detect_language
 
+    # ----- voice engines (myna.engines) -----
+    # Only the real daemon (__main__) writes ~/.config/myna/config.json. Tests
+    # build the app with an explicit config dict and must never touch it.
+    if persist_config is None:
+        persist_config = config is None
+    app.state.save_config = save_config if persist_config else (lambda _updates: None)
+    app.state.engine_store = EngineStore(venv_dir=cfg.get("engine_venv", "~/.venvs/mlx-audio"))
+    app.state.engine_switch_lock = threading.Lock()
+    app.state.engine_switch = None  # {"engine": id, "started_at": t} while switching
+
+    def _remember_voice(spec, voice: str) -> None:
+        """Keep the last voice used per engine, in memory.
+
+        Written to disk only by an engine switch — never from the read path,
+        which runs on every synthesize and inside tests that build the app
+        without an isolated config.
+        """
+        voices = cfg.get("engine_voices") or {}
+        if voices.get(spec.id) != voice:
+            cfg["engine_voices"] = {**voices, spec.id: voice}
+
+    # The user's own voices (clips, Kokoro blends) and the library of clips
+    # to add them from. Tests swap both for tmpdir-backed instances.
+    app.state.voice_store = VoiceStore()
+    app.state.voice_library = voice_library_mod.VoiceLibrary()
+
+    def _usable(spec):
+        return lambda voice_id: app.state.voice_store.usable(spec.id, voice_id)
+
+    def _resolve_voice(spec, requested):
+        remembered = (cfg.get("engine_voices") or {}).get(spec.id) or cfg.get("voice")
+        return engine_catalog.resolve_voice(spec, requested, remembered, _usable(spec))
+
+    def _synth_kwargs(spec, voice_id: str) -> dict:
+        """The engine request for an already-resolved voice.
+
+        Built-ins go through as they are. A blend becomes Kokoro's
+        comma-joined id; a clip becomes a file path — Pocket takes it as its
+        voice, Chatterbox as `ref_audio` (the engine shim caches what it
+        derives from the clip, so that costs one analysis, not one per
+        sentence). Kokoro's pipeline language follows the voice.
+        """
+        engine_voice = voice_id
+        extra = dict(spec.request_params)
+        entry = app.state.voice_store.get(voice_id)
+        if entry is not None and entry["kind"] == "blend":
+            engine_voice = VoiceStore.kokoro_voice(entry)
+        elif entry is not None and entry["kind"] == "clip":
+            clip = str(app.state.voice_store.clip_path(voice_id))
+            if spec.id == "chatterbox":
+                extra["ref_audio"] = clip
+                engine_voice = spec.default_voice
+            else:
+                engine_voice = clip
+        lang_code = cfg["lang_code"]
+        if spec.id == "kokoro":
+            lang_code = engine_catalog.kokoro_lang_code(engine_voice) or lang_code
+        kwargs = {"voice": engine_voice, "model": spec.repo, "lang_code": lang_code}
+        if extra:
+            kwargs["extra"] = extra
+        return kwargs
+
+    def _engine_kwargs(voice, *, remember: bool = False) -> dict:
+        """Everything engine-specific about one synthesize call.
+
+        Maps a voice from another engine (the app sends its saved voice on
+        every read) to one this engine has, and adds the engine's own
+        sampling settings. Only real reads pass `remember=True`: previews and
+        the boot-time warm-up walk through voices the user never chose.
+        """
+        spec = engine_catalog.active_spec(cfg)
+        resolved = _resolve_voice(spec, voice)
+        if remember and resolved == voice:
+            _remember_voice(spec, resolved)
+        return _synth_kwargs(spec, resolved)
+
+    app.state.engine_kwargs = _engine_kwargs
+
     # v2 bookkeeping
     app.state.started_at = time.time()
     app.state.last_engine_check_at: float = 0.0
     app.state.last_engine_status: bool = False
-    app.state.voices_cache: list[V2Voice] | None = None
-    app.state.voices_cache_at: float = 0.0
 
     tmpdir = pathlib.Path.home() / ".cache" / "myna" / "tmp"
 
@@ -234,17 +304,15 @@ def create_app(config: dict | None = None) -> FastAPI:
         for chunk in chunking.chunk_text(text, cfg["chunk_chars"]):
             wav = app.state.synthesize(
                 chunk,
-                voice=voice,
                 speed=speed,
                 base_url=cfg["engine_url"],
-                model=cfg["model"],
-                lang_code=cfg["lang_code"],
+                **app.state.engine_kwargs(voice, remember=True),
             )
             p = tmpdir / f"{uuid.uuid4().hex}.wav"
             p.write_bytes(wav)
             yield str(p)
 
-    def _speak(req: SpeakReq):
+    def _speak(req: SpeakReq, *, text_source: str | None = None):
         text = req.text
         if req.url:
             text = app.state.extract(req.url)
@@ -261,6 +329,11 @@ def create_app(config: dict | None = None) -> FastAPI:
                 think=cfg["summary_think"],
                 timeout=cfg["summary_timeout"],
             )
+        text = app.state.speakable(
+            text, source=text_source or req.source, prep=req.prep or "auto", url=bool(req.url)
+        )
+        if not text:
+            return {"ok": False, "reason": "empty"}
         voice = req.voice or cfg["voice"]
         speed = req.speed or app.state.speed
         app.state.player.play(
@@ -289,7 +362,8 @@ def create_app(config: dict | None = None) -> FastAPI:
         item = app.state.registry.pop(item_id)
         if not item:
             return {"ok": False, "reason": "not_found"}
-        return _speak(SpeakReq(text=item["text"], mode=mode, source=item["label"]))
+        # v1 /announce items are Claude Code replies (the pre-registry hook).
+        return _speak(SpeakReq(text=item["text"], mode=mode, source=item["label"]), text_source="claude_code")
 
     @app.post("/pause")
     def pause():
@@ -346,45 +420,50 @@ def create_app(config: dict | None = None) -> FastAPI:
             return 0.0
         return max(0.0, time.time() - app.state.last_engine_check_at)
 
-    def _fetch_voices_from_engine() -> list[V2Voice]:
-        """Try Kokoro's /v1/voices; fall back to a hardcoded list of known ids.
-
-        The configured default voice is marked default=true.
-        """
-        default_id = cfg["voice"]
-        ids: list[str] = []
-        try:
-            resp = httpx.get(f"{cfg['engine_url']}/v1/voices", timeout=2.0)
-            resp.raise_for_status()
-            data = resp.json()
-            # Try several common shapes: ["af_heart", ...] or {"voices": [...]} or
-            # {"voices": [{"id": "af_heart"}, ...]}
-            if isinstance(data, list):
-                ids = [v if isinstance(v, str) else v.get("id", "") for v in data]
-            elif isinstance(data, dict):
-                raw = data.get("voices") or data.get("data") or []
-                for v in raw:
-                    if isinstance(v, str):
-                        ids.append(v)
-                    elif isinstance(v, dict):
-                        ids.append(v.get("id") or v.get("name") or "")
-            ids = [i for i in ids if i]
-        except Exception:
-            ids = []
-        if not ids:
-            ids = list(_KOKORO_FALLBACK_VOICE_IDS)
-        # Make sure the configured default is present.
-        if default_id and default_id not in ids:
-            ids.insert(0, default_id)
-        return [
-            V2Voice(
-                id=vid,
-                label=_voice_label(vid),
-                lang=_voice_lang(vid),
-                default=(vid == default_id),
+    def _user_voice_payload(entry: dict, default_id: str) -> V2Voice:
+        if entry["kind"] == "blend":
+            detail = " + ".join(
+                f"{m['voice'].split('_', 1)[1].capitalize()}"
+                + (f" ×{m['weight']}" if len({x['weight'] for x in entry['mix']}) > 1 else "")
+                for m in entry["mix"]
             )
-            for vid in ids
+            lang = engine_catalog.kokoro_lang_code(entry["mix"][0]["voice"]) or "a"
+            iso = lang_detect.map_voice_lang_to_iso(lang) or "en"
+            return V2Voice(
+                id=entry["id"], label=entry["name"], lang=iso, default=(entry["id"] == default_id),
+                kind="blend", group="Your blends", detail=f"Blend of {detail}",
+            )
+        return V2Voice(
+            id=entry["id"], label=entry["name"], lang="en", default=(entry["id"] == default_id),
+            kind="clip", group="Your voices", gender=entry.get("gender"),
+            detail=entry.get("detail") or f"From a {entry.get('duration_s', 0):g} s clip",
+            credit=entry.get("credit"),
+        )
+
+    def _voices_for_active_engine() -> list[V2Voice]:
+        """The active engine's built-in voices, then the user's own it can speak.
+
+        The engine itself can't list voices (mlx-audio has no /v1/voices), so
+        the catalog in myna.engines is the source. The voice this engine
+        would use with no request — the remembered one — is marked default.
+        """
+        spec = engine_catalog.active_spec(cfg)
+        default_id = _resolve_voice(spec, None)
+        voices = [
+            V2Voice(
+                id=v.id, label=v.label, lang=v.lang, default=(v.id == default_id), kind="builtin",
+                group=v.group, gender=v.gender, grade=v.grade, detail=v.detail,
+            )
+            for v in spec.voices
         ]
+        voices += [_user_voice_payload(e, default_id) for e in app.state.voice_store.for_engine(spec.id)]
+        return voices
+
+    def _active_engine_about() -> V2VoicesEngine:
+        spec = engine_catalog.active_spec(cfg)
+        return V2VoicesEngine(
+            id=spec.id, name=spec.name, can_clone=spec.cloning, can_blend=spec.blending, note=spec.voices_note,
+        )
 
     def _prepare_v2_text(req: V2SynthesizeReq, *, mode: str) -> str:
         """Apply the same text/url/summarise pipeline as v1 _speak, with v2
@@ -429,8 +508,18 @@ def create_app(config: dict | None = None) -> FastAPI:
                 base_url=cfg["ollama_url"],
                 think=cfg["summary_think"],
                 timeout=cfg["summary_timeout"],
+                style=req.summary_style,
             )
 
+        # The words to speak: markdown, code, URLs and citation marks out,
+        # per the source's preset. Before chunking, so chunks end on real
+        # sentences. A summary is cleaned after it's written.
+        text = app.state.speakable(text, source=req.source, prep=req.prep, url=bool(req.url))
+        if not text:
+            raise HTTPException(
+                status_code=400,
+                detail={"ok": False, "reason": "empty"},
+            )
         return text
 
     def _v2_synthesize_response(
@@ -498,6 +587,9 @@ def create_app(config: dict | None = None) -> FastAPI:
             detected = None
         configured_iso = lang_detect.map_voice_lang_to_iso(cfg.get("lang_code"))
         lang_headers: dict[str, str] = {}
+        lang_headers["X-Myna-Speakable"] = (
+            "literal" if req.prep == "literal" else speakable_mod.preset_for(req.source, url=bool(req.url))
+        )
         if detected:
             lang_headers["X-Myna-Detected-Lang"] = detected
             if configured_iso and detected != configured_iso:
@@ -509,11 +601,9 @@ def create_app(config: dict | None = None) -> FastAPI:
         try:
             first_wav = app.state.synthesize(
                 chunks[0],
-                voice=voice,
                 speed=speed,
                 base_url=cfg["engine_url"],
-                model=cfg["model"],
-                lang_code=cfg["lang_code"],
+                **app.state.engine_kwargs(voice, remember=True),
             )
         except Exception as exc:
             app.state.machine.transition_to("error")
@@ -524,14 +614,20 @@ def create_app(config: dict | None = None) -> FastAPI:
 
         boundary = b"mynachunk"
 
-        def _part_headers(idx: int, total: int, preview: str) -> bytes:
-            preview_encoded = urllib.parse.quote(preview[:200], safe="")
+        def _part_headers(idx: int, total: int, chunk_text: str) -> bytes:
+            preview_encoded = urllib.parse.quote(chunk_text[:200], safe="")
+            # The whole chunk, for the app's sentence transcript. The text
+            # spoken is the cleaned-up text chunked here, which the app can't
+            # rebuild from what it sent, and the 200-char preview cuts most
+            # chunks short. Additive: older clients ignore the header.
+            full_encoded = urllib.parse.quote(chunk_text, safe="")
             return (
                 b"--" + boundary + b"\r\n"
                 b"Content-Type: audio/wav\r\n"
                 b"X-Chunk-Index: " + str(idx).encode() + b"\r\n"
                 b"X-Chunk-Total-Estimate: " + str(total).encode() + b"\r\n"
-                b"X-Chunk-Text: " + preview_encoded.encode() + b"\r\n\r\n"
+                b"X-Chunk-Text: " + preview_encoded.encode() + b"\r\n"
+                b"X-Chunk-Text-Full: " + full_encoded.encode() + b"\r\n\r\n"
             )
 
         def _final_part(actual_chunks: int) -> bytes:
@@ -568,11 +664,9 @@ def create_app(config: dict | None = None) -> FastAPI:
             """
             return app.state.synthesize(
                 chunk,
-                voice=voice,
                 speed=speed,
                 base_url=cfg["engine_url"],
-                model=cfg["model"],
-                lang_code=cfg["lang_code"],
+                **app.state.engine_kwargs(voice, remember=True),
             )
 
         def _generator():
@@ -673,12 +767,26 @@ def create_app(config: dict | None = None) -> FastAPI:
     def v2_synthesize_summary(req: V2SynthesizeReq):
         return _v2_synthesize_response(req, mode="summary")
 
+    @app.post("/v2/speakable", response_model=V2SpeakableResp)
+    def v2_speakable(req: V2SpeakableReq) -> V2SpeakableResp:
+        """What a read of this text would say. Deterministic, so History can
+        show a past read "as heard" by asking again with its source and prep."""
+        if not req.text.strip():
+            raise HTTPException(status_code=400, detail={"ok": False, "reason": "empty"})
+        if len(req.text) > _SPEAKABLE_MAX_CHARS:
+            raise HTTPException(status_code=413, detail={"ok": False, "reason": "input_too_long"})
+        text = app.state.speakable(req.text, source=req.source, prep=req.prep, kind=req.source_kind)
+        preset = "literal" if req.prep == "literal" else speakable_mod.preset_for(req.source, kind=req.source_kind)
+        return V2SpeakableResp(text=text, changed=speakable_mod.changed(req.text, text), preset=preset)
+
     @app.get("/v2/status")
     def v2_status() -> V2Status:
         engine_up_now = _check_engine_cached()
         player_st = app.state.player.status()
         reg_items = app.state.registry.list_items()
         machine_snap = app.state.machine.snapshot()
+        active = engine_catalog.active_spec(cfg)
+        active_voice = _resolve_voice(active, None)
         return V2Status(
             # v0.2 top-level fields (Track A reads these)
             ok=True,
@@ -691,8 +799,10 @@ def create_app(config: dict | None = None) -> FastAPI:
             engine=V2EngineInfo(
                 url=cfg["engine_url"],
                 status="up" if engine_up_now else "down",
-                model=cfg["model"],
+                model=active.repo,
                 last_check_age_s=_engine_check_age_s(),
+                id=active.id,
+                name=active.name,
             ),
             daemon=V2DaemonInfo(
                 version=__version__,
@@ -700,7 +810,7 @@ def create_app(config: dict | None = None) -> FastAPI:
                 pid=os.getpid(),
             ),
             config=V2ConfigInfo(
-                voice=cfg["voice"],
+                voice=active_voice,
                 speed=app.state.speed,
                 lang_code=cfg["lang_code"],
                 chunk_chars=cfg["chunk_chars"],
@@ -718,23 +828,109 @@ def create_app(config: dict | None = None) -> FastAPI:
 
     @app.get("/v2/voices", response_model=V2Voices, response_model_exclude_none=True)
     def v2_voices() -> V2Voices:
-        # exclude_none=True so the happy path returns {"voices": [...]} matching
-        # docs/native-app/fixtures/voices-response.json exactly. The "engine":
-        # "down" field is only emitted when actually set, matching the contract
-        # in API_CONTRACT.md § 2 which splits success vs down shapes.
+        # exclude_none=True so the happy path never carries `"engine": null`.
+        # "engine": "down" is only emitted when the engine is unreachable,
+        # matching API_CONTRACT.md § 2 which splits success vs down shapes.
         # Per AUDIT_REPORT.md Lane C 🔴 #1.
         if not _check_engine_cached():
             return V2Voices(voices=[], engine="down")
-        now = time.time()
-        if (
-            app.state.voices_cache is not None
-            and now - app.state.voices_cache_at < _VOICES_CACHE_TTL_S
-        ):
-            return V2Voices(voices=app.state.voices_cache)
-        voices = _fetch_voices_from_engine()
-        app.state.voices_cache = voices
-        app.state.voices_cache_at = now
-        return V2Voices(voices=voices)
+        return V2Voices(voices=_voices_for_active_engine(), active_engine=_active_engine_about())
+
+    # ----- the user's own voices (myna.voice_store) -----
+
+    def _store_error(exc: VoiceStoreError) -> HTTPException:
+        status = 404 if exc.reason == "not_found" else 400
+        return HTTPException(status_code=status, detail={"ok": False, "reason": exc.reason, "detail": exc.detail})
+
+    def _forget_user_voice(voice_id: str) -> None:
+        """Drop a deleted voice's cached preview (the next one is resynthesized)."""
+        with contextlib.suppress(Exception):
+            app.state.voice_preview_cache.remove(voice_id)
+
+    def _payload_for(entry: dict) -> V2Voice:
+        return _user_voice_payload(entry, _resolve_voice(engine_catalog.active_spec(cfg), None))
+
+    @app.post("/v2/voices/clips", response_model=V2Voice, response_model_exclude_none=True, status_code=201)
+    async def v2_voice_clip_add(request: Request, name: str | None = None) -> V2Voice:
+        """Add a voice from a clip. Body: the WAV itself (audio/wav)."""
+        data = await request.body()
+        try:
+            entry = app.state.voice_store.add_clip(data, name)
+        except VoiceStoreError as exc:
+            raise _store_error(exc)
+        return _payload_for(entry)
+
+    @app.post("/v2/voices/blends", response_model=V2Voice, response_model_exclude_none=True, status_code=201)
+    def v2_voice_blend_add(req: V2BlendReq) -> V2Voice:
+        try:
+            entry = app.state.voice_store.add_blend(req.name, [m.model_dump() for m in req.mix])
+        except VoiceStoreError as exc:
+            raise _store_error(exc)
+        return _payload_for(entry)
+
+    @app.patch("/v2/voices/custom/{voice_id}", response_model=V2Voice, response_model_exclude_none=True)
+    def v2_voice_rename(voice_id: str, req: V2VoiceRenameReq) -> V2Voice:
+        try:
+            entry = app.state.voice_store.rename(voice_id, req.name)
+        except VoiceStoreError as exc:
+            raise _store_error(exc)
+        return _payload_for(entry)
+
+    @app.delete("/v2/voices/custom/{voice_id}")
+    def v2_voice_remove(voice_id: str):
+        if not app.state.voice_store.remove(voice_id):
+            raise HTTPException(status_code=404, detail={"ok": False, "reason": "not_found"})
+        _forget_user_voice(voice_id)
+        return {"ok": True}
+
+    # ----- voice library (clips to add from) -----
+
+    def _library_payload(entry: dict) -> V2LibraryVoice:
+        added = app.state.voice_store.from_library(entry["id"])
+        return V2LibraryVoice(
+            id=entry["id"], name=entry["name"], group=entry["group"], gender=entry.get("gender"),
+            age=entry.get("age"), detail=entry["detail"], license=entry["license"], credit=entry["credit"],
+            size_kb=entry["size_kb"], added_as=added["id"] if added else None,
+        )
+
+    def _library_audio(library_id: str) -> bytes:
+        if voice_library_mod.get(library_id) is None:
+            raise HTTPException(status_code=404, detail={"ok": False, "reason": "not_found"})
+        try:
+            return app.state.voice_library.audio(library_id)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail={"ok": False, "reason": "download_failed", "detail": str(exc)[:300]},
+            )
+
+    @app.get("/v2/voices/library", response_model=V2Library, response_model_exclude_none=True)
+    def v2_voice_library() -> V2Library:
+        return V2Library(
+            voices=[_library_payload(e) for e in app.state.voice_library.entries()],
+            source="Kyutai tts-voices (huggingface.co/kyutai/tts-voices)",
+        )
+
+    @app.get("/v2/voices/library/{library_id}/sample")
+    def v2_voice_library_sample(library_id: str):
+        """The original recording — what the copied voice is aiming for."""
+        return Response(content=_library_audio(library_id), media_type="audio/wav")
+
+    @app.post("/v2/voices/library/{library_id}", response_model=V2Voice, response_model_exclude_none=True)
+    def v2_voice_library_add(library_id: str) -> V2Voice:
+        existing = app.state.voice_store.from_library(library_id)
+        if existing is not None:
+            return _payload_for(existing)
+        entry = voice_library_mod.get(library_id)
+        data = _library_audio(library_id)
+        try:
+            added = app.state.voice_store.add_clip(
+                data, entry["name"], library_id=library_id, detail=entry["detail"],
+                credit=entry["credit"], gender=entry.get("gender"),
+            )
+        except VoiceStoreError as exc:
+            raise _store_error(exc)
+        return _payload_for(added)
 
     @app.get("/v2/voices/preview/{voice_id}")
     def v2_voice_preview(voice_id: str):
@@ -772,11 +968,9 @@ def create_app(config: dict | None = None) -> FastAPI:
         try:
             wav = app.state.synthesize(
                 sentence,
-                voice=voice_id,
                 speed=1.0,
                 base_url=cfg["engine_url"],
-                model=cfg["model"],
-                lang_code=cfg["lang_code"],
+                **app.state.engine_kwargs(voice_id),
             )
         except Exception as exc:
             return JSONResponse(
@@ -845,6 +1039,7 @@ def create_app(config: dict | None = None) -> FastAPI:
             base_url=cfg["ollama_url"],
             think=cfg["summary_think"],
             timeout=cfg["summary_timeout"],
+            style=req.summary_style,
         )
         return V2SummarizeResp(ok=True, summary=summary)
 
@@ -872,6 +1067,10 @@ def create_app(config: dict | None = None) -> FastAPI:
             title=req.title,
             ttl_s=req.ttl_s,
             text=req.text,
+            kind=req.kind,
+            session_id=req.session_id,
+            notification_type=req.notification_type,
+            host_bundle_id=req.host_bundle_id,
         )
         return V2RegistryAnnounceResp(
             ok=True,
@@ -891,7 +1090,9 @@ def create_app(config: dict | None = None) -> FastAPI:
         response_model=V2RegistryActionResp,
         response_model_exclude_none=True,
     )
-    def v2_registry_play(entry_id: str) -> V2RegistryActionResp:
+    def v2_registry_play(
+        entry_id: str, req: V2RegistryPlayReq | None = None
+    ) -> V2RegistryActionResp:
         entry = app.state.v2_registry.mark_played(entry_id)
         if entry is None:
             raise HTTPException(
@@ -909,7 +1110,8 @@ def create_app(config: dict | None = None) -> FastAPI:
         #   * the player is the single audio sink (no competing afplay)
         #   * synth/play is async — the request returns as soon as the
         #     player thread is queued.
-        speak_text = (entry.get("text") or entry.get("title") or "").strip()
+        override = ((req.text if req else None) or "").strip()
+        speak_text = override or (entry.get("text") or entry.get("title") or "").strip()
         if speak_text:
             try:
                 _speak(
@@ -945,6 +1147,26 @@ def create_app(config: dict | None = None) -> FastAPI:
         # belongs here — and ONLY for paths the daemon itself created,
         # never paths supplied by an HTTP caller.
         return V2RegistryActionResp(ok=True)
+
+    @app.post(
+        "/v2/registry/partly_heard/{entry_id}",
+        response_model=V2RegistryPartlyHeardResp,
+        response_model_exclude_none=True,
+    )
+    def v2_registry_partly_heard(
+        entry_id: str, req: V2RegistryPartlyHeardReq
+    ) -> V2RegistryPartlyHeardResp:
+        # The app auto-read part of a reply and the user came back: the
+        # unheard rest becomes a fresh pending entry (see v2_registry.py).
+        entry, reason = app.state.v2_registry.requeue_partly_heard(entry_id, req.text)
+        if entry is None:
+            if reason == "not_found":
+                raise HTTPException(
+                    status_code=404,
+                    detail={"ok": False, "reason": "not_found"},
+                )
+            return V2RegistryPartlyHeardResp(ok=False, reason=reason)
+        return V2RegistryPartlyHeardResp(ok=True, id=entry["id"])
 
     @app.delete(
         "/v2/registry/{entry_id}",
@@ -1006,14 +1228,175 @@ def create_app(config: dict | None = None) -> FastAPI:
         except Exception:
             return 0.0
 
+    def _engine_pid() -> int | None:
+        port = urllib.parse.urlparse(cfg["engine_url"]).port or 8765
+        return pid_listening_on(port)
+
     @app.get("/v2/model/status", response_model=V2ModelStatus)
     def v2_model_status() -> V2ModelStatus:
+        # "Loaded" means the engine holds the active model, not merely that it
+        # answers — it can be up with nothing loaded until the first read.
+        loaded = False
+        if _check_engine_cached():
+            try:
+                loaded = engine_catalog.active_spec(cfg).repo in app.state.loaded_models(cfg["engine_url"])
+            except Exception:
+                loaded = False
+        pid = _engine_pid()
+        own = phys_footprint_mb(os.getpid())
         return V2ModelStatus(
-            model_loaded=_check_engine_cached(),
+            model_loaded=loaded,
             engine_url=cfg["engine_url"],
-            daemon_rss_mb=round(_daemon_rss_mb(), 2),
+            daemon_rss_mb=round(own if own is not None else _daemon_rss_mb(), 2),
             daemon_pid=os.getpid(),
+            engine_memory_mb=round(m, 1) if pid and (m := phys_footprint_mb(pid)) is not None else None,
+            engine_pid=pid,
             suspend_supported=False,
         )
+
+    # ----- v2 engines -----
+
+    def _engine_payload(spec) -> V2Engine:
+        store = app.state.engine_store
+        st = store.status(spec)
+        return V2Engine(
+            id=spec.id,
+            name=spec.name,
+            maker=spec.maker,
+            tagline=spec.tagline,
+            description=spec.description,
+            repo=spec.repo,
+            params=spec.params,
+            languages=list(spec.languages),
+            license=spec.license,
+            credit=spec.credit,
+            badge=spec.badge,
+            download_mb=spec.download_mb,
+            sample_rate=spec.sample_rate,
+            native_speed=spec.native_speed,
+            cloning=spec.cloning,
+            blending=spec.blending,
+            voices=[V2EngineVoice(id=v.id, label=v.label) for v in spec.voices],
+            default_voice=spec.default_voice,
+            stats=V2EngineStats(**dataclasses.asdict(spec.stats)),
+            active=(spec.id == engine_catalog.active_spec(cfg).id),
+            **st,
+        )
+
+    @app.get("/v2/engines", response_model=V2Engines, response_model_exclude_none=True)
+    def v2_engines() -> V2Engines:
+        switch = app.state.engine_switch
+        return V2Engines(
+            active=engine_catalog.active_spec(cfg).id,
+            switching_to=switch["engine"] if switch else None,
+            engines=[_engine_payload(spec) for spec in engine_catalog.CATALOG],
+        )
+
+    def _spec_or_404(engine_id: str):
+        spec = engine_catalog.get(engine_id)
+        if spec is None:
+            raise HTTPException(status_code=404, detail={"ok": False, "reason": "unknown_engine"})
+        return spec
+
+    @app.post("/v2/engines/{engine_id}/install", response_model=V2Engine, response_model_exclude_none=True)
+    def v2_engine_install(engine_id: str) -> V2Engine:
+        spec = _spec_or_404(engine_id)
+        try:
+            app.state.engine_store.install(spec.id)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail={"ok": False, "reason": "no_engine_venv", "detail": str(exc)})
+        return _engine_payload(spec)
+
+    @app.delete("/v2/engines/{engine_id}", response_model=V2Engine, response_model_exclude_none=True)
+    def v2_engine_remove(engine_id: str) -> V2Engine:
+        spec = _spec_or_404(engine_id)
+        if spec.id == engine_catalog.active_spec(cfg).id:
+            raise HTTPException(
+                status_code=409,
+                detail={"ok": False, "reason": "engine_active", "detail": "Switch to another engine before removing this one."},
+            )
+        try:
+            app.state.engine_store.remove(spec.id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail={"ok": False, "reason": "cannot_remove", "detail": str(exc)})
+        return _engine_payload(spec)
+
+    @app.post("/v2/engines/{engine_id}/activate", response_model=V2EngineActivateResp)
+    def v2_engine_activate(engine_id: str) -> V2EngineActivateResp:
+        """Load `engine_id` into the engine, make it the voice, free the old one.
+
+        Order matters: the new model loads and speaks a warm-up sentence
+        BEFORE the config flips, so a model that fails to load leaves Myna on
+        the engine that was working.
+        """
+        spec = _spec_or_404(engine_id)
+        store = app.state.engine_store
+        if spec.id != engine_catalog.DEFAULT_ENGINE_ID and not store.is_installed(spec):
+            raise HTTPException(status_code=409, detail={"ok": False, "reason": "not_installed"})
+        if not _check_engine_cached():
+            raise HTTPException(status_code=503, detail={"ok": False, "reason": "engine_down"})
+        if not app.state.engine_switch_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail={"ok": False, "reason": "switch_in_progress"})
+        previous = engine_catalog.active_spec(cfg)
+        started = time.time()
+        app.state.engine_switch = {"engine": spec.id, "started_at": started}
+        try:
+            remembered = (cfg.get("engine_voices") or {}).get(spec.id)
+            voice = engine_catalog.resolve_voice(spec, None, remembered, _usable(spec))
+            try:
+                engine.load_model(cfg["engine_url"], spec.repo)
+                app.state.synthesize(
+                    "Ready.",
+                    speed=1.0,
+                    base_url=cfg["engine_url"],
+                    **_synth_kwargs(spec, voice),
+                )
+            except Exception as exc:
+                logger.warning("engine switch to %s failed: %s", spec.id, exc)
+                raise HTTPException(
+                    status_code=502,
+                    detail={"ok": False, "reason": "engine_error", "detail": str(exc)[:500]},
+                )
+            load_s = time.time() - started
+
+            voices = dict(cfg.get("engine_voices") or {})
+            voices.setdefault(
+                previous.id, engine_catalog.resolve_voice(previous, None, cfg.get("voice"), _usable(previous))
+            )
+            voices[spec.id] = voice
+            cfg.update(engine=spec.id, model=spec.repo, voice=voice, engine_voices=voices)
+            try:
+                app.state.save_config(
+                    {"engine": spec.id, "model": spec.repo, "voice": voice, "engine_voices": voices}
+                )
+            except OSError:
+                logger.warning("could not persist the engine switch")
+            app.state.engine_version = f"{__version__}:{spec.repo}"
+            app.state.voice_preview_cache = VoicePreviewCache(engine_version=app.state.engine_version)
+
+            # Free the old model's memory. Best-effort: a failure only costs RAM.
+            if previous.repo != spec.repo:
+                try:
+                    engine.unload_model(cfg["engine_url"], previous.repo)
+                except Exception as exc:
+                    logger.info("could not unload %s: %s", previous.repo, exc)
+            return V2EngineActivateResp(ok=True, active=spec.id, voice=voice, load_s=round(load_s, 2))
+        finally:
+            app.state.engine_switch = None
+            app.state.engine_switch_lock.release()
+
+    # ----- pronunciations, and app.state.speakable (text prep for every path) -----
+    from .pronunciation_routes import register_pronunciation_routes
+
+    register_pronunciation_routes(app, cfg, persist_config=persist_config)
+
+    # ----- render API: finished audio files (docs/native-app/RENDER_API.md) -----
+    from .render_routes import register_render_routes
+
+    register_render_routes(app, cfg, persist_config=persist_config)
+
+    from .summary_routes import register_summary_routes  # status probe, 503 on failure
+
+    register_summary_routes(app, cfg)
 
     return app

@@ -1,7 +1,7 @@
 // PopoverDesignTests.swift — verify the v0.2.1 design-token constants
 // stay self-consistent (no two semantically distinct colors collapse
 // to the same value, options list is sorted) and that the helper
-// pieces we added with the redesign (SpeedChips.options, PopoverHeader
+// pieces we added with the redesign (VoiceSpeedRow.speedOptions, PopoverHeader
 // defaultVersion fallback) behave as expected.
 //
 // We can't snapshot-test SwiftUI views in CI without pulling in a
@@ -14,30 +14,44 @@ import XCTest
 
 @testable import Myna
 
-// SpeedChips.options and PopoverHeader.defaultVersion() are @MainActor-isolated
+// VoiceSpeedRow.speedOptions and PopoverHeader.defaultVersion() are @MainActor-isolated
 // (they live in SwiftUI view layer). Hoist the whole class onto the main actor
 // so synchronous XCTestCase methods can call them without an `await` dance —
 // the design-token tests below are pure-data assertions, no real concurrency.
 @MainActor
 final class PopoverDesignTests: XCTestCase {
 
-    // MARK: - SpeedChips.options
+    // MARK: - VoiceSpeedRow.speedOptions
 
     func test_speed_options_match_old_menu_set() {
-        XCTAssertEqual(SpeedChips.options, [0.75, 1.0, 1.2, 1.5, 1.75, 2.0])
+        XCTAssertEqual(VoiceSpeedRow.speedOptions, [0.75, 1.0, 1.2, 1.5, 1.75, 2.0])
     }
 
     func test_speed_options_strictly_increasing() {
-        let opts = SpeedChips.options
+        let opts = VoiceSpeedRow.speedOptions
         for idx in 1..<opts.count {
-            XCTAssertLessThan(opts[idx - 1], opts[idx], "speed options must be ascending for the chip row")
+            XCTAssertLessThan(opts[idx - 1], opts[idx], "speed options must be ascending for the speed slider")
         }
     }
 
     func test_speed_options_cap_at_2x_rate() {
         // AVAudioUnitTimePitch.rate hard-caps at 2.0× — anything beyond
-        // silently clamps. The chip row must respect that ceiling.
-        XCTAssertEqual(SpeedChips.options.last, 2.0)
+        // silently clamps. The speed slider must respect that ceiling.
+        XCTAssertEqual(VoiceSpeedRow.speedOptions.last, 2.0)
+    }
+
+    func test_speed_slider_snaps_to_nearest_preset() {
+        let opts = VoiceSpeedRow.speedOptions
+        XCTAssertEqual(VoiceSpeedRow.nearestIndex(to: 1.5, in: opts), 3)
+        XCTAssertEqual(VoiceSpeedRow.nearestIndex(to: 1.05, in: opts), 1)
+        XCTAssertEqual(VoiceSpeedRow.nearestIndex(to: 0.5, in: opts), 0)
+        XCTAssertEqual(VoiceSpeedRow.nearestIndex(to: 3.0, in: opts), opts.count - 1)
+    }
+
+    func test_speed_label_format() {
+        XCTAssertEqual(VoiceSpeedRow.formatSpeed(0.75), "0.75×")
+        XCTAssertEqual(VoiceSpeedRow.formatSpeed(1.0), "1×")
+        XCTAssertEqual(VoiceSpeedRow.formatSpeed(1.2), "1.2×")
     }
 
     // MARK: - PopoverHeader.defaultVersion
@@ -69,7 +83,7 @@ final class PopoverDesignTests: XCTestCase {
     }
 
     func test_popover_width_matches_brief() {
-        XCTAssertEqual(PopoverDesign.popoverWidth, 360)
+        XCTAssertEqual(PopoverDesign.popoverWidth, 440)
     }
 
     func test_corner_radii_match_brief() {

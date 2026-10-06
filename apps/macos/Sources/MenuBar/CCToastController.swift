@@ -197,8 +197,8 @@ public final class CCToastController: ObservableObject {
 }
 
 /// Callbacks the controller invokes when the user interacts with a
-/// toast. Implemented by MenuBarController so the play call goes to
-/// DaemonClient.registryPlayV2 on the actor side.
+/// toast. Implemented by MenuBarController, which plays the reply through
+/// the in-process player so the floating pill shows and controls it.
 @MainActor
 public protocol CCToastActions: AnyObject {
     func play(item: RegistryV2Item)

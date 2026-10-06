@@ -16,6 +16,10 @@ public struct NowPlayingCard: View {
     public let onStop: () -> Void
     public let onSkipBack: () -> Void
     public let onSkipForward: () -> Void
+    /// Skip to the next queued read. Nil hides the button — it only
+    /// appears while something is waiting in the queue.
+    public let onNext: (() -> Void)?
+    public let nextHotkey: String?
 
     public init(
         nowReading: PopoverModel.NowReading,
@@ -25,7 +29,9 @@ public struct NowPlayingCard: View {
         onTogglePause: @escaping () -> Void,
         onStop: @escaping () -> Void,
         onSkipBack: @escaping () -> Void,
-        onSkipForward: @escaping () -> Void
+        onSkipForward: @escaping () -> Void,
+        onNext: (() -> Void)? = nil,
+        nextHotkey: String? = nil
     ) {
         self.nowReading = nowReading
         self.isPaused = isPaused
@@ -35,6 +41,8 @@ public struct NowPlayingCard: View {
         self.onStop = onStop
         self.onSkipBack = onSkipBack
         self.onSkipForward = onSkipForward
+        self.onNext = onNext
+        self.nextHotkey = nextHotkey
     }
 
     public var body: some View {
@@ -124,6 +132,15 @@ public struct NowPlayingCard: View {
                 a11yLabel: "Skip forward 15 seconds",
                 action: onSkipForward
             )
+            if let onNext {
+                transportButton(
+                    systemImage: "forward.end.fill",
+                    label: "Next",
+                    a11yLabel: "Skip to the next queued read",
+                    hotkey: nextHotkey,
+                    action: onNext
+                )
+            }
         }
         .padding(.top, 2)
     }

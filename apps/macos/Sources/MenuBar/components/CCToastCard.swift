@@ -1,6 +1,6 @@
 // CCToastCard.swift — single Claude Code pending item in the popover
-// CLAUDE CODE section. Visual: colored dot from the project palette,
-// title, age, Play / Discard buttons.
+// CLAUDE CODE section. One row: colored dot from the project palette,
+// project, title, age, Play / Dismiss.
 //
 // Color comes straight from ProjectPalette.color(for:) — same hue the
 // floating CCToastWindow uses, so a user who's been seeing "blue" toasts
@@ -22,35 +22,38 @@ public struct CCToastCard: View {
         self.onDiscard = onDiscard
     }
 
+    // One line per item: dot · project · preview · age · Play · ✕. The
+    // three-row card fit two items before the popover had to scroll; at
+    // 440pt a single row carries a readable sentence and the list fits.
+    // The full title is in the tooltip.
     public var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Circle()
-                    .fill(dotColor)
-                    .frame(width: 8, height: 8)
-                Text(projectShortName)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(PopoverDesign.bodyColor)
-                Text("·")
-                    .font(PopoverDesign.captionFont)
-                    .foregroundStyle(PopoverDesign.secondaryColor)
-                Text(ageString)
-                    .font(PopoverDesign.captionFont)
-                    .foregroundStyle(PopoverDesign.secondaryColor)
-                Spacer(minLength: 0)
-            }
-            Text(item.preview(maxLength: 60))
+        HStack(spacing: 8) {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 7, height: 7)
+            Text(projectShortName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(PopoverDesign.bodyColor)
+                .lineLimit(1)
+                .fixedSize()
+            Text(item.title)
                 .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(PopoverDesign.bodyColor.opacity(0.85))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 6) {
-                actionButton(label: "Play", systemImage: "play.fill", emphasised: true, action: onPlay)
-                actionButton(label: "Dismiss", systemImage: "xmark", emphasised: false, action: onDiscard)
-            }
-            .padding(.top, 2)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(ageString)
+                .font(PopoverDesign.captionFont)
+                .foregroundStyle(PopoverDesign.secondaryColor)
+                .lineLimit(1)
+                .fixedSize()
+            actionButton(label: "Play", systemImage: "play.fill", emphasised: true, action: onPlay)
+            actionButton(label: nil, systemImage: "xmark", emphasised: false, action: onDiscard)
+                .help("Dismiss")
+                .accessibilityLabel("Dismiss")
         }
-        .padding(10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -60,6 +63,7 @@ public struct CCToastCard: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(dotColor.opacity(0.25), lineWidth: 1)
         )
+        .help(item.title)
     }
 
     private var dotColor: Color {
@@ -68,7 +72,7 @@ public struct CCToastCard: View {
 
     private var projectShortName: String {
         // Use the last path component (or the whole id if it's not
-        // path-like). Cap at 22 chars so the row never breaks layout.
+        // path-like). Cap at 22 chars so the preview keeps most of the row.
         let last = (item.projectId as NSString).lastPathComponent
         let base = last.isEmpty ? item.projectId : last
         if base.count <= 22 { return base }
@@ -86,7 +90,7 @@ public struct CCToastCard: View {
 
     @ViewBuilder
     private func actionButton(
-        label: String,
+        label: String?,
         systemImage: String,
         emphasised: Bool,
         action: @escaping () -> Void
@@ -102,7 +106,8 @@ public struct CCToastCard: View {
 }
 
 private struct CCActionPill: View {
-    let label: String
+    /// nil renders an icon-only pill (Dismiss), so the row stays one line.
+    let label: String?
     let systemImage: String
     let tint: Color
     let emphasised: Bool
@@ -115,8 +120,10 @@ private struct CCActionPill: View {
         HStack(spacing: 4) {
             Image(systemName: systemImage)
                 .font(.system(size: 9, weight: .semibold))
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
+            if let label {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+            }
         }
         .foregroundStyle(emphasised ? tint : PopoverDesign.bodyColor.opacity(0.85))
         .padding(.horizontal, 8)

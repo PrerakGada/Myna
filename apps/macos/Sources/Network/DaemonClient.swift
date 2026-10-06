@@ -20,8 +20,8 @@ public actor DaemonClient {
     public static let synthesizeTimeout: TimeInterval = 600  // long: full article
 
     private let baseURL: URL
-    private let session: URLSession
-    private let decoder: JSONDecoder
+    let session: URLSession
+    let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
     /// In-process voice cache. The daemon also caches, but the client
@@ -63,10 +63,17 @@ public actor DaemonClient {
         if !forceRefresh, let cached = cachedVoices {
             return cached
         }
+        return try await voiceList().voices
+    }
+
+    /// The full `/v2/voices` answer — the voices plus what the active
+    /// engine can do with them (clone, blend). Always fetches; refreshes
+    /// the cache `voices()` serves.
+    public func voiceList() async throws -> VoicesResponse {
         let req = try makeRequest(path: "/v2/voices", method: "GET")
         let response: VoicesResponse = try await decode(req)
         cachedVoices = response.voices
-        return response.voices
+        return response
     }
 
     // MARK: - POST /v2/extract
@@ -87,6 +94,17 @@ public actor DaemonClient {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw DaemonError.empty }
         let req = try makeRequest(path: "/v2/summarize", method: "POST", body: SummarizeRequest(text: text))
+        return try await decode(req)
+    }
+
+    // MARK: - POST /v2/speakable
+
+    /// The words a read would speak after the daemon's text prep ("as heard").
+    public func speakable(_ request: SpeakableRequest) async throws -> SpeakableResponse {
+        guard !request.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw DaemonError.empty
+        }
+        let req = try makeRequest(path: "/v2/speakable", method: "POST", body: request)
         return try await decode(req)
     }
 
@@ -276,39 +294,6 @@ public actor DaemonClient {
         return resp
     }
 
-    // MARK: - v0.2 Track B endpoints (registry v2)
-
-    /// `GET /v2/registry/list` — fetch pending CC announcements for the
-    /// toast pipeline (S08). Returns an empty pending array if the
-    /// endpoint is not yet implemented (404) so callers can treat
-    /// "no pending" and "endpoint not deployed" identically.
-    public func registryListV2() async throws -> RegistryListResponse {
-        let req = try makeRequest(path: "/v2/registry/list", method: "GET")
-        do {
-            return try await decode(req)
-        } catch DaemonError.notFound {
-            return RegistryListResponse(pending: [])
-        } catch DaemonError.http(let code, _) where code == 404 {
-            return RegistryListResponse(pending: [])
-        }
-    }
-
-    /// `POST /v2/registry/announce` — used by stop-hook integrations.
-    /// Lane A exposes this primarily so tests + the future demo CLI
-    /// can drive the pipeline without going through the Python daemon.
-    public func registryAnnounceV2(_ request: RegistryAnnounceRequest) async throws -> RegistryAnnounceResponse {
-        let req = try makeRequest(path: "/v2/registry/announce", method: "POST", body: request)
-        return try await decode(req)
-    }
-
-    /// `POST /v2/registry/play/{id}` — kick off playback for a queued
-    /// CC item (toast click → daemon synthesises + plays through the
-    /// existing pipeline).
-    public func registryPlayV2(id: String) async throws -> PlayResponse {
-        let req = try makeRequest(path: "/v2/registry/play/\(id)", method: "POST")
-        return try await decode(req)
-    }
-
     // MARK: - v0.2 Track B: voice preview (S09)
 
     /// `GET /v2/voices/preview/{voice_id}` — returns a short WAV buffer.
@@ -338,7 +323,7 @@ public actor DaemonClient {
 
     // MARK: - Helpers
 
-    private func makeRequest<Body: Encodable>(
+    func makeRequest<Body: Encodable>(
         path: String,
         method: String,
         body: Body
@@ -349,7 +334,7 @@ public actor DaemonClient {
         return req
     }
 
-    private func makeRequest(path: String, method: String) throws -> URLRequest {
+    func makeRequest(path: String, method: String) throws -> URLRequest {
         guard let url = URL(string: path, relativeTo: baseURL) else {
             throw DaemonError.invalidURL(path)
         }
@@ -359,7 +344,7 @@ public actor DaemonClient {
         return req
     }
 
-    private func decode<T: Decodable>(_ request: URLRequest) async throws -> T {
+    func decode<T: Decodable>(_ request: URLRequest) async throws -> T {
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = try await session.data(for: request)
@@ -439,5 +424,84 @@ public actor DaemonClient {
         guard scheme == "http" || scheme == "https" else {
             throw DaemonError.invalidURL(url)
         }
+    }
+}
+
+// MARK: - The user's own voices (/v2/voices/clips, /blends, /custom, /library)
+//
+// An extension so the actor body stays within lint's length limit; being in
+// this file keeps the private request helpers in reach.
+
+extension DaemonClient {
+    /// Adds a voice copied from `wav` (PCM WAV, 5.5–30 s — see ClipImporter).
+    public func addClipVoice(wav: Data, name: String) async throws -> Voice {
+        var components = URLComponents()
+        components.path = "/v2/voices/clips"
+        components.queryItems = [URLQueryItem(name: "name", value: name)]
+        var req = try makeRequest(path: components.string ?? "/v2/voices/clips", method: "POST")
+        req.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
+        req.httpBody = wav
+        return try await voiceAction(req)
+    }
+
+    public func addBlendVoice(name: String?, mix: [BlendPart]) async throws -> Voice {
+        let req = try makeRequest(
+            path: "/v2/voices/blends", method: "POST", body: BlendRequest(name: name, mix: mix))
+        return try await voiceAction(req)
+    }
+
+    public func renameVoice(id: String, name: String) async throws -> Voice {
+        let req = try makeRequest(
+            path: "/v2/voices/custom/\(id)", method: "PATCH", body: RenameVoiceRequest(name: name))
+        return try await voiceAction(req)
+    }
+
+    public func deleteVoice(id: String) async throws {
+        let req = try makeRequest(path: "/v2/voices/custom/\(id)", method: "DELETE")
+        let _: OkResponse = try await voiceAction(req)
+    }
+
+    public func voiceLibrary() async throws -> VoiceLibraryResponse {
+        let req = try makeRequest(path: "/v2/voices/library", method: "GET")
+        return try await decode(req)
+    }
+
+    /// The library clip's original recording, downloaded by the daemon.
+    public func voiceLibrarySample(id: String) async throws -> Data {
+        var req = try makeRequest(path: "/v2/voices/library/\(id)/sample", method: "GET")
+        req.timeoutInterval = 45  // the first play downloads it
+        return try await voiceActionData(req)
+    }
+
+    public func addLibraryVoice(id: String) async throws -> Voice {
+        var req = try makeRequest(path: "/v2/voices/library/\(id)", method: "POST")
+        req.timeoutInterval = 45
+        return try await voiceAction(req)
+    }
+
+    private func voiceAction<T: Decodable>(_ request: URLRequest) async throws -> T {
+        let data = try await voiceActionData(request)
+        cachedVoices = nil
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw DaemonError.decode(String(describing: error))
+        }
+    }
+
+    private func voiceActionData(_ request: URLRequest) async throws -> Data {
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            throw DaemonError.transport(urlError.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw DaemonError.transport("non-http response")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw VoiceActionError.from(status: http.statusCode, body: data)
+        }
+        return data
     }
 }

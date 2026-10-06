@@ -39,6 +39,45 @@
 	<string>© 2026 Prerak Gada. MIT licensed.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Read with Myna</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>readSelection</string>
+			<key>NSPortName</key>
+			<string>Myna</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendTypes</key>
+			<array>
+				<string>NSStringPboardType</string>
+				<string>public.utf8-plain-text</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Summarize with Myna</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>summarizeSelection</string>
+			<key>NSPortName</key>
+			<string>Myna</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendTypes</key>
+			<array>
+				<string>NSStringPboardType</string>
+				<string>public.utf8-plain-text</string>
+			</array>
+		</dict>
+	</array>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUEnableInstallerLauncherService</key>

@@ -1,15 +1,55 @@
-// SelectionService.swift — capture the user's currently-selected text
-// by simulating Cmd+C and reading NSPasteboard. Saves and restores the
-// prior pasteboard contents so we don't clobber the user's clipboard.
+// SelectionService.swift — capture the user's currently-selected text.
 //
-// Both the pasteboard and the key-event mechanism are protocol-injected
-// so tests can run without touching real system state.
+// Two ways, tried in order (SelectionCaptureMode.automatic):
+//   1. Accessibility: ask the focused element for its selected text
+//      (AXSelectionReader). The clipboard is never touched.
+//   2. Copy: simulate Cmd+C and read NSPasteboard, saving and restoring the
+//      prior pasteboard contents so we don't clobber the user's clipboard.
+// "Copy only" skips step 1, for an app whose AX answer turns out wrong.
+// The Services menu ("Read with Myna") is a third way in that bypasses
+// this file entirely: the requesting app hands the text over itself.
 //
-// Permissions: real Cmd+C posting via CGEvent requires Accessibility.
-// The default implementation degrades gracefully if posting fails
-// (returns nil), so the UI can show a "grant accessibility" prompt.
+// The AX reader, the pasteboard and the key-event mechanism are all
+// protocol-injected so tests can run without touching real system state.
+//
+// Permissions: both AX reads and real Cmd+C posting via CGEvent require
+// Accessibility. Without it both degrade gracefully (returns nil), so the
+// UI can show a "grant accessibility" prompt.
 import AppKit
 import Foundation
+
+/// How the read shortcut captures the selection. Persisted as its raw value
+/// under `dev.myna.app.selectionCapture`.
+public enum SelectionCaptureMode: String, CaseIterable, Sendable {
+    /// Accessibility first; synthetic ⌘C when AX has nothing.
+    case automatic
+    /// Always synthetic ⌘C — the pre-AX behaviour.
+    case copyOnly = "copy"
+
+    public var label: String {
+        switch self {
+        case .automatic: return "Automatic"
+        case .copyOnly: return "Copy only"
+        }
+    }
+}
+
+/// Which path produced the text. Logged on every read — never the text.
+public enum SelectionCapturePath: String, Sendable {
+    case ax
+    case copy
+    case service
+}
+
+public struct CapturedSelection: Equatable, Sendable {
+    public let text: String
+    public let path: SelectionCapturePath
+
+    public init(text: String, path: SelectionCapturePath) {
+        self.text = text
+        self.path = path
+    }
+}
 
 /// Abstract over NSPasteboard so tests can inject a fake.
 public protocol PasteboardProtocol: AnyObject {
@@ -91,6 +131,7 @@ public struct CGEventKeyPoster: KeyPostingProtocol {
 
 /// Captures the currently-selected text from the frontmost application.
 public final class SelectionService: @unchecked Sendable {
+    private let axReader: SelectionTextReading
     private let pasteboard: PasteboardProtocol
     private let keyPoster: KeyPostingProtocol
     /// How long to wait between posting Cmd+C and reading the pasteboard.
@@ -105,6 +146,7 @@ public final class SelectionService: @unchecked Sendable {
     private let log = Log(.app)
 
     public init(
+        axReader: SelectionTextReading = AXSelectionReader(),
         pasteboard: PasteboardProtocol = NSPasteboardAdapter(),
         keyPoster: KeyPostingProtocol = CGEventKeyPoster(),
         copyWaitNanos: UInt64 = 120_000_000,
@@ -114,15 +156,53 @@ public final class SelectionService: @unchecked Sendable {
                 || f.contains(.maskAlternate) || f.contains(.maskControl)
         }
     ) {
+        self.axReader = axReader
         self.pasteboard = pasteboard
         self.keyPoster = keyPoster
         self.copyWaitNanos = copyWaitNanos
         self.modifiersHeld = modifiersHeld
     }
 
-    /// Capture the user's selected text. Returns nil if no text was
-    /// selected, or if the key-posting mechanism failed (e.g., the app
-    /// hasn't been granted Accessibility yet).
+    /// Capture the user's selected text, and say which path produced it.
+    /// Returns nil if neither path found any text.
+    ///
+    /// In `.automatic` mode the AX read runs first. It needs no modifier
+    /// wait (it doesn't send keys), so when it works the read starts sooner
+    /// than a ⌘C capture could. Anything short of real text — an AX error,
+    /// no focused element, an empty or whitespace-only selection, or the
+    /// deadline passing — falls through to the ⌘C path, unchanged.
+    ///
+    /// @MainActor for the same reason as `captureByCopying`. The AX read
+    /// itself is awaited, and runs on AXSelectionReader's own queue.
+    @MainActor
+    public func capture(mode: SelectionCaptureMode) async -> CapturedSelection? {
+        // The app the read is aimed at. Logged on every outcome because
+        // capture behaves very differently per app.
+        let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
+        if mode == .automatic {
+            let started = DispatchTime.now()
+            let outcome = await axReader.readSelectedText()
+            let millis = (DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
+            switch outcome {
+            case .text(let raw) where !raw.isBlank:
+                let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                log.info("capture: path=ax chars=\(value.count) front=\(frontApp) (\(millis)ms)")
+                return CapturedSelection(text: value, path: .ax)
+            case .text:
+                log.info("capture: ax found no selected text (front=\(frontApp), \(millis)ms), trying copy")
+            case .unavailable(let reason):
+                log.info("capture: ax unavailable [\(reason)] (front=\(frontApp), \(millis)ms), trying copy")
+            case .timedOut:
+                log.warn("capture: ax timed out after \(millis)ms (front=\(frontApp)), trying copy")
+            }
+        }
+        guard let text = await captureByCopying(frontApp: frontApp) else { return nil }
+        return CapturedSelection(text: text, path: .copy)
+    }
+
+    /// Capture by synthesizing ⌘C. Returns nil if no text was selected, or
+    /// if the key-posting mechanism failed (e.g., the app hasn't been
+    /// granted Accessibility yet).
     ///
     /// **@MainActor is load-bearing, not decoration.** `NSPasteboard` is
     /// AppKit and is not thread-safe. This method used to be nonisolated
@@ -139,7 +219,7 @@ public final class SelectionService: @unchecked Sendable {
     /// (Crash on 0.4.5 / macOS 26.5.2, 2026-08-05.) The `await`s below are
     /// suspension points, so main-actor isolation does NOT block the UI.
     @MainActor
-    public func captureSelectedText() async -> String? {
+    private func captureByCopying(frontApp: String) async -> String? {
         let snapshot = pasteboard.saveSnapshot()
         pasteboard.clearContents()
         // Restore the user's prior pasteboard contents on EVERY exit path —
@@ -164,11 +244,6 @@ public final class SelectionService: @unchecked Sendable {
             waitedForMods += modStep
         }
 
-        // Which app the synthetic ⌘C will actually land in. Logged on failure
-        // because "no text captured" behaves very differently per app and the
-        // old single warning couldn't tell the cases apart.
-        let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "unknown"
-
         let posted = keyPoster.postCmdC()
         guard posted else {
             // CGEvent creation/posting failed outright — almost always a
@@ -189,7 +264,7 @@ public final class SelectionService: @unchecked Sendable {
                 + "(front=\(frontApp)) — no selection, or app ignored synthetic copy")
             return nil
         }
-        log.info("capture: \(value.count) chars from \(frontApp)")
+        log.info("capture: path=copy chars=\(value.count) front=\(frontApp)")
         return value
     }
 }

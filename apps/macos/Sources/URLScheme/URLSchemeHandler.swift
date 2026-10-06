@@ -14,6 +14,8 @@
 //   myna://seek?delta=+15                   → seek +/-N seconds
 //   myna://speed?value=1.25                 → absolute speed
 //   myna://speed?delta=+0.25                → speed delta
+//   myna://dashboard                        → open the Dashboard window
+//   myna://dashboard?pane=history           → …at a named pane
 //
 // Anything else (including `myna://speak?text=hello`) is logged and
 // dropped.
@@ -21,6 +23,9 @@ import Foundation
 
 public enum URLSchemeAction: Equatable, Sendable {
     case speakSelection(mode: SynthesizeMode)
+    /// Open the Dashboard window. `pane` is nil when the URL named none, or
+    /// named one that doesn't exist — the window then opens where it was.
+    case openDashboard(pane: DashboardPane?)
     case readChrome
     case togglePause
     case stop
@@ -42,6 +47,7 @@ public protocol URLSchemeDispatching: AnyObject {
     func seek(delta: TimeInterval)
     func setSpeed(_ value: Double)
     func bumpSpeed(_ delta: Double)
+    func openDashboard(pane: DashboardPane?)
 }
 
 @MainActor
@@ -84,6 +90,7 @@ public final class URLSchemeHandler {
         case .seekDelta(let delta): dispatcher.seek(delta: delta)
         case .setSpeed(let value): dispatcher.setSpeed(value)
         case .bumpSpeed(let delta): dispatcher.bumpSpeed(delta)
+        case .openDashboard(let pane): dispatcher.openDashboard(pane: pane)
         }
     }
 
@@ -108,6 +115,12 @@ public final class URLSchemeHandler {
             return .speakSelection(mode: mode)
         case "read-chrome":
             return .readChrome
+        case "dashboard":
+            // Opening a window is not a privileged action — it shows the
+            // user their own local data and starts no read — so unlike
+            // `speak`, this route is safe to expose. An unrecognised pane
+            // degrades to nil rather than failing the URL.
+            return .openDashboard(pane: DashboardPane.parse(queryString("pane", in: queryItems)))
         case "toggle-pause":
             return .togglePause
         case "stop":

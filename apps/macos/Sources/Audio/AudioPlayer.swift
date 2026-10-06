@@ -49,6 +49,20 @@ public final class AudioPlayer: ObservableObject {
     /// signal for free.
     @Published public var isLoading: Bool = false
 
+    /// How a playback session ended. `state` going `.idle` can't say: a
+    /// streaming read also idles between chunks, and the pill's Stop button
+    /// calls `stop()` directly. The read queue advances only on `.drained`.
+    public enum SessionEnd: Sendable, Equatable {
+        /// Played the last scheduled audio (or was seeked past the end).
+        case drained
+        /// `stop()` ended a session that was playing, paused or loading.
+        case stopped
+    }
+
+    /// Sent synchronously on the main actor, after `state` is already
+    /// `.idle`. `.stopped` is not sent for a `stop()` on an idle player.
+    public let sessionEnds = PassthroughSubject<SessionEnd, Never>()
+
     // MARK: engine
 
     private let engine: AVAudioEngine
@@ -255,11 +269,13 @@ public final class AudioPlayer: ObservableObject {
     }
 
     public func stop() {
+        let endsASession = state != .idle || isLoading
         sessionToken &+= 1
         playerNode.stop()
         positionTimer?.invalidate()
         positionTimer = nil
         queue.removeAll()
+        segmentFiles.removeAll()
         duration = 0
         position = 0
         currentChunkIndex = 0
@@ -273,6 +289,7 @@ public final class AudioPlayer: ObservableObject {
         if engine.isRunning {
             engine.stop()
         }
+        if endsASession { sessionEnds.send(.stopped) }
     }
 
     // MARK: speed
@@ -292,7 +309,29 @@ public final class AudioPlayer: ObservableObject {
         guard !queue.isEmpty, total > 0 else { return }
         let target = max(0, min(globalPosition, total))
         guard let location = queue.locate(globalPosition: target) else { return }
+        seek(to: location, globalTarget: target, total: total)
+    }
 
+    /// Seek to `offset` seconds into chunk `index`. The sentence transcript
+    /// addresses audio this way: a sentence that opens a chunk seeks to
+    /// offset 0 exactly, which takes the no-copy `scheduleBuffer` path.
+    /// Going through a global time instead can land a float's width inside
+    /// the previous chunk. Out-of-range chunks are ignored; the offset is
+    /// clamped to the chunk.
+    public func seek(chunk index: Int, offset: TimeInterval) {
+        guard index >= 0, index < queue.chunks.count else { return }
+        let total = queue.totalDuration
+        guard total > 0 else { return }
+        let clamped = max(0, min(offset, queue.chunks[index].duration))
+        guard let target = queue.globalPosition(forChunk: index, offset: clamped) else { return }
+        seek(to: ChunkPosition(chunkIndex: index, offsetInChunk: clamped), globalTarget: target, total: total)
+    }
+
+    /// Number of chunks the player holds for the current session. The
+    /// transcript seeks only to audio that is already here.
+    public var queuedChunkCount: Int { queue.chunks.count }
+
+    private func seek(to location: ChunkPosition, globalTarget target: TimeInterval, total: TimeInterval) {
         let resumePlaying = (state == .playing)
         sessionToken &+= 1
         playerNode.stop()
@@ -307,6 +346,7 @@ public final class AudioPlayer: ObservableObject {
             state = .idle
             positionTimer?.invalidate()
             positionTimer = nil
+            sessionEnds.send(.drained)
             return
         }
 
@@ -417,11 +457,11 @@ public final class AudioPlayer: ObservableObject {
             return
         }
         // Slow path (seek into the middle of a buffer): scheduleSegment
-        // requires an AVAudioFile, so we materialise the buffer to a
-        // temp .caf once and cache the file handle.
+        // requires an AVAudioFile, so the buffer is written to a temp .caf
+        // once per session and the handle cached.
         let timeAnchor: AVAudioTime? = nil
         playerNode.scheduleSegment(
-            mapBufferToFile(buffer),
+            segmentFiles.file(for: buffer),
             startingFrame: startFrame,
             frameCount: framesToPlay,
             at: timeAnchor,
@@ -436,32 +476,11 @@ public final class AudioPlayer: ObservableObject {
         }
     }
 
-    /// scheduleSegment requires an AVAudioFile. We synthesize a one-shot
-    /// in-memory file by writing the buffer to a temp file. To keep the
-    /// fast path fast and avoid I/O for every chunk, callers should
-    /// prefer enqueue(buffer:) which uses scheduleBuffer when offset == 0;
-    /// this helper is the fallback for non-zero offset seeks.
-    private func mapBufferToFile(_ buffer: AVAudioPCMBuffer) -> AVAudioFile {
-        if let cached = bufferFileCache[ObjectIdentifier(buffer)] {
-            return cached
-        }
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("myna-chunk-\(UUID().uuidString).caf")
-        do {
-            let file = try AVAudioFile(forWriting: tmp, settings: buffer.format.settings)
-            try file.write(from: buffer)
-            // Re-open for reading; AVAudioFile opened for writing can't
-            // be used with scheduleSegment.
-            let readable = try AVAudioFile(forReading: tmp)
-            bufferFileCache[ObjectIdentifier(buffer)] = readable
-            return readable
-        } catch {
-            // Should be exceedingly rare; surface as a fatal so tests see it.
-            fatalError("AudioPlayer: failed to materialize chunk for seeking: \(error)")
-        }
-    }
+    /// Seek files for mid-chunk seeks (see SegmentFileCache.swift).
+    private let segmentFiles = SegmentFileCache()
 
-    private var bufferFileCache: [ObjectIdentifier: AVAudioFile] = [:]
+    /// Test hook: how many chunks have a materialised seek file.
+    var segmentFileCount: Int { segmentFiles.count }
 
     private func scheduleCompletion(forChunk index: Int, token: Int) {
         Task { @MainActor [weak self] in
@@ -494,6 +513,7 @@ public final class AudioPlayer: ObservableObject {
             // wedge happens, this line will be MISSING for the stuck read —
             // proving a terminal completion was lost (vs. the daemon/capture).
             log.info("playback drained to idle: \(queue.chunks.count) chunks, token=\(token)")
+            sessionEnds.send(.drained)
         }
     }
 

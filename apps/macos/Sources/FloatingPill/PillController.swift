@@ -493,8 +493,14 @@ public final class PillController: ObservableObject {
         // Speak the FULL reply (item.text), not the 80-char title preview —
         // otherwise only the opening sentence is read. spokenText falls back
         // to title for entries announced before the daemon carried the body.
+        // With "Read only the bold claims" on, only the reply's bold spans play.
+        let boldOnly = settings?.ccBoldClaimsOnly ?? false
         NotificationCenter.default.post(
-            name: .mynaReplayRecent, object: nil, userInfo: ["title": item.spokenText])
+            name: .mynaReplayRecent, object: nil,
+            userInfo: [
+                "title": item.spokenText(boldClaimsOnly: boldOnly),
+                "source": ReadSource.claudeCode.rawValue,
+            ])
         markPromptHandled(item)
     }
 

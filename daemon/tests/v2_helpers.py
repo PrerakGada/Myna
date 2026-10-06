@@ -68,11 +68,15 @@ def make_client(config_overrides=None, registry_path=None, **state_overrides):
     """
     import tempfile
 
-    from myna.config import load_config
+    import copy
+
+    from myna.config import DEFAULTS
     from myna.v2_registry import V2Registry
     from myna.voice_wardrobe import VoiceWardrobe
 
-    cfg = load_config()
+    # Built-in defaults, never the developer's ~/.config/myna/config.json —
+    # a real config (say, a different engine) must not change test results.
+    cfg = copy.deepcopy(DEFAULTS)
     # Disable karaoke for tests by default — make_client() callers that
     # want to exercise the karaoke path should override via state_overrides.
     cfg["karaoke"] = {"enabled": False}
@@ -84,6 +88,8 @@ def make_client(config_overrides=None, registry_path=None, **state_overrides):
     app.state.player = fp
     app.state.synthesize = lambda text, **kw: b"RIFFfake"
     app.state.engine_up = lambda base_url, **kw: True
+    # Never reach a real engine: report the configured model as loaded.
+    app.state.loaded_models = lambda base_url, **kw: [cfg["model"]]
     app.state.summarize = lambda text, **kw: "SUMMARY"
     app.state.extract = lambda url: "EXTRACTED"
     if registry_path is not None:
@@ -94,6 +100,23 @@ def make_client(config_overrides=None, registry_path=None, **state_overrides):
     import pathlib
 
     app.state.wardrobe = VoiceWardrobe(path=pathlib.Path(tmpdir) / "voice_wardrobe.json")
+    # Same for the user's own voices and the library download cache. The
+    # library never reaches the network in tests: a download is an error
+    # unless a test installs its own fetch.
+    from myna.voice_library import VoiceLibrary
+    from myna.voice_store import VoiceStore
+
+    def _no_network(url):
+        raise RuntimeError(f"test tried to download {url}")
+
+    app.state.voice_store = VoiceStore(root=pathlib.Path(tmpdir) / "voices")
+    app.state.voice_library = VoiceLibrary(cache_dir=pathlib.Path(tmpdir) / "library", fetch=_no_network)
+    # An empty pronunciation list, in memory: tests that aren't about
+    # pronunciations mustn't change when the starter list does, and none
+    # may touch ~/.config/myna/pronunciations.json.
+    from myna.pronunciations import PronunciationStore
+
+    app.state.pronunciations = PronunciationStore(None, starter=())
     # Tests default to "language detection finds nothing" so v2 synthesize
     # tests don't accidentally gain X-Myna-Detected-Lang headers.
     app.state.detect_language = lambda text: None

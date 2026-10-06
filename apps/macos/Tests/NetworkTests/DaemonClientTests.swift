@@ -297,6 +297,42 @@ final class DaemonClientTests: XCTestCase {
         XCTAssertTrue(resp.ok)
     }
 
+    func test_registry_play_v2_sends_no_body_by_default() async throws {
+        let sentBox = SendableBox<Data?>(Data())
+        MockURLProtocol.enqueue { req in
+            XCTAssertEqual(req.url?.path, "/v2/registry/play/u_1")
+            sentBox.value = req.httpBody ?? (req.httpBodyStream.flatMap { DaemonClientTests.readStream($0) })
+            // swiftlint:disable:next force_unwrapping
+            return (.make(url: req.url!, status: 200), Data(#"{"ok":true}"#.utf8))
+        }
+        _ = try await makeClient().registryPlayV2(id: "u_1")
+        XCTAssertNil(sentBox.value)
+    }
+
+    func test_registry_play_v2_sends_override_text() async throws {
+        let sentBox = SendableBox<Data?>(nil)
+        MockURLProtocol.enqueue { req in
+            XCTAssertEqual(req.value(forHTTPHeaderField: "Content-Type"), "application/json")
+            sentBox.value = req.httpBody ?? (req.httpBodyStream.flatMap { DaemonClientTests.readStream($0) })
+            // swiftlint:disable:next force_unwrapping
+            return (.make(url: req.url!, status: 200), Data(#"{"ok":true}"#.utf8))
+        }
+        _ = try await makeClient().registryPlayV2(id: "u_1", text: "It shipped.")
+        let json = try JSONSerialization.jsonObject(with: sentBox.value ?? Data()) as? [String: Any] ?? [:]
+        XCTAssertEqual(json["text"] as? String, "It shipped.")
+    }
+
+    func test_registry_dismiss_v2_posts_to_dismiss_path() async throws {
+        MockURLProtocol.enqueue { req in
+            XCTAssertEqual(req.httpMethod, "POST")
+            XCTAssertEqual(req.url?.path, "/v2/registry/dismiss/u_1")
+            // swiftlint:disable:next force_unwrapping
+            return (.make(url: req.url!, status: 200), Data(#"{"ok":true}"#.utf8))
+        }
+        let resp = try await makeClient().registryDismissV2(id: "u_1")
+        XCTAssertTrue(resp.ok)
+    }
+
     // MARK: URL validation
 
     func test_url_validation_rejects_non_http() {

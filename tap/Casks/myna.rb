@@ -4,8 +4,9 @@ cask "myna" do
   version "0.1.0"
   sha256 :no_check # release.yml rewrites this with the real DMG sha256
 
-  url "https://github.com/PrerakGada/myna/releases/download/v#{version}/Myna-#{version}.dmg",
-      verified: "github.com/PrerakGada/myna/"
+  # No `verified:` — Homebrew 7 deprecates it and warns on every install; the
+  # url already sits under the homepage, which is all the default check needs.
+  url "https://github.com/PrerakGada/myna/releases/download/v#{version}/Myna-#{version}.dmg"
   name "Myna"
   desc "Always-on local TTS companion"
   homepage "https://github.com/PrerakGada/myna"
@@ -15,7 +16,7 @@ cask "myna" do
   # ask for them, but unattended `brew upgrade` won't replace the .app while
   # Sparkle is mid-download.
   auto_updates true
-  depends_on macos: ">= :ventura"
+  depends_on macos: :sonoma # the voice engine needs macOS 14; setup.sh refuses older
   depends_on formula: "myna-daemon"
 
   app "Myna.app"

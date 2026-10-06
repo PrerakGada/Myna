@@ -32,6 +32,27 @@ on-demand from `title` via /v2/registry/play/{id}.
 
 `pending` filter: not dismissed, not played, and not yet TTL-expired.
 `played` filter: played_at_ms != None, capped at last 5 by played_at_ms desc.
+
+Claude Code hands-free (Sep 2026) adds optional fields, all defaulted so
+entries persisted before them still load:
+
+    "kind":              "reply" | "attention",   # default "reply"
+    "session_id":        str | None,   # Claude Code session, from the hook
+    "notification_type": str | None,   # attention only: permission_prompt, …
+    "host_bundle_id":    str | None,   # app the session runs in (iTerm, …)
+    "partly_heard":      bool,         # the unheard rest of an auto-read
+
+An "attention" entry is Claude Code's Notification hook saying a session
+needs the user (a permission prompt, an idle prompt). Two rules keep those
+from going stale, both keyed on session_id:
+  * a newer attention entry for a session replaces its older pending one;
+  * a reply from a session dismisses its pending attention entries, since a
+    session that has replied has already been answered.
+
+`requeue_partly_heard` backs the app's auto-read: when the user comes back
+mid-read, the app stops at a passage boundary and hands the unheard rest
+back here. It becomes a fresh pending entry (a new id, so the pill and toast
+present it again) and the original is dismissed.
 """
 
 from __future__ import annotations
@@ -50,6 +71,17 @@ DEFAULT_REGISTRY_PATH = (
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+KIND_REPLY = "reply"
+KIND_ATTENTION = "attention"
+PARTLY_HEARD_PREFIX = "Partly heard · "
+
+
+def _clip(value: Optional[str], limit: int) -> Optional[str]:
+    if not value:
+        return None
+    return str(value)[:limit]
 
 
 class V2Registry:
@@ -129,10 +161,22 @@ class V2Registry:
         title: str,
         ttl_s: int,
         text: Optional[str] = None,
+        kind: Optional[str] = None,
+        session_id: Optional[str] = None,
+        notification_type: Optional[str] = None,
+        host_bundle_id: Optional[str] = None,
+        partly_heard: bool = False,
     ) -> dict:
+        # Unknown kinds from a newer hook are stored as replies rather than
+        # rejected: showing a card beats losing the announcement.
+        kind = KIND_ATTENTION if kind == KIND_ATTENTION else KIND_REPLY
+        session_id = _clip(session_id, 128)
         with self._lock:
+            now = self._clock()
             # Replace any existing entry with the same id (latest write wins).
             self._entries = [e for e in self._entries if e.get("id") != id]
+            if session_id:
+                self._supersede_attention(session_id, now, drop=kind == KIND_ATTENTION)
             entry = {
                 "id": id,
                 "source": source,
@@ -142,14 +186,88 @@ class V2Registry:
                 # bounded). None when the caller didn't supply it — /play
                 # then falls back to `title`.
                 "text": (text[:8000] if text else None),
-                "announced_at_ms": self._clock(),
+                "announced_at_ms": now,
                 "ttl_s": int(ttl_s),
                 "played_at_ms": None,
                 "dismissed_at_ms": None,
+                "kind": kind,
+                "session_id": session_id,
+                "notification_type": (
+                    _clip(notification_type, 64) if kind == KIND_ATTENTION else None
+                ),
+                "host_bundle_id": _clip(host_bundle_id, 255),
+                "partly_heard": bool(partly_heard),
             }
             self._entries.append(entry)
             self._save()
             return entry
+
+    def _supersede_attention(self, session_id: str, now: int, *, drop: bool) -> None:
+        """Retire this session's pending attention entries. Caller holds the lock.
+
+        `drop` (a newer alert arriving) removes them outright so the list
+        holds one alert per session; a reply only dismisses them, which
+        keeps the record but takes them off the pending list.
+        """
+        kept = []
+        for e in self._entries:
+            is_stale_alert = (
+                e.get("kind") == KIND_ATTENTION
+                and e.get("session_id") == session_id
+                and e.get("dismissed_at_ms") is None
+                and e.get("played_at_ms") is None
+            )
+            if is_stale_alert and drop:
+                continue
+            if is_stale_alert:
+                e["dismissed_at_ms"] = now
+            kept.append(e)
+        self._entries = kept
+
+    def requeue_partly_heard(self, entry_id: str, remaining_text: str) -> tuple[Optional[dict], str]:
+        """Swap a partly auto-read reply for a fresh entry holding the unheard rest.
+
+        Returns (new_entry, "ok"), or (None, reason) where reason is
+        "not_found", "not_pending" (already played or dismissed, e.g. the
+        user pressed Play on it meanwhile) or "empty" (nothing left to hear).
+        """
+        rest = (remaining_text or "").strip()
+        if not rest:
+            return None, "empty"
+        with self._lock:
+            now = self._clock()
+            old = next((e for e in self._entries if e.get("id") == entry_id), None)
+            if old is None:
+                return None, "not_found"
+            if old.get("dismissed_at_ms") is not None or old.get("played_at_ms") is not None:
+                return None, "not_pending"
+            old["dismissed_at_ms"] = now
+            new_id = f"{entry_id}-rest"
+            self._entries = [e for e in self._entries if e.get("id") != new_id]
+            base_title = str(old.get("title") or "")
+            if base_title.startswith(PARTLY_HEARD_PREFIX):
+                base_title = base_title[len(PARTLY_HEARD_PREFIX):]
+            entry = {
+                "id": new_id,
+                "source": old.get("source") or "claude-code",
+                "project_id": old.get("project_id") or "claude",
+                # The title is what every surface (pill, toast, popover card)
+                # shows, so the mark rides on it and no view has to change.
+                "title": (PARTLY_HEARD_PREFIX + base_title)[:200],
+                "text": rest[:8000],
+                "announced_at_ms": now,
+                "ttl_s": int(old.get("ttl_s") or 600),
+                "played_at_ms": None,
+                "dismissed_at_ms": None,
+                "kind": KIND_REPLY,
+                "session_id": old.get("session_id"),
+                "notification_type": None,
+                "host_bundle_id": old.get("host_bundle_id"),
+                "partly_heard": True,
+            }
+            self._entries.append(entry)
+            self._save()
+            return dict(entry), "ok"
 
     def mark_played(self, entry_id: str) -> Optional[dict]:
         with self._lock:

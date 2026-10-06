@@ -150,6 +150,12 @@ assert_ok "appcast.sh emits sparkle:version from BUILD" \
   grep -q '<sparkle:version>\$BUILD</sparkle:version>' "$ROOT/dist/appcast.sh"
 assert_ok "appcast.sh warns when BUILD is unset" \
   grep -q 'WARNING: BUILD unset' "$ROOT/dist/appcast.sh"
+# The manual full-rebuild workflow had the same bug until 0.5.1 — running it
+# would have re-stamped every item as build 1 and stopped all updates.
+assert_ok "appcast.yml passes each DMG's own BUILD to appcast.sh" \
+  grep -q 'BUILD="$build"' "$ROOT/.github/workflows/appcast.yml"
+assert_ok "appcast.yml reads BUILD from the DMG's CFBundleVersion" \
+  grep -q 'Print :CFBundleVersion' "$ROOT/.github/workflows/appcast.yml"
 # The build number must actually be greater than the last shipped one, or the
 # update is invisible even with correct wiring.
 proj_build=$(grep -E '^[[:space:]]*CURRENT_PROJECT_VERSION:' "$ROOT/apps/macos/project.yml" | grep -oE '[0-9]+' | head -1)
@@ -161,6 +167,64 @@ else
   fail=$((fail+1))
   failed_scripts+=("project.yml build number")
 fi
+
+echo "==> setup.sh --update-daemon on a Homebrew install"
+# Sparkle updates the app, but a Homebrew install's daemon is the myna-daemon
+# formula; --update-daemon must brew-upgrade it and restart a running service.
+# Stubs: a fake Homebrew prefix (brew + opt/ link) and launchctl on PATH, and a
+# static file server standing in for the daemon's /v2/health.
+BREW_T="$(mktemp -d)"
+mkdir -p "$BREW_T/prefix/bin" "$BREW_T/prefix/Cellar/myna-daemon/0.5.1" \
+         "$BREW_T/prefix/Cellar/myna-daemon/0.5.2" "$BREW_T/stubs" "$BREW_T/www/v2"
+touch "$BREW_T/www/v2/health"
+cat > "$BREW_T/prefix/bin/brew" <<'SH'
+#!/bin/bash
+echo "brew $*" >> "$STUB_LOG"
+case "$1" in
+  upgrade)
+    [ "${STUB_UPGRADE:-move}" = "fail" ] && exit 1
+    [ "${STUB_UPGRADE:-move}" = "move" ] && ln -sfn ../Cellar/myna-daemon/0.5.2 "$(dirname "$0")/../opt/myna-daemon"
+    exit 0 ;;
+esac
+exit 0
+SH
+cat > "$BREW_T/stubs/launchctl" <<'SH'
+#!/bin/bash
+echo "launchctl $*" >> "$STUB_LOG"
+[ "$1" = "print" ] && [ "${STUB_LOADED:-1}" = "0" ] && exit 113
+exit 0
+SH
+chmod +x "$BREW_T/prefix/bin/brew" "$BREW_T/stubs/launchctl"
+health_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+python3 -m http.server "$health_port" --bind 127.0.0.1 --directory "$BREW_T/www" >/dev/null 2>&1 &
+health_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf "http://127.0.0.1:$health_port/v2/health" >/dev/null && break; sleep 0.2; done
+# brew_update_case <upgrade: move|none|fail> <service loaded: 1|0>; sets rc + STUB_LOG.
+brew_update_case() {
+  mkdir -p "$BREW_T/prefix/opt"
+  ln -sfn ../Cellar/myna-daemon/0.5.1 "$BREW_T/prefix/opt/myna-daemon"
+  export STUB_LOG="$BREW_T/log-$1-$2"; : > "$STUB_LOG"
+  rc=0
+  STUB_UPGRADE="$1" STUB_LOADED="$2" MYNA_PORT="$health_port" \
+    PATH="$BREW_T/prefix/bin:$BREW_T/stubs:/usr/bin:/bin:/usr/sbin:/sbin" \
+    bash "$DIST/setup.sh" --update-daemon > "$STUB_LOG.out" 2>&1 || rc=$?
+}
+brew_update_case move 1
+assert_ok "new formula + running service: upgrades, restarts, exits 0" \
+  bash -c "[ $rc = 0 ] && grep -q 'brew upgrade prerakgada/tap/myna-daemon' '$STUB_LOG' \
+    && grep -q 'brew services restart myna-daemon' '$STUB_LOG' && grep -q 'Daemon 0.5.2' '$STUB_LOG.out'"
+brew_update_case none 1
+assert_ok "nothing newer in the tap: no restart" \
+  bash -c "[ $rc = 0 ] && grep -q 'brew upgrade' '$STUB_LOG' && ! grep -q 'services restart' '$STUB_LOG'"
+brew_update_case move 0
+assert_ok "service stopped by the user: upgraded but not started" \
+  bash -c "[ $rc = 0 ] && grep -q 'brew upgrade' '$STUB_LOG' && ! grep -q 'services' '$STUB_LOG'"
+brew_update_case fail 1
+assert_ok "brew upgrade fails: exits non-zero with the manual command" \
+  bash -c "[ $rc != 0 ] && grep -q 'brew upgrade prerakgada/tap/myna-daemon' '$STUB_LOG.out'"
+kill "$health_pid" 2>/dev/null || true
+wait "$health_pid" 2>/dev/null || true
+rm -rf "$BREW_T"
 
 echo
 if [ "$fail" -eq 0 ]; then

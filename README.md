@@ -79,6 +79,7 @@ All rebindable in **Settings → Hotkeys**.
 | Read the Chrome article | <kbd>⌘⌥⇧R</kbd> |
 | Pause / resume | <kbd>⌘⌥⇧Space</kbd> |
 | Stop | <kbd>⌘⌥⇧.</kbd> |
+| Previous / next sentence | none: record one in the Shortcuts pane |
 
 ## Automation
 

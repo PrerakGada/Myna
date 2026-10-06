@@ -197,6 +197,18 @@ final class PopoverModelTests: XCTestCase {
         XCTAssertTrue(model.showClaudeCodeSubmenu)
     }
 
+    func test_cc_items_newest_first() {
+        // The daemon hands items over oldest first; the popover lists the
+        // reply that just arrived at the top.
+        let items = [1_000, 3_000, 2_000].map { ms in
+            RegistryV2Item(
+                id: "i\(ms)", source: "claude-code", projectId: "p", title: "t", announcedAtMs: ms, ttlS: 600
+            )
+        }
+        let model = build(playerState: .idle, ccItems: items)
+        XCTAssertEqual(model.ccItems.map(\.id), ["i3000", "i2000", "i1000"])
+    }
+
     // MARK: - now reading formatting
 
     func test_truncated_title_appends_ellipsis() {

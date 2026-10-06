@@ -100,18 +100,25 @@ public struct PopoverModel: Sendable, Equatable {
     public let recents: [RecentItem]
     public let ccItems: [RegistryV2Item]
     public let showClaudeCodeSubmenu: Bool
+    /// Daemon answered, but it says the TTS engine is down. Rendered as a
+    /// non-blocking warning strip rather than an error hero: a clip that is
+    /// already buffered keeps playing fine while the engine is restarting,
+    /// so swapping out the Now Playing card would be a lie.
+    public let engineWarning: Bool
 
     public init(
         status: Status,
         transport: [TransportRow],
         recents: [RecentItem],
-        ccItems: [RegistryV2Item]
+        ccItems: [RegistryV2Item],
+        engineWarning: Bool = false
     ) {
         self.status = status
         self.transport = transport
         self.recents = recents
         self.ccItems = ccItems
         self.showClaudeCodeSubmenu = !ccItems.isEmpty
+        self.engineWarning = engineWarning
     }
 }
 
@@ -127,7 +134,8 @@ public enum PopoverModelBuilder {
         reachability: MenuBarController.DaemonReachability,
         hotkeyLabelFor: (HotkeyAction) -> String?,
         isPlayerLoading: Bool = false,
-        loadingTitle: String? = nil
+        loadingTitle: String? = nil,
+        isEngineUp: Bool = true
     ) -> PopoverModel {
         let status: PopoverModel.Status
         switch (reachability, playerState) {
@@ -193,7 +201,12 @@ public enum PopoverModelBuilder {
             status: status,
             transport: rows,
             recents: recents,
-            ccItems: ccItems
+            // Newest first. The daemon hands them over in announce order,
+            // which buried the reply you just got at the bottom.
+            ccItems: ccItems.sorted { $0.announcedAtMs > $1.announcedAtMs },
+            // Only meaningful when we can actually talk to the daemon —
+            // an unreachable daemon has nothing to say about its engine.
+            engineWarning: reachability != .down && !isEngineUp
         )
     }
 }

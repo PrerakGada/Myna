@@ -20,19 +20,30 @@ public struct EngineInfo: Codable, Sendable, Equatable {
     public let status: String  // "up" | "down"
     public let model: String
     public let lastCheckAgeS: Double
+    /// Catalog id and display name of the active engine (nil on daemons
+    /// older than the engine catalog).
+    public let id: String?
+    public let name: String?
 
     enum CodingKeys: String, CodingKey {
         case url
         case status
         case model
         case lastCheckAgeS = "last_check_age_s"
+        case id
+        case name
     }
 
-    public init(url: String, status: String, model: String, lastCheckAgeS: Double) {
+    public init(
+        url: String, status: String, model: String, lastCheckAgeS: Double,
+        id: String? = nil, name: String? = nil
+    ) {
         self.url = url
         self.status = status
         self.model = model
         self.lastCheckAgeS = lastCheckAgeS
+        self.id = id
+        self.name = name
     }
 }
 
@@ -161,29 +172,75 @@ public struct Voice: Codable, Sendable, Identifiable, Equatable {
     public let label: String
     public let lang: String
     public let isDefault: Bool
+    /// "builtin", or the user's own: "clip" (a voice copied from a
+    /// recording) or "blend" (Kokoro voices mixed). Nil from older daemons.
+    public let kind: String?
+    /// How pickers file it: "American English", "Built-in", "Your voices"…
+    public let group: String?
+    public let gender: String?
+    /// Kokoro's own quality grade (A … F), where the model card gives one.
+    public let grade: String?
+    public let detail: String?
+    /// Attribution a licensed clip requires (CC BY).
+    public let credit: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case label
         case lang
         case isDefault = "default"
+        case kind
+        case group
+        case gender
+        case grade
+        case detail
+        case credit
     }
 
-    public init(id: String, label: String, lang: String, isDefault: Bool) {
+    public init(
+        id: String,
+        label: String,
+        lang: String,
+        isDefault: Bool,
+        kind: String? = nil,
+        group: String? = nil,
+        gender: String? = nil,
+        grade: String? = nil,
+        detail: String? = nil,
+        credit: String? = nil
+    ) {
         self.id = id
         self.label = label
         self.lang = lang
         self.isDefault = isDefault
+        self.kind = kind
+        self.group = group
+        self.gender = gender
+        self.grade = grade
+        self.detail = detail
+        self.credit = credit
     }
+
+    /// A clip or blend the user made, which they can rename and delete.
+    public var isUserMade: Bool { kind == "clip" || kind == "blend" }
 }
 
 public struct VoicesResponse: Codable, Sendable, Equatable {
     public let voices: [Voice]
+    /// "down" when the engine is unreachable; absent otherwise.
     public let engine: String?
+    public let activeEngine: VoicesEngineInfo?
 
-    public init(voices: [Voice], engine: String? = nil) {
+    enum CodingKeys: String, CodingKey {
+        case voices
+        case engine
+        case activeEngine = "active_engine"
+    }
+
+    public init(voices: [Voice], engine: String? = nil, activeEngine: VoicesEngineInfo? = nil) {
         self.voices = voices
         self.engine = engine
+        self.activeEngine = activeEngine
     }
 }
 
@@ -203,6 +260,16 @@ public struct SynthesizeRequest: Codable, Sendable, Equatable {
     /// Bundle identifier of the frontmost app at the time of the
     /// request. Daemon uses this to look up the voice wardrobe.
     public var bundleId: String?
+    /// Where the text came from (`ReadSource.rawValue`). Picks the daemon's
+    /// text-cleanup preset: Claude Code replies and articles get their own.
+    public var source: String?
+    /// `.literal` reads the text exactly as written. nil = the daemon's
+    /// default, `.auto`.
+    public var prep: TextPrep?
+    /// `mode: .summary` only: the style the daemon's Ollama fallback writes
+    /// (`SummaryStyle.rawValue`). Absent on full reads, including a summary
+    /// Apple Intelligence already wrote in the app. See Sources/Summaries/.
+    public var summaryStyle: String?
 
     enum CodingKeys: String, CodingKey {
         case text
@@ -213,6 +280,9 @@ public struct SynthesizeRequest: Codable, Sendable, Equatable {
         case chunkChars = "chunk_chars"
         case sessionId = "session_id"
         case bundleId = "bundle_id"
+        case source
+        case prep
+        case summaryStyle = "summary_style"
     }
 
     public init(
@@ -223,7 +293,9 @@ public struct SynthesizeRequest: Codable, Sendable, Equatable {
         mode: SynthesizeMode = .full,
         chunkChars: Int? = nil,
         sessionId: String? = nil,
-        bundleId: String? = nil
+        bundleId: String? = nil,
+        source: String? = nil,
+        prep: TextPrep? = nil
     ) {
         self.text = text
         self.url = url
@@ -233,6 +305,8 @@ public struct SynthesizeRequest: Codable, Sendable, Equatable {
         self.chunkChars = chunkChars
         self.sessionId = sessionId
         self.bundleId = bundleId
+        self.source = source
+        self.prep = prep
     }
 }
 
@@ -241,13 +315,21 @@ public struct SynthesizedChunk: Sendable, Equatable {
     public let totalEstimate: Int
     public let textPreview: String
     public let wavData: Data
+    /// The whole chunk as spoken (`X-Chunk-Text-Full`). Nil from a daemon
+    /// older than the sentence transcript, which sends only the preview.
+    public let fullText: String?
 
-    public init(index: Int, totalEstimate: Int, textPreview: String, wavData: Data) {
+    public init(index: Int, totalEstimate: Int, textPreview: String, wavData: Data, fullText: String? = nil) {
         self.index = index
         self.totalEstimate = totalEstimate
         self.textPreview = textPreview
         self.wavData = wavData
+        self.fullText = fullText
     }
+
+    /// What this chunk said, for the transcript: the full text, or the
+    /// 200-character preview when the daemon didn't send it.
+    public var spokenText: String { fullText ?? textPreview }
 }
 
 /// Response-level metadata for a /v2/synthesize call. Today this carries
@@ -292,9 +374,17 @@ public struct ExtractResponse: Codable, Sendable, Equatable {
 
 public struct SummarizeRequest: Codable, Sendable, Equatable {
     public let text: String
+    /// `SummaryStyle.rawValue`; nil lets the daemon use its default (TL;DR).
+    public let summaryStyle: String?
 
-    public init(text: String) {
+    enum CodingKeys: String, CodingKey {
+        case text
+        case summaryStyle = "summary_style"
+    }
+
+    public init(text: String, summaryStyle: String? = nil) {
         self.text = text
+        self.summaryStyle = summaryStyle
     }
 }
 
@@ -343,6 +433,9 @@ public struct ModelStatusResponse: Codable, Sendable, Equatable {
     /// out-of-process. Swift UI hides the "Pause Myna" toggle when this
     /// is false.
     public let suspendSupported: Bool
+    /// Physical footprint of the engine process (where the model lives).
+    public let engineMemoryMb: Double?
+    public let enginePID: Int?
 
     enum CodingKeys: String, CodingKey {
         case modelLoaded = "model_loaded"
@@ -350,6 +443,8 @@ public struct ModelStatusResponse: Codable, Sendable, Equatable {
         case daemonRssMb = "daemon_rss_mb"
         case daemonPID = "daemon_pid"
         case suspendSupported = "suspend_supported"
+        case engineMemoryMb = "engine_memory_mb"
+        case enginePID = "engine_pid"
     }
 
     public init(
@@ -357,13 +452,17 @@ public struct ModelStatusResponse: Codable, Sendable, Equatable {
         engineURL: String,
         daemonRssMb: Double,
         daemonPID: Int,
-        suspendSupported: Bool
+        suspendSupported: Bool,
+        engineMemoryMb: Double? = nil,
+        enginePID: Int? = nil
     ) {
         self.modelLoaded = modelLoaded
         self.engineURL = engineURL
         self.daemonRssMb = daemonRssMb
         self.daemonPID = daemonPID
         self.suspendSupported = suspendSupported
+        self.engineMemoryMb = engineMemoryMb
+        self.enginePID = enginePID
     }
 }
 

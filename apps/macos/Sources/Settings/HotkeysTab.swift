@@ -31,6 +31,9 @@ public struct HotkeysTab: View {
         .init(label: "Read Chrome article:", name: .readChromeArticle),
         .init(label: "Pause / resume:", name: .pauseResume),
         .init(label: "Stop:", name: .stop),
+        .init(label: "Skip to next:", name: .skipToNext),
+        .init(label: "Previous sentence:", name: .previousSentence),
+        .init(label: "Next sentence:", name: .nextSentence),
     ]
 
     public var body: some View {

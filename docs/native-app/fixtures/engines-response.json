@@ -1,0 +1,196 @@
+{
+  "active": "kokoro",
+  "engines": [
+    {
+      "id": "kokoro",
+      "name": "Kokoro",
+      "maker": "hexgrad",
+      "tagline": "The default. Fast, accurate, eight languages.",
+      "description": "The voice Myna has always used. Starts speaking in a tenth of a second and reads numbers, dates and names cleanly.",
+      "repo": "prince-canuma/Kokoro-82M",
+      "params": "82M",
+      "languages": [
+        "English",
+        "Japanese",
+        "Chinese",
+        "French",
+        "Spanish",
+        "Italian",
+        "Portuguese",
+        "Hindi"
+      ],
+      "license": "Apache 2.0",
+      "badge": "Default",
+      "download_mb": 372,
+      "sample_rate": 24000,
+      "native_speed": true,
+      "cloning": false,
+      "voices": [
+        {
+          "id": "af_heart",
+          "label": "Heart (female)"
+        },
+        {
+          "id": "af_bella",
+          "label": "Bella (female)"
+        },
+        {
+          "id": "am_michael",
+          "label": "Michael (male)"
+        },
+        {
+          "id": "am_adam",
+          "label": "Adam (male)"
+        }
+      ],
+      "default_voice": "af_heart",
+      "stats": {
+        "first_word_s": 0.1,
+        "speed_x": 46.1,
+        "peak_memory_mb": 3117.0,
+        "word_error_pct": 4.0,
+        "measured_on": "M5 Max \u00b7 mlx-audio 0.5.7 \u00b7 28 Sep 2026"
+      },
+      "active": true,
+      "state": "installed",
+      "disk_mb": 389.4
+    },
+    {
+      "id": "soprano",
+      "name": "Soprano",
+      "maker": "ekwek",
+      "tagline": "As fast as Kokoro on a quarter of the memory.",
+      "description": "A small English model tuned for clear narration. The lightest engine here, which matters on a Mac that is already busy.",
+      "repo": "mlx-community/Soprano-1.1-80M-bf16",
+      "params": "80M",
+      "languages": [
+        "English"
+      ],
+      "license": "Apache 2.0",
+      "badge": "Lightest",
+      "download_mb": 284,
+      "sample_rate": 32000,
+      "native_speed": false,
+      "cloning": false,
+      "voices": [
+        {
+          "id": "soprano",
+          "label": "Soprano"
+        }
+      ],
+      "default_voice": "soprano",
+      "stats": {
+        "first_word_s": 0.1,
+        "speed_x": 37.7,
+        "peak_memory_mb": 700.0,
+        "word_error_pct": 5.0,
+        "measured_on": "M5 Max \u00b7 mlx-audio 0.5.7 \u00b7 28 Sep 2026"
+      },
+      "active": false,
+      "state": "downloading",
+      "progress": 0.42,
+      "downloaded_mb": 102.3,
+      "total_mb": 245.1
+    },
+    {
+      "id": "pocket",
+      "name": "Pocket TTS",
+      "maker": "Kyutai",
+      "tagline": "Eight voices, and the quickest to start when streamed.",
+      "description": "Kyutai's pocket-sized model. It can begin sounding in 20 milliseconds when streamed and comes with eight distinct voices.",
+      "repo": "mlx-community/pocket-tts",
+      "params": "100M",
+      "languages": [
+        "English"
+      ],
+      "license": "CC BY 4.0",
+      "credit": "Pocket TTS by Kyutai, licensed CC BY 4.0.",
+      "badge": "Most voices",
+      "download_mb": 245,
+      "sample_rate": 24000,
+      "native_speed": false,
+      "cloning": false,
+      "voices": [
+        {
+          "id": "alba",
+          "label": "Alba"
+        },
+        {
+          "id": "marius",
+          "label": "Marius"
+        },
+        {
+          "id": "javert",
+          "label": "Javert"
+        },
+        {
+          "id": "jean",
+          "label": "Jean"
+        },
+        {
+          "id": "fantine",
+          "label": "Fantine"
+        },
+        {
+          "id": "cosette",
+          "label": "Cosette"
+        },
+        {
+          "id": "eponine",
+          "label": "Eponine"
+        },
+        {
+          "id": "azelma",
+          "label": "Azelma"
+        }
+      ],
+      "default_voice": "alba",
+      "stats": {
+        "first_word_s": 0.18,
+        "stream_first_s": 0.02,
+        "speed_x": 21.9,
+        "peak_memory_mb": 960.0,
+        "word_error_pct": 6.0,
+        "measured_on": "M5 Max \u00b7 mlx-audio 0.5.7 \u00b7 28 Sep 2026"
+      },
+      "active": false,
+      "state": "not_installed"
+    },
+    {
+      "id": "chatterbox",
+      "name": "Chatterbox Turbo",
+      "maker": "Resemble AI",
+      "tagline": "The most accurate, with the most expression.",
+      "description": "A larger model with livelier delivery. It made the fewest mistakes in the bake-off, at the cost of a slower start and more memory.",
+      "repo": "mlx-community/chatterbox-turbo-8bit",
+      "params": "350M",
+      "languages": [
+        "English"
+      ],
+      "license": "MIT",
+      "badge": "Most accurate",
+      "download_mb": 1200,
+      "sample_rate": 24000,
+      "native_speed": false,
+      "cloning": false,
+      "voices": [
+        {
+          "id": "chatterbox",
+          "label": "Built-in voice"
+        }
+      ],
+      "default_voice": "chatterbox",
+      "stats": {
+        "first_word_s": 0.46,
+        "stream_first_s": 0.12,
+        "speed_x": 7.8,
+        "peak_memory_mb": 3323.0,
+        "word_error_pct": 3.0,
+        "measured_on": "M5 Max \u00b7 mlx-audio 0.5.7 \u00b7 28 Sep 2026"
+      },
+      "active": false,
+      "state": "failed",
+      "error": "Download failed: connection reset"
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 # apps/macos/Resources/setup/, which Xcode bundles as Contents/Resources/setup:
 #
 #   setup.sh             the installer (from dist/setup.sh)
-#   myna-cc-announce.py  the Claude Code Stop hook (from hooks/)
+#   myna-cc-announce.py  the Claude Code hook, Stop + Notification (from hooks/)
 #   daemon/              the daemon source, installed on Macs without Homebrew
 #
 # Run by dist/build.sh and apps/macos/dev.sh before every build. The daemon

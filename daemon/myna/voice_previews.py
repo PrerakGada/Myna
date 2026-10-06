@@ -116,3 +116,10 @@ class VoicePreviewCache:
             self._write_manifest()
         except OSError:
             pass
+
+    def remove(self, voice_id: str) -> None:
+        """Forget one voice's preview (a deleted clip or blend)."""
+        try:
+            self.path_for(voice_id).unlink()
+        except OSError:
+            pass

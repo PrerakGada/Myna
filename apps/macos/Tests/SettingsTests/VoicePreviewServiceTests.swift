@@ -30,6 +30,7 @@ final class VoicePreviewServiceTests: XCTestCase {
     private final class StubSink: AudioDuckable, @unchecked Sendable {
         var ducks: [Float] = []
         var restoreCount = 0
+        var speed: Double = 1.0
         func duck(to factor: Float) -> () -> Void {
             ducks.append(factor)
             return { [weak self] in self?.restoreCount += 1 }

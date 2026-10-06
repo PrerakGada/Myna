@@ -42,9 +42,19 @@ public struct BehaviorTab: View {
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                Toggle(
+                    "Read only the bold claims",
+                    isOn: $viewModel.ccBoldClaimsOnly
+                )
+                Text(
+                    "Play just the bold sentences of a reply — the gist, when Claude bolds its "
+                        + "key claims. A reply with no bold is read in full."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .padding()
-        .frame(width: 460, height: 320)
+        .frame(width: 460, height: 380)
     }
 }

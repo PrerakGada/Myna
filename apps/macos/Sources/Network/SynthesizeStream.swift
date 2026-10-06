@@ -13,6 +13,7 @@
 //   X-Chunk-Index: 0\r\n
 //   X-Chunk-Total-Estimate: 8\r\n
 //   X-Chunk-Text: First 200 chars...\r\n
+//   X-Chunk-Text-Full: the whole chunk, URL-encoded\r\n   (newer daemons)
 //   \r\n
 //   <WAV bytes>\r\n
 //   --mynachunk\r\n
@@ -157,12 +158,14 @@ public final class MultipartChunkParser {
         let index = Int(headers["x-chunk-index"] ?? "") ?? 0
         let estimate = Int(headers["x-chunk-total-estimate"] ?? "") ?? 0
         let preview = (headers["x-chunk-text"] ?? "").removingPercentEncoding ?? headers["x-chunk-text"] ?? ""
+        let full = headers["x-chunk-text-full"].map { $0.removingPercentEncoding ?? $0 }
         return .audio(
             chunk: SynthesizedChunk(
                 index: index,
                 totalEstimate: estimate,
                 textPreview: preview,
-                wavData: body
+                wavData: body,
+                fullText: full
             )
         )
     }

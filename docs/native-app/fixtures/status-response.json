@@ -9,7 +9,9 @@
     "url": "http://127.0.0.1:8765",
     "status": "up",
     "model": "prince-canuma/Kokoro-82M",
-    "last_check_age_s": 1.4
+    "last_check_age_s": 1.4,
+    "id": "kokoro",
+    "name": "Kokoro"
   },
   "daemon": {
     "version": "0.2.0",

@@ -1,85 +1,56 @@
-// FooterBar.swift — bottom row of the popover. Settings · What's New ·
-// Check for Updates · Restart Daemon · Open Logs · Quit.
+// FooterBar.swift — bottom row of the popover: Myna · What's New ·
+// Check for Updates · Quit.
 //
-// We render the actions as compact icon-plus-label rows so the popover
-// can host all of them without becoming wider. Hover lights them like
-// the rest of the popover. Settings uses `SettingsLink` on macOS 14+
-// (the only reliable way to open Settings from an LSUIElement app);
-// macOS 13 falls through to controller.openSettings().
+// It used to be six. Restart Daemon and Open Logs sat here at the same
+// visual weight as Settings and Quit, which made the footer read as a
+// flat list of six equally-likely things to do — and squeezed every
+// caption to 9pt across a 360pt popover, so "Restart Daemon" had to be
+// truncated to "Restart" and "Open Logs" to "Logs". Both are recovery
+// actions, not daily ones, so they moved into OPTIONS ▸ Troubleshooting.
+//
+// They did not get harder to reach when it matters: the moment the daemon
+// or the engine actually falls over, ErrorHero and EngineWarningStrip put
+// a Restart button directly in front of the user.
+//
+// The first column used to be Settings, opening the seven-tab Settings
+// scene through `SettingsLink` — the one reliable way to open it from an
+// LSUIElement app, and still awkward (see SettingsWindowActivator for the
+// activation dance it needed). It now opens the Dashboard: a real window
+// that carries those same preferences plus the reading history and its
+// analytics. The Settings scene stays registered so ⌘, keeps working, but
+// nothing in the UI points at it any more.
 import SwiftUI
 
 public struct FooterBar: View {
     public let updates: UpdateController
-    public let onSettings: () -> Void
+    public let onDashboard: () -> Void
     public let onWhatsNew: () -> Void
-    public let onRestartDaemon: () -> Void
-    public let onOpenLogs: () -> Void
 
     public init(
         updates: UpdateController,
-        onSettings: @escaping () -> Void,
-        onWhatsNew: @escaping () -> Void,
-        onRestartDaemon: @escaping () -> Void,
-        onOpenLogs: @escaping () -> Void
+        onDashboard: @escaping () -> Void,
+        onWhatsNew: @escaping () -> Void
     ) {
         self.updates = updates
-        self.onSettings = onSettings
+        self.onDashboard = onDashboard
         self.onWhatsNew = onWhatsNew
-        self.onRestartDaemon = onRestartDaemon
-        self.onOpenLogs = onOpenLogs
     }
 
     public var body: some View {
         VStack(spacing: 2) {
-            // Primary row (icons left to right). SettingsLink can only
-            // ride inside a Button label in macOS 14+, so we render the
-            // settings entry conditionally.
+            // Primary row, icons left to right.
             HStack(spacing: 4) {
-                if #available(macOS 14.0, *) {
-                    SettingsLink {
-                        FooterIcon(systemImage: "gearshape", label: "Settings")
-                    }
-                    .buttonStyle(FooterIconButtonStyle())
-                    // SettingsLink reliably *opens* Settings from an
-                    // accessory app, but does not reliably activate it or
-                    // make the window key. Run the activator alongside the
-                    // link's own tap so the window comes to the front (and
-                    // the shortcut recorder can receive keystrokes). A
-                    // zero-distance drag (not TapGesture) fires on every
-                    // press+release — including the micro-drag clicks a
-                    // TapGesture ignores — and runs concurrently with
-                    // SettingsLink's own action without swallowing it.
-                    .simultaneousGesture(
-                        DragGesture(minimumDistance: 0).onEnded { _ in
-                            SettingsWindowActivator.activate()
-                        }
-                    )
-                } else {
-                    FooterIconButton(
-                        systemImage: "gearshape",
-                        label: "Settings",
-                        action: onSettings
-                    )
-                }
+                FooterIconButton(
+                    systemImage: "square.grid.2x2",
+                    label: "Myna",
+                    longLabel: "Open the Myna window — history, stats and every setting",
+                    action: onDashboard
+                )
+                // Four columns at 360pt means each caption gets ~83pt, so
+                // every label fits at its full length. That is the whole
+                // reason the diagnostics moved out.
                 FooterIconButton(systemImage: "sparkles", label: "What's New", action: onWhatsNew)
                 CheckForUpdatesIconButton(updates: updates)
-                // Labels here are tuned to fit the 360pt popover across
-                // six columns at the 9pt caption size. "Restart" / "Logs"
-                // / "Quit" are the shortest unambiguous strings; the
-                // tooltip (`.help`) and accessibilityLabel keep the long
-                // form for screen-readers and hover-to-confirm.
-                FooterIconButton(
-                    systemImage: "arrow.clockwise",
-                    label: "Restart",
-                    longLabel: "Restart Daemon",
-                    action: onRestartDaemon
-                )
-                FooterIconButton(
-                    systemImage: "doc.text.magnifyingglass",
-                    label: "Logs",
-                    longLabel: "Open Logs",
-                    action: onOpenLogs
-                )
                 FooterIconButton(
                     systemImage: "power",
                     label: "Quit",
@@ -92,10 +63,9 @@ public struct FooterBar: View {
 }
 
 /// Compact icon-plus-label square used inside the footer. The label sits
-/// directly under the icon so each button still occupies a narrow column —
-/// six of them fit across the 360pt popover without wrapping. Tooltip
-/// and a11y label show the full action ("Restart Daemon") even when the
-/// visible caption is shortened to fit ("Restart").
+/// directly under the icon so each button occupies a narrow column. The
+/// tooltip and a11y label carry the full action even when the visible
+/// caption is shortened to fit ("Myna" → "Open the Myna window…").
 private struct FooterIconButton: View {
     let systemImage: String
     let label: String
@@ -147,19 +117,18 @@ private struct FooterIconButton: View {
     }
 }
 
-/// Shared metrics so SettingsLink (which cannot host a Button without a
-/// click intercept) and our gesture-based buttons render at the same
-/// height. The label tagline keeps the popover from looking taller — we
-/// use a small caption so the row stays under 44pt total.
+/// Shared metrics so every footer column renders at the same height. The
+/// caption sits under the icon in a small size so the row stays under 44pt
+/// total and the popover doesn't grow.
 private enum FooterMetrics {
-    static let buttonHeight: CGFloat = 40
-    static let iconSize: CGFloat = 12
-    static let labelFont: Font = .system(size: 9, weight: .medium)
+    static let buttonHeight: CGFloat = 38
+    static let iconSize: CGFloat = 13
+    /// 10pt rather than 9pt — four columns leave room for a caption you
+    /// can actually read at a glance.
+    static let labelFont: Font = .system(size: 10, weight: .medium)
 }
 
-/// Vertical icon-plus-text used inside every footer entry. Pulled out so
-/// the `SettingsLink` path (which can't intercept Button's `action`) and
-/// the gesture path (which can) share one visual.
+/// Vertical icon-plus-text used inside every footer entry.
 private struct FooterIconLabel: View {
     let systemImage: String
     let label: String
@@ -184,51 +153,6 @@ private struct FooterIconLabel: View {
                 )
         }
         .padding(.horizontal, 2)
-    }
-}
-
-/// Stylised SwiftUI representation of the `SettingsLink` content so the
-/// system Settings binding stays intact (macOS 14+). We just supply the
-/// label; `.buttonStyle(FooterIconButtonStyle())` paints the hover state.
-private struct FooterIcon: View {
-    let systemImage: String
-    let label: String
-    var body: some View {
-        // SettingsLink's button-style modifier owns the hover/pressed
-        // tinting; we just render the static icon+label stack here. The
-        // tint flows through via foregroundStyle in the button style.
-        VStack(spacing: 2) {
-            Image(systemName: systemImage)
-                .font(.system(size: FooterMetrics.iconSize, weight: .medium))
-            Text(label)
-                .font(FooterMetrics.labelFont)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .padding(.horizontal, 2)
-        .frame(maxWidth: .infinity)
-        .frame(height: FooterMetrics.buttonHeight)
-        .accessibilityLabel(label)
-        .help(label)
-    }
-}
-
-private struct FooterIconButtonStyle: ButtonStyle {
-    @State private var isHovering = false
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(PopoverDesign.bodyColor.opacity(isHovering ? 1.0 : 0.7))
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(fillColor(pressed: configuration.isPressed))
-            )
-            .onHover { hovering in isHovering = hovering }
-    }
-
-    private func fillColor(pressed: Bool) -> Color {
-        if pressed { return PopoverDesign.pressedFill }
-        if isHovering { return PopoverDesign.hoverFill }
-        return Color.clear
     }
 }
 

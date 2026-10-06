@@ -90,6 +90,7 @@ private final class AuditRecorder: URLSchemeDispatching {
         case seek(TimeInterval)
         case setSpeed(Double)
         case bumpSpeed(Double)
+        case openDashboard(DashboardPane?)
     }
     var calls: [Call] = []
     func speakSelection(mode: SynthesizeMode) { calls.append(.speakSelection(mode)) }
@@ -99,4 +100,5 @@ private final class AuditRecorder: URLSchemeDispatching {
     func seek(delta: TimeInterval) { calls.append(.seek(delta)) }
     func setSpeed(_ value: Double) { calls.append(.setSpeed(value)) }
     func bumpSpeed(_ delta: Double) { calls.append(.bumpSpeed(delta)) }
+    func openDashboard(pane: DashboardPane?) { calls.append(.openDashboard(pane)) }
 }

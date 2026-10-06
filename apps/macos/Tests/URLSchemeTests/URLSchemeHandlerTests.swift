@@ -150,6 +150,7 @@ private enum RecordedCall: Equatable, Sendable {
     case seek(TimeInterval)
     case setSpeed(Double)
     case bumpSpeed(Double)
+    case openDashboard(DashboardPane?)
 }
 
 @MainActor
@@ -162,4 +163,5 @@ private final class RecordingDispatcher: URLSchemeDispatching {
     func seek(delta: TimeInterval) { calls.append(.seek(delta)) }
     func setSpeed(_ value: Double) { calls.append(.setSpeed(value)) }
     func bumpSpeed(_ delta: Double) { calls.append(.bumpSpeed(delta)) }
+    func openDashboard(pane: DashboardPane?) { calls.append(.openDashboard(pane)) }
 }
