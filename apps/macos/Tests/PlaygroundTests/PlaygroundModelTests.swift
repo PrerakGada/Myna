@@ -15,7 +15,7 @@ final class PlaygroundModelTests: XCTestCase {
     private var suiteName = ""
 
     override func setUp() async throws {
-        try await super.setUp()
+        // No super.setUp(): sending the XCTestCase across actors fails CI's Swift 6 (see PillSettingsTests).
         MockURLProtocol.reset()
         directory = PlaygroundFixtures.tempDirectory("model")
         suiteName = "playground-tests-\(UUID().uuidString)"
@@ -26,7 +26,6 @@ final class PlaygroundModelTests: XCTestCase {
         MockURLProtocol.reset()
         if let directory { try? FileManager.default.removeItem(at: directory) }
         defaults.removePersistentDomain(forName: suiteName)
-        try await super.tearDown()
     }
 
     private func makeModel(preferredVoice: String? = "af_bella") -> PlaygroundModel {

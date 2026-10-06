@@ -29,7 +29,7 @@ final class PlaygroundSnapshotTests: XCTestCase {
     private let defaultWidth = DashboardDesign.windowWidth - DashboardDesign.sidebarWidth - 1
 
     override func setUp() async throws {
-        try await super.setUp()
+        // No super.setUp(): sending the XCTestCase across actors fails CI's Swift 6 (see PillSettingsTests).
         guard let path = ProcessInfo.processInfo.environment["MYNA_PLAYGROUND_SNAPSHOT_DIR"] else {
             throw XCTSkip("set TEST_RUNNER_MYNA_PLAYGROUND_SNAPSHOT_DIR to write snapshots")
         }
@@ -44,7 +44,6 @@ final class PlaygroundSnapshotTests: XCTestCase {
         MockURLProtocol.reset()
         if let directory { try? FileManager.default.removeItem(at: directory) }
         UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
-        try await super.tearDown()
     }
 
     private func makeModel(nativeSpeed: Bool, voices: [[String: Any]]) async throws -> PlaygroundModel {

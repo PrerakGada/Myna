@@ -11,14 +11,13 @@ final class HistoryStoreTests: XCTestCase {
     private var directory: URL!
 
     override func setUp() async throws {
-        try await super.setUp()
+        // No super.setUp(): sending the XCTestCase across actors fails CI's Swift 6 (see PillSettingsTests).
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("myna-history-tests-\(UUID().uuidString)")
     }
 
     override func tearDown() async throws {
         if let directory { try? FileManager.default.removeItem(at: directory) }
-        try await super.tearDown()
     }
 
     private func makeStore() -> HistoryStore {

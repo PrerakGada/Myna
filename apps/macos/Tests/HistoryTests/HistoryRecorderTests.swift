@@ -23,7 +23,7 @@ final class HistoryRecorderTests: XCTestCase {
     private var recorder: HistoryRecorder!
 
     override func setUp() async throws {
-        try await super.setUp()
+        // No super.setUp(): sending the XCTestCase across actors fails CI's Swift 6 (see PillSettingsTests).
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("myna-recorder-tests-\(UUID().uuidString)")
         store = HistoryStore(directory: directory, fileName: "history.json")
@@ -34,7 +34,6 @@ final class HistoryRecorderTests: XCTestCase {
     override func tearDown() async throws {
         player?.stop()
         if let directory { try? FileManager.default.removeItem(at: directory) }
-        try await super.tearDown()
     }
 
     @discardableResult

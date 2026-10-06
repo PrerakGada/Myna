@@ -22,7 +22,7 @@ final class PlaygroundLiveTests: XCTestCase {
     private var suiteName = ""
 
     override func setUp() async throws {
-        try await super.setUp()
+        // No super.setUp(): sending the XCTestCase across actors fails CI's Swift 6 (see PillSettingsTests).
         guard let port = ProcessInfo.processInfo.environment["MYNA_PLAYGROUND_LIVE_PORT"],
               port != "8766",
               let url = URL(string: "http://127.0.0.1:\(port)")
@@ -35,7 +35,6 @@ final class PlaygroundLiveTests: XCTestCase {
     override func tearDown() async throws {
         if let directory { try? FileManager.default.removeItem(at: directory) }
         UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
-        try await super.tearDown()
     }
 
     private func makeModel() throws -> PlaygroundModel {
