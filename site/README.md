@@ -67,6 +67,21 @@ site/
     └── favicon.svg
 ```
 
+## Downloads, the form and Homebrew
+
+Every Download button points at `https://api.prerakgada.in/d/myna/mac` (`lib/download.ts`), the shared
+cookieless download counter, which 302s to `Myna.dmg` on the newest release. The shared tracker tag in
+`app/layout.tsx` (`tracker.js?v=3`, `data-form`) opens an optional "who's downloading" form on the first
+Download click per page load: sign in with Google or Apple, fill in by hand, or skip.
+
+The Homebrew commands are **never printed on the page**. They live in `HOMEBREW_LINES` (`lib/download.ts`)
+and ride on the tracker tag as the multi-line `data-command`. The tracker shows them after the form, both
+in the Download flow ("Prefer Homebrew?") and from the "Install with Homebrew" button
+(`components/HomebrewButton.tsx`, marked `data-pt-command`). Two fallbacks keep them reachable: a
+`<noscript>` copy for JavaScript-off visitors, and an inline reveal when the tracker script never loaded
+(blocked or offline). Bump `?v=` whenever the shared tracker changes; the guide is
+`~/work/company/infra/product-analytics.md`.
+
 ## Design notes
 
 - **Typography**: Fraunces (display, variable, optical sizing) + Newsreader (body) + JetBrains Mono (code, eyebrow labels).
@@ -78,7 +93,7 @@ site/
 ## What's intentionally absent
 
 - No 3D blobs, no purple gradients, no stock illustrations.
-- No newsletter capture, no cookie banner, no analytics by default.
+- No newsletter capture, no cookie banner, no third-party analytics (only the shared cookieless counter above).
 - No pricing table — Myna is free.
 - No customer logos / fake testimonials.
 

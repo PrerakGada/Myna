@@ -18,12 +18,16 @@ const ITEMS: Item[] = [
     a: <>A setup window installs Myna&rsquo;s voice into your user account: a private copy of Python, the MLX speech engine (about 600&nbsp;MB), a small background service, and the Kokoro voice model (about 370&nbsp;MB). Each step shows its progress. No Terminal, no admin password, and a few minutes on a good connection. If you use Claude Code, it connects that too. Then it asks for Accessibility, which it needs to copy the text you select.</>,
   },
   {
+    q: "Can I install it with Homebrew?",
+    a: <>Yes. Press <a href="#homebrew" className="ink-underline text-ink">Install with Homebrew</a> in the install section and the commands appear on the next step, after the same short download form (you can skip it). The cask installs the app, its background service and a <Code>myna</Code> command for reading from the terminal. Open Myna once afterwards to finish setting up the voice.</>,
+  },
+  {
     q: "Is it really free?",
     a: <>Yes. No price, no account, no usage limits, and nothing to upgrade to. The source is MIT-licensed on GitHub.</>,
   },
   {
     q: "Does what I read leave my Mac?",
-    a: <>The voice is generated on your Mac by the Kokoro model, so the text you read is never sent to a speech service, and summaries run through Ollama on your own machine. Myna does touch the network in four specific cases: downloading its voice during setup, checking GitHub for app updates, fetching the page when you use <em>Read article</em>, the way your browser did, and, only when you press Send in <em>Report a Problem</em> or <em>Send Feedback</em>, sending what you typed there to Prerak with the app and macOS versions and your Mac model. The app has no analytics and no telemetry. This website counts page views and downloads with its own cookieless counter: no cookies, no IP addresses stored, nothing shared.</>,
+    a: <>The voice is generated on your Mac by the Kokoro model, so the text you read is never sent to a speech service, and summaries run through Ollama on your own machine. Myna does touch the network in four specific cases: downloading its voice during setup, checking GitHub for app updates, fetching the page when you use <em>Read article</em>, the way your browser did, and, only when you press Send in <em>Report a Problem</em> or <em>Send Feedback</em>, sending what you typed there to Prerak with the app and macOS versions and your Mac model. The app has no analytics and no telemetry. This website counts page views and downloads with its own cookieless counter: no cookies, no IP addresses stored. When you download, a short optional form asks who you are: skip it, fill it in by hand, or sign in with Google or Apple, which shares only your name and email. Those answers are used only to understand who uses Myna, and are never shared or sold.</>,
   },
   {
     q: "Which voices can I use?",

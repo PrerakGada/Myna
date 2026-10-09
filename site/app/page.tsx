@@ -14,6 +14,8 @@ import { FAQ } from "@/components/FAQ";
 import { MobileStickyCTA } from "@/components/MobileStickyCTA";
 import { HeroScene } from "@/components/HeroScene";
 import { DownloadButton, getLatestVersion } from "@/components/DownloadButton";
+import { HomebrewButton } from "@/components/HomebrewButton";
+import { HOMEBREW_COMMAND } from "@/lib/download";
 import { PillMock, PillBar } from "@/components/mac/PillMock";
 import { PopoverMock } from "@/components/mac/PopoverMock";
 import { InstallerMock } from "@/components/mac/InstallerMock";
@@ -359,20 +361,21 @@ export default async function Page() {
 
           <Reveal>
             <div className="mt-14 grid gap-8 md:grid-cols-2">
-              <div>
+              <div id="homebrew" className="scroll-mt-24">
                 <h3 className="font-display text-[1.5rem]">Prefer Homebrew?</h3>
                 <p className="mt-2 text-[0.98rem] leading-[1.65] text-paper/65 pretty">
                   The cask installs the app plus its background service, and adds a <span className="font-mono">myna</span>{" "}
                   command for reading from the terminal. Open Myna once afterwards to finish setting up the voice.
                 </p>
-                <CopyBlock
+                {/* The commands are not printed here: the shared download form shows them after it (data-command in layout.tsx). */}
+                <HomebrewButton
                   className="mt-5"
-                  lines={[
-                    { prompt: true, text: "brew tap prerakgada/tap" },
-                    { prompt: true, text: "brew trust prerakgada/tap" },
-                    { prompt: true, text: "brew install --cask prerakgada/tap/myna" },
-                  ]}
+                  buttonClassName="!text-paper !shadow-[inset_0_0_0_1px_rgba(245,239,226,0.3)] hover:!bg-paper/[0.06] hover:!shadow-[inset_0_0_0_1px_rgba(245,239,226,0.55)]"
+                  hint={<span className="font-mono text-[0.72rem] text-paper/45">The commands are on the next step.</span>}
                 />
+                <noscript>
+                  <pre className="code-block mt-5 whitespace-pre-wrap">{HOMEBREW_COMMAND}</pre>
+                </noscript>
               </div>
               <div>
                 <h3 className="font-display text-[1.5rem]">Want summaries?</h3>

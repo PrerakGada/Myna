@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Fraunces, Newsreader, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { HOMEBREW_COMMAND } from "@/lib/download";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -72,14 +73,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <head>
         <link rel="mask-icon" href="/brand/safari-pinned-tab.svg" color="#55134f" />
-        {/* Cookieless page-view + download counter shared by every product site, with its optional download form. */}
+        {/*
+          Cookieless page-view + download counter shared by every product site, with its optional download form
+          (sign in with Google or Apple, or fill in by hand, or skip). data-command is the Homebrew install: the
+          form shows it after a Download click and after the "Install with Homebrew" button (data-pt-command),
+          so the page itself never prints it.
+        */}
         <script
           defer
-          src="https://api.prerakgada.in/v1/p/tracker.js?v=2"
+          src="https://api.prerakgada.in/v1/p/tracker.js?v=3"
           data-product="myna"
           data-form=""
           data-name="Myna"
           data-accent="#1A1714"
+          data-command-label="Homebrew"
+          data-command={HOMEBREW_COMMAND}
         />
       </head>
       <body className="bg-paper text-ink antialiased">
