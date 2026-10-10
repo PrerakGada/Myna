@@ -75,13 +75,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="mask-icon" href="/brand/safari-pinned-tab.svg" color="#55134f" />
         {/*
           Cookieless page-view + download counter shared by every product site, with its optional download form
-          (sign in with Google or Apple, or fill in by hand, or skip). data-command is the Homebrew install: the
+          (name and email typed in, all optional, or skip). data-command is the Homebrew install: the
           form shows it after a Download click and after the "Install with Homebrew" button (data-pt-command),
           so the page itself never prints it.
         */}
         <script
           defer
-          src="https://api.prerakgada.in/v1/p/tracker.js?v=4"
+          src="https://api.prerakgada.in/v1/p/tracker.js?v=5"
           data-product="myna"
           data-form=""
           data-name="Myna"
