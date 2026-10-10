@@ -82,9 +82,12 @@ in the Download flow ("Prefer Homebrew?") and from the "Install with Homebrew" b
 (blocked or offline). Bump `?v=` whenever the shared tracker changes; the guide is
 `~/work/company/infra/product-analytics.md`.
 
-Live on myna.prerakgada.in since 10 Oct 2026: Vercel `dpl_A7CaxTERMXqBGfXS3Ztr4srRvHCk` from commit `c658a26`,
-deployed by the push to `main`. The tag says `?v=4`, not `?v=3`, because Cloudflare cached the old tracker under
-`?v=3` when it was fetched before the backend served it. Never fetch an unreleased `?v=` through api.prerakgada.in.
+Live on myna.prerakgada.in since 10 Oct 2026 (about 08:30 IST): Vercel `dpl_ATNGXcUm1f8rKvj2JvXHrEwoL9bZ` from
+commit `433d96f`, deployed by the push to `main`. The tag says `?v=5`. Google/Apple sign-in came off the download form
+that morning at Prerak's call (sign-in belongs inside apps that have a login); the backend switched the identity
+buttons off and `?v=5` skips the Cloudflare-cached `?v=4` copy that still offered Continue with Apple. The first
+deploy that morning (`dpl_A7CaxTERMXqBGfXS3Ztr4srRvHCk`, `c658a26`, `?v=4`) had the sign-in copy. `?v=3` is stale at
+Cloudflare too. Never fetch an unreleased `?v=` through api.prerakgada.in.
 
 ## Design notes
 
