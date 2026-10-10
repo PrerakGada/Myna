@@ -82,6 +82,10 @@ in the Download flow ("Prefer Homebrew?") and from the "Install with Homebrew" b
 (blocked or offline). Bump `?v=` whenever the shared tracker changes; the guide is
 `~/work/company/infra/product-analytics.md`.
 
+Live on myna.prerakgada.in since 10 Oct 2026: Vercel `dpl_A7CaxTERMXqBGfXS3Ztr4srRvHCk` from commit `c658a26`,
+deployed by the push to `main`. The tag says `?v=4`, not `?v=3`, because Cloudflare cached the old tracker under
+`?v=3` when it was fetched before the backend served it. Never fetch an unreleased `?v=` through api.prerakgada.in.
+
 ## Design notes
 
 - **Typography**: Fraunces (display, variable, optical sizing) + Newsreader (body) + JetBrains Mono (code, eyebrow labels).
