@@ -71,7 +71,7 @@ site/
 
 Every Download button points at `https://api.prerakgada.in/d/myna/mac` (`lib/download.ts`), the shared
 cookieless download counter, which 302s to `Myna.dmg` on the newest release. The shared tracker tag in
-`app/layout.tsx` (`tracker.js?v=3`, `data-form`) opens an optional "who's downloading" form on the first
+`app/layout.tsx` (`tracker.js?v=4`, `data-form`) opens an optional "who's downloading" form on the first
 Download click per page load: sign in with Google or Apple, fill in by hand, or skip.
 
 The Homebrew commands are **never printed on the page**. They live in `HOMEBREW_LINES` (`lib/download.ts`)
