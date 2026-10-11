@@ -171,7 +171,7 @@ def _played_preview(player) -> str:
 
 def test_v1_speak_cleans_and_honours_literal():
     client, player, _ = make_client()
-    assert client.post("/speak", json={"text": "## Hello **world**"}).json() == {"ok": True}
+    assert client.post("/speak", json={"text": "## Hello **world**"}).json()["ok"] is True
     assert _played_preview(player) == "Hello world"
     client.post("/speak", json={"text": "## Hello **world**", "prep": "literal"})
     assert _played_preview(player) == "## Hello **world**"

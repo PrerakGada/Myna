@@ -20,6 +20,9 @@ public enum PillLayout: Equatable {
     case processing
     /// Playing or paused: bird + status + waveform.
     case collapsedPlaying
+    /// Reading with live captions on: the sentence being read, its spoken
+    /// word lit (LiveCaptions). Grows from the bar; hover still expands.
+    case caption
     /// Hover- or pin-expanded mini-player.
     case expanded
     /// New Claude output observed: in-pill "Play?" call-to-action.
@@ -43,6 +46,13 @@ public struct PillInputs: Equatable {
     public var isPinned: Bool
     /// A pending Claude-output prompt is awaiting the user.
     public var hasPrompt: Bool
+    /// The daemon's own player is reading (Claude Code's Myna controls, the
+    /// CLI): the pill shows for it as for the app's player.
+    public var isDaemonReading: Bool
+    /// The "Live captions" setting.
+    public var captionsOn: Bool
+    /// LiveCaptions has a sentence to show.
+    public var hasCaption: Bool
 
     public init(
         enabled: Bool,
@@ -51,7 +61,10 @@ public struct PillInputs: Equatable {
         isPlaying: Bool,
         isHovering: Bool,
         isPinned: Bool,
-        hasPrompt: Bool
+        hasPrompt: Bool,
+        isDaemonReading: Bool = false,
+        captionsOn: Bool = false,
+        hasCaption: Bool = false
     ) {
         self.enabled = enabled
         self.alwaysVisible = alwaysVisible
@@ -60,6 +73,9 @@ public struct PillInputs: Equatable {
         self.isHovering = isHovering
         self.isPinned = isPinned
         self.hasPrompt = hasPrompt
+        self.isDaemonReading = isDaemonReading
+        self.captionsOn = captionsOn
+        self.hasCaption = hasCaption
     }
 }
 
@@ -67,16 +83,19 @@ public struct PillInputs: Equatable {
 ///   1. not enabled                  → hidden
 ///   2. pending Claude prompt         → promptCTA   (auto-expands the pill)
 ///   3. pinned OR hovering            → expanded
-///   4. loading                       → processing
-///   5. playing OR paused             → collapsedPlaying
-///   6. always-visible                → collapsedIdle
-///   7. otherwise                     → hidden
+///   4. captions on AND a caption     → caption
+///   5. loading                       → processing
+///   6. playing OR paused (either     → collapsedPlaying
+///      player)
+///   7. always-visible                → collapsedIdle
+///   8. otherwise                     → hidden
 public func resolvePillLayout(_ i: PillInputs) -> PillLayout {
     guard i.enabled else { return .hidden }
     if i.hasPrompt { return .promptCTA }
     if i.isPinned || i.isHovering { return .expanded }
+    if i.captionsOn && i.hasCaption { return .caption }
     if i.isLoading { return .processing }
-    if i.isPlaying { return .collapsedPlaying }
+    if i.isPlaying || i.isDaemonReading { return .collapsedPlaying }
     if i.alwaysVisible { return .collapsedIdle }
     return .hidden
 }

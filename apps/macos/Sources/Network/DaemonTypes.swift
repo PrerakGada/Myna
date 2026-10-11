@@ -318,13 +318,20 @@ public struct SynthesizedChunk: Sendable, Equatable {
     /// The whole chunk as spoken (`X-Chunk-Text-Full`). Nil from a daemon
     /// older than the sentence transcript, which sends only the preview.
     public let fullText: String?
+    /// When each word of `fullText` is spoken (`X-Chunk-Words`), for the
+    /// pill's live captions. Empty from an older daemon.
+    public let words: [TimedWord]
 
-    public init(index: Int, totalEstimate: Int, textPreview: String, wavData: Data, fullText: String? = nil) {
+    public init(
+        index: Int, totalEstimate: Int, textPreview: String, wavData: Data,
+        fullText: String? = nil, words: [TimedWord] = []
+    ) {
         self.index = index
         self.totalEstimate = totalEstimate
         self.textPreview = textPreview
         self.wavData = wavData
         self.fullText = fullText
+        self.words = words
     }
 
     /// What this chunk said, for the transcript: the full text, or the

@@ -38,6 +38,9 @@ public enum SettingsKey: String, CaseIterable, Sendable {
     /// running, not just while speaking. Default OFF — Wispr-Flow-style
     /// always-visible chip is a power-user opt-in.
     case pillAlwaysVisible = "dev.myna.app.pillAlwaysVisible"
+    /// While Myna reads, the pill opens into a caption: the sentence being
+    /// read, its spoken word lit. Default ON.
+    case pillLiveCaptions = "dev.myna.app.pillLiveCaptions"
     /// v0.2.x: one-shot playback — buffer the whole clip before playing
     /// so playback is gap-free (no mid-clip stall while the daemon
     /// synthesizes later chunks). Default ON. OFF restores streaming
@@ -83,6 +86,9 @@ public enum SettingsDefaults {
     /// still gates everything; this only widens *when* the pill
     /// appears, never overrides the master kill switch.
     public static let pillAlwaysVisible: Bool = false
+    /// Live captions in the pill default ON: seeing what Myna reads, from
+    /// any app or from Claude Code, is the point of the pill while it reads.
+    public static let pillLiveCaptions: Bool = true
     /// v0.2.x: one-shot playback default ON. Most users prefer the
     /// whole clip ready and gap-free over fast-but-stuttering first
     /// audio. Power users can flip it off for streaming.
@@ -186,6 +192,10 @@ public final class SettingsViewModel: ObservableObject {
     @Published public var pillAlwaysVisible: Bool {
         didSet { store.set(.pillAlwaysVisible, pillAlwaysVisible) }
     }
+    /// The pill shows the sentence being read, word by word (LiveCaptions).
+    @Published public var pillLiveCaptions: Bool {
+        didSet { store.set(.pillLiveCaptions, pillLiveCaptions) }
+    }
     /// v0.2.x: one-shot playback. Read by AppDispatcher.synthesizeAndPlay
     /// to decide whether to buffer all chunks before playing (gap-free)
     /// or stream them as they arrive.
@@ -239,6 +249,8 @@ public final class SettingsViewModel: ObservableObject {
             store.bool(.trackpadGesturesEnabled) ?? SettingsDefaults.trackpadGesturesEnabled
         self.pillAlwaysVisible =
             store.bool(.pillAlwaysVisible) ?? SettingsDefaults.pillAlwaysVisible
+        self.pillLiveCaptions =
+            store.bool(.pillLiveCaptions) ?? SettingsDefaults.pillLiveCaptions
         self.oneShotPlayback =
             store.bool(.oneShotPlayback) ?? SettingsDefaults.oneShotPlayback
         self.ccBoldClaimsOnly =

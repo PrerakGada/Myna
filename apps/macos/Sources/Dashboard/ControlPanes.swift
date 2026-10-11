@@ -153,6 +153,16 @@ struct ReadingPane: View {
                                 .disabled(!showFloatingPill)
                         }
                         DashDivider()
+                        DashRow(
+                            "Live captions",
+                            help: "While Myna reads, the pill opens to show the sentence being read, "
+                                + "with the spoken word lit. Reads from Claude Code's Myna controls too."
+                        ) {
+                            Toggle("", isOn: $settings.pillLiveCaptions)
+                                .labelsHidden().toggleStyle(.switch)
+                                .disabled(!showFloatingPill)
+                        }
+                        DashDivider()
                         DashRow("Reset the pill's position") {
                             Button("Reset") {
                                 NotificationCenter.default.post(

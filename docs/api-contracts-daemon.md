@@ -52,6 +52,8 @@ Stream raw WAVs back to the Swift app via `multipart/mixed`.
   X-Chunk-Total-Estimate: 8
   X-Chunk-Text: First%20200%20chars%20URL-encoded
   X-Chunk-Text-Full: The%20whole%20chunk%20URL-encoded
+  X-Chunk-Timing: model
+  X-Chunk-Words: [[275,625,0,6],[625,975,7,12],...]
 
   <WAV bytes>
   ```
@@ -74,6 +76,12 @@ preset that was applied.
 `X-Chunk-Text-Full` is the same encoding of the whole chunk, uncapped. It is the text the engine was
 asked to speak (after any daemon-side cleanup), so the app's sentence transcript shows what was heard.
 Additive since Sep 2026: clients that don't know it ignore it; the app falls back to `X-Chunk-Text`.
+
+`X-Chunk-Words` says when each word of the chunk is spoken, for the pill's live captions:
+`[[start_ms, end_ms, at_start, at_end], ...]`, ms from the start of this part's WAV, `at` a range into
+`X-Chunk-Text-Full` in UTF-16 code units. `X-Chunk-Timing` is `model` (Kokoro's own duration predictor,
+via the engine shim) or `estimated` (any other engine or language). Built by `reading.header_words`.
+Additive since 6 Oct 2026; the app shows unlit sentences without it.
 
 **Error responses (all single JSON body, NOT multipart):**
 
@@ -381,7 +389,7 @@ No mutual-exclusion check — if both `text` and `url` are given, `url` wins (ex
 
 **Response (HTTP 200):**
 
-- `{"ok": true}` on success.
+- `{"ok": true, "id": "r-…"}` on success. `id` names the read in `GET /reading` and `/reading/events` (added 6 Oct 2026; older callers ignore it).
 - `{"ok": false, "reason": "empty"}` if text trims empty.
 - `{"ok": false, "reason": "extract_failed"}` if URL fetch/extract returns empty.
 
@@ -470,6 +478,26 @@ Handler: `app.py:190-199`.
 
 ---
 
+### `GET /reading` and `GET /reading/events` — the word being read
+
+Module: `myna/reading.py` (its docstring is the full contract). Added 6 Oct 2026 for the Claude Code mod's word highlight (`~/.claude/mods/myna-play`).
+
+Follows reads on the v1 player (`POST /speak`, `/play/{id}`) word by word. Kokoro English voices give real per-word times (the engine shim keeps the duration predictor's output and serves it at the engine's `GET /myna/word-timings/{key}`); every other engine and language gets an estimate per chunk. Each chunk says which (`timing`: `model` | `estimated`).
+
+Every word carries `start`/`end` (ms from its chunk's start) and two ranges, in UTF-16 code units (what JavaScript and NSString count; an emoji is two): `src` into `text`, exactly what the client sent (null when cleanup added the word, or for URL and summary-mode reads), and `at` into `spoken`, the cleaned text actually read.
+
+`GET /reading` → `{"ok": true, "reading": null | {id, text, spoken, voice, speed, state, reason, chunk, position_ms, word, chunks: [{index, timing, duration_ms, words}]}}`. `state` ∈ `{preparing, playing, paused, ended}`.
+
+`GET /reading/events` → `text/event-stream`, open until the client leaves or the daemon stops. First frame `snapshot` (`{reading}` as above), then `start`, `chunk` (a chunk began playing, with its words), `word`, `pause`, `resume`, `end` (`reason` ∈ `finished, stopped, replaced, error`). A `: ping` comment every ~15 s while quiet. The clock is afplay's start; afplay's own start-up isn't measured, so a word can light a few tens of ms early, never late.
+
+```bash
+curl -N http://127.0.0.1:8766/reading/events
+```
+
+Not on the Mac app's player: `/v2/synthesize` reads still drive the old v0.2 karaoke sidecar emitter only.
+
+---
+
 ## 3. The CC Stop Hook (not part of the daemon, but relevant)
 
 `hooks/myna-cc-announce.py` (83 lines) is registered by `install.sh:43-61` as a Claude Code Stop hook. On every CC session end:
@@ -554,7 +582,7 @@ Asymmetric on purpose — v1 left lax to keep Hammerspoon callers happy. Documen
 
 | Method | Path | Body type | Returns | Purpose |
 |---|---|---|---|---|
-| POST | `/speak` | `SpeakReq` | JSON `{ok}` | v1 speak via internal Player |
+| POST | `/speak` | `SpeakReq` | JSON `{ok, id}` | v1 speak via internal Player |
 | POST | `/announce` | `AnnounceReq` | JSON `{ok, id}` | register a CC turn |
 | GET | `/registry` | — | JSON `{items}` | list pending CC items |
 | POST | `/play/{id}?mode=` | — | JSON `{ok}` | pop + speak |
@@ -563,6 +591,8 @@ Asymmetric on purpose — v1 left lax to keep Hammerspoon callers happy. Documen
 | POST | `/stop` | — | JSON `{ok}` | kill afplay |
 | POST | `/speed` | `SpeedReq` | JSON `{ok, speed}` | set global speed |
 | GET | `/status` | — | JSON (5 keys) | v1 status |
+| GET | `/reading` | — | JSON `{ok, reading}` | the v1 read, word by word |
+| GET | `/reading/events` | — | `text/event-stream` | the same, pushed |
 | POST | `/v2/synthesize` | `V2SynthesizeReq` | `multipart/mixed` | stream WAV per chunk |
 | POST | `/v2/synthesize-summary` | `V2SynthesizeReq` | `multipart/mixed` | as above, force summary |
 | GET | `/v2/status` | — | `V2Status` JSON | rich status for Swift menu |

@@ -1,3 +1,5 @@
+import hashlib
+
 import httpx
 
 
@@ -27,6 +29,33 @@ def synthesize(
     resp = httpx.post(f"{base_url}/v1/audio/speech", json=body, timeout=timeout)
     resp.raise_for_status()
     return resp.content
+
+
+def word_timings_key(text: str, speed: float) -> str:
+    """Same as engine_shim.word_timings_key; the shim can't import myna."""
+    return hashlib.blake2b(f"{float(speed):.3f}\n{text}".encode(), digest_size=16).hexdigest()
+
+
+def word_timings(text: str, *, speed: float, base_url: str, timeout: float = 1.0) -> dict | None:
+    """Kokoro's own word times for a `synthesize(text, speed=speed)` that
+    just returned: {"words": [[token, start_s, end_s], ...], "exact": bool}.
+
+    None when the engine has none: another engine, a non-English Kokoro
+    voice, or an engine started without the shim. Never raises.
+    """
+    try:
+        resp = httpx.get(
+            f"{base_url}/myna/word-timings/{word_timings_key(text, speed)}", timeout=timeout
+        )
+        if resp.status_code != 200:
+            return None
+        body = resp.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    words = body.get("words") if isinstance(body, dict) else None
+    if not isinstance(words, list) or not body.get("exact", False):
+        return None
+    return body
 
 
 def engine_up(base_url: str, timeout: float = 2.0) -> bool:

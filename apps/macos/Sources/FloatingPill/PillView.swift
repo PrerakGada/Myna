@@ -4,6 +4,8 @@
 //   • collapsedIdle      → bird badge + "Myna"
 //   • processing         → bird badge + "Processing…" + mini spinner
 //   • collapsedPlaying   → bird badge + status + Core-Animation waveform
+//   • caption            → live captions: the sentence being read, its
+//                          spoken word lit (PillCaption.swift)
 //   • expanded           → mini-player: headline, voice chip, waveform, transport
 //   • promptCTA          → (Step 8) in-pill Claude-output call-to-action
 //
@@ -84,7 +86,13 @@ public struct PillView: View {
         case .processing:
             CollapsedBar(kind: .processing)
         case .collapsedPlaying:
-            CollapsedBar(kind: viewModel.isPaused ? .paused : .playing)
+            CollapsedBar(kind: viewModel.showsPaused ? .paused : .playing)
+        case .caption:
+            if let caption = viewModel.caption {
+                PillCaptionCard(caption: caption)
+            } else {
+                CollapsedBar(kind: viewModel.showsPaused ? .paused : .playing)
+            }
         case .expanded, .promptCTA:
             // promptCTA falls back to the expanded mini-player until Step 8.
             expanded
@@ -92,8 +100,8 @@ public struct PillView: View {
     }
 
     private var accessibilityLabel: String {
-        if viewModel.isPaused { return "Myna paused" }
-        if viewModel.isSpeaking { return "Myna speaking" }
+        if viewModel.showsPaused { return "Myna paused" }
+        if viewModel.isSpeaking || viewModel.isDaemonReading { return "Myna speaking" }
         if viewModel.isLoading { return "Myna processing" }
         return "Myna"
     }
@@ -128,8 +136,8 @@ public struct PillView: View {
     private var expandedHeadline: String {
         if let text = viewModel.previewText, !text.isEmpty { return text }
         if viewModel.isLoading && !viewModel.isSpeaking { return "Processing\u{2026}" }
-        if viewModel.isPaused { return "Paused" }
-        if viewModel.isSpeaking { return "Speaking\u{2026}" }
+        if viewModel.showsPaused { return "Paused" }
+        if viewModel.isSpeaking || viewModel.isDaemonReading { return "Speaking\u{2026}" }
         return "Myna"
     }
 
@@ -159,8 +167,8 @@ public struct PillView: View {
                         if viewModel.isLoading && !viewModel.isSpeaking {
                             trailingIndicator(.spinner, height: 10)
                                 .matchedGeometryEffect(id: "waveform", in: ns)
-                        } else if viewModel.isSpeaking {
-                            trailingIndicator(.waveform(playing: !viewModel.isPaused), height: 10)
+                        } else if viewModel.isSpeaking || viewModel.isDaemonReading {
+                            trailingIndicator(.waveform(playing: !viewModel.showsPaused), height: 10)
                                 .matchedGeometryEffect(id: "waveform", in: ns)
                         } else {
                             Color.clear.frame(width: 0, height: 10)
@@ -174,10 +182,18 @@ public struct PillView: View {
                 closeButton
             }
 
-            // Scrubber + transport (only with a live session to control)
+            // What Myna is reading, word by word (live captions on).
+            if viewModel.captionsOn, let caption = viewModel.caption {
+                PillCaptionText(caption: caption)
+            }
+
+            // Scrubber + transport (only with a live session to control).
+            // A daemon read (Claude Code's Myna controls) can only pause and stop.
             if viewModel.isSpeaking {
                 scrubberRow
                 controlsRow
+            } else if viewModel.isDaemonReading {
+                daemonControlsRow
             }
 
             // Recent reads — pinned only (keeps the hover footprint small).
@@ -188,7 +204,7 @@ public struct PillView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(width: PillStyle.expandedWidth, alignment: .leading)
-        .background(pillBackground(cornerRadius: PillStyle.expandedRadius))
+        .background(PillChrome(cornerRadius: PillStyle.expandedRadius))
         .overlay(
             RoundedRectangle(cornerRadius: PillStyle.expandedRadius, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
@@ -271,6 +287,20 @@ public struct PillView: View {
             TranscriptPillButton()
             Spacer(minLength: 0)
             speedButton
+        }
+    }
+
+    private var daemonControlsRow: some View {
+        HStack(spacing: 12) {
+            transportButton(
+                system: viewModel.isDaemonPaused ? "play.fill" : "pause.fill",
+                size: 16,
+                help: viewModel.isDaemonPaused ? "Resume" : "Pause"
+            ) { viewModel.togglePlayPause() }
+            transportButton(system: "stop.fill", size: 12, help: "Stop") {
+                viewModel.stop()
+            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -408,47 +438,6 @@ public struct PillView: View {
             )
             .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 0.5))
             .shadow(color: Color.accentColor.opacity(0.35), radius: 4, y: 1)
-    }
-
-    // MARK: - background
-
-    @ViewBuilder
-    private func pillBackground(cornerRadius: CGFloat) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        // `glassEffect` only EXISTS in the macOS 26 SDK (Xcode 26 / Swift 6.2+).
-        // A runtime `#available(macOS 26.0, *)` check is not enough: on an older
-        // SDK the symbol is absent and the file won't compile at all. Release CI
-        // builds on Xcode 16 / macOS 15 SDK, so the glass path must be excluded
-        // at COMPILE time there — hence the `#if compiler(>=6.2)` gate. On a
-        // macOS 26 toolchain we still fall back to the material below at runtime
-        // on pre-26 systems.
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            // Liquid Glass: a tinted regular glass so the dark chrome reads
-            // over bright desktops while still refracting what's behind it.
-            shape
-                .fill(.clear)
-                .glassEffect(.regular.tint(Color.black.opacity(0.18)), in: shape)
-                .shadow(color: .black.opacity(0.30), radius: 16, x: 0, y: 6)
-        } else {
-            pillMaterialBackground(shape)
-        }
-        #else
-        pillMaterialBackground(shape)
-        #endif
-    }
-
-    /// Pre-Liquid-Glass background: stacked ultra-thin material + dark wash.
-    /// Used on macOS < 26 at runtime, and as the sole path when built against
-    /// an SDK that predates `glassEffect`.
-    @ViewBuilder
-    private func pillMaterialBackground(_ shape: RoundedRectangle) -> some View {
-        ZStack {
-            shape.fill(.ultraThinMaterial)
-            shape.fill(Color.black.opacity(0.28))
-        }
-        .compositingGroup()
-        .shadow(color: .black.opacity(0.34), radius: 16, x: 0, y: 6)
     }
 }
 

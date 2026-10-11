@@ -212,7 +212,7 @@ daemon-watch:
     # or every reload would kill and respawn it.
     exec uv run --quiet --with-editable ./daemon \
       uvicorn --factory myna.app:create_app --reload --reload-dir {{repo}}/daemon/myna \
-      --host 127.0.0.1 --port {{daemon_port}}
+      --timeout-graceful-shutdown 2 --host 127.0.0.1 --port {{daemon_port}}
 
 # Run the daemon in the foreground from source, no reload (owns the engine)
 daemon-fg:

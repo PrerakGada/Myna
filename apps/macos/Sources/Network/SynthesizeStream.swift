@@ -14,6 +14,7 @@
 //   X-Chunk-Total-Estimate: 8\r\n
 //   X-Chunk-Text: First 200 chars...\r\n
 //   X-Chunk-Text-Full: the whole chunk, URL-encoded\r\n   (newer daemons)
+//   X-Chunk-Words: [[start_ms,end_ms,a,b],...]\r\n   (newer still; ChunkWords)
 //   \r\n
 //   <WAV bytes>\r\n
 //   --mynachunk\r\n
@@ -165,7 +166,8 @@ public final class MultipartChunkParser {
                 totalEstimate: estimate,
                 textPreview: preview,
                 wavData: body,
-                fullText: full
+                fullText: full,
+                words: ChunkWords.parse(headers["x-chunk-words"])
             )
         )
     }

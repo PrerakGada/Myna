@@ -161,6 +161,15 @@ public final class PillController: ObservableObject {
     private func beginObserving() {
         guard cancellables.isEmpty, let player, let settings else { return }
 
+        // Live captions follow the app's player and the daemon's (reads from
+        // Claude Code's Myna controls); a daemon read shows the pill too.
+        LiveCaptions.shared.attach(player: player)
+        LiveCaptions.shared.$isDaemonReading
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.syncVisibility() }
+            .store(in: &cancellables)
+
         // Player state drives visibility.
         player.$state
             .receive(on: RunLoop.main)
@@ -308,8 +317,10 @@ public final class PillController: ObservableObject {
         //   • the dispatcher is in the pre-audio loading window (Lane 1
         //     ~50ms responsiveness — AudioPlayer.isLoading clears in
         //     stop() and at first-chunk arrival).
+        //   • the daemon's player is reading (Claude Code's Myna controls).
         let shouldBeVisible = isEnabledInDefaults
-            && (alwaysVisible || isPlayingOrPaused || player.isLoading || pendingPrompt != nil)
+            && (alwaysVisible || isPlayingOrPaused || player.isLoading || pendingPrompt != nil
+                || LiveCaptions.shared.isDaemonReading)
         if shouldBeVisible {
             showWindow()
         } else {
@@ -391,7 +402,11 @@ public final class PillController: ObservableObject {
             vm.$isPinned.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             vm.$recents.dropFirst().map { _ in () }.eraseToAnyPublisher(),
             vm.$pendingPrompt.dropFirst().map { _ in () }.eraseToAnyPublisher(),
-            vm.$isSpeaking.dropFirst().map { _ in () }.eraseToAnyPublisher()
+            vm.$isSpeaking.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            vm.$isDaemonReading.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            // A new caption sentence can wrap to more or fewer lines. Per
+            // sentence, not per word: the lit word doesn't change the size.
+            vm.$caption.map { $0?.text }.removeDuplicates().dropFirst().map { _ in () }.eraseToAnyPublisher()
         )
         .debounce(for: .milliseconds(16), scheduler: RunLoop.main)
         .sink { [weak self] _ in self?.repositionForFootprintChange() }

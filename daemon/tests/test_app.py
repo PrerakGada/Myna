@@ -8,9 +8,10 @@ class FakePlayer:
         self.calls = []
         self._state = "idle"
 
-    def play(self, producer, meta):
+    def play(self, producer, meta, listener=None):
         # Consume producer so the synthesize pipeline runs.
         self.calls.append(("play", list(producer), meta))
+        self.listener = listener
         self._state = "playing"
 
     def pause(self):
@@ -47,6 +48,7 @@ def test_speak_full_plays(tmp_path, monkeypatch):
     client, fp, app = make_client()
     r = client.post("/speak", json={"text": "Hello there.", "mode": "full"})
     assert r.json()["ok"] is True
+    assert r.json()["id"].startswith("r-")
     assert fp.calls[0][0] == "play"
     # producer yielded at least one synthesized chunk
     assert len(fp.calls[0][1]) >= 1

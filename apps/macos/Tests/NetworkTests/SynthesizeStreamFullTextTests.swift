@@ -1,6 +1,7 @@
 // SynthesizeStreamFullTextTests.swift — the parser reads the whole chunk
 // text (`X-Chunk-Text-Full`) that the sentence transcript is built from,
-// and falls back to the 200-character preview for an older daemon.
+// and falls back to the 200-character preview for an older daemon; and the
+// word times (`X-Chunk-Words`) the pill's live captions follow.
 import XCTest
 
 @testable import Myna
@@ -15,11 +16,12 @@ final class SynthesizeStreamFullTextTests: XCTestCase {
         return text.addingPercentEncoding(withAllowedCharacters: allowed)!
     }
 
-    private func part(index: Int, preview: String, full: String?) -> Data {
+    private func part(index: Int, preview: String, full: String?, words: String? = nil) -> Data {
         var head = "--mynachunk\r\nContent-Type: audio/wav\r\n"
         head += "X-Chunk-Index: \(index)\r\nX-Chunk-Total-Estimate: 2\r\n"
         head += "X-Chunk-Text: \(encode(String(preview.prefix(200))))\r\n"
         if let full { head += "X-Chunk-Text-Full: \(encode(full))\r\n" }
+        if let words { head += "X-Chunk-Timing: model\r\nX-Chunk-Words: \(words)\r\n" }
         head += "\r\n"
         var data = Data(head.utf8)
         data.append(Data("WAV\(index)\r\n".utf8))
@@ -68,5 +70,20 @@ final class SynthesizeStreamFullTextTests: XCTestCase {
         XCTAssertEqual(parsed.count, 1)
         XCTAssertNil(parsed[0].fullText)
         XCTAssertEqual(parsed[0].spokenText, "Only a preview here.")
+        XCTAssertEqual(parsed[0].words, [])
+    }
+
+    func test_word_times_ride_along_with_each_chunk() throws {
+        let text = "Hotkey reads get word timings too."
+        var body = part(
+            index: 0, preview: text, full: text,
+            words: "[[275,625,0,6],[625,975,7,12],[975,1125,13,16]]")
+        body.append(trailer)
+        for step in [1, 4_096] {
+            let words = try chunks(from: body, feedingBytes: step)[0].words
+            XCTAssertEqual(words.count, 3, "step \(step)")
+            XCTAssertEqual(words[1].start, 0.625, accuracy: 0.0001)
+            XCTAssertEqual((text as NSString).substring(with: words[1].range), "reads")
+        }
     }
 }

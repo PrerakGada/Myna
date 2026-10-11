@@ -23,6 +23,8 @@ public final class PillViewModel: ObservableObject {
     private let bridge: PillBridge
     /// Reads waiting their turn — drives the "+2 queued" chip and Skip.
     private let queue: ReadQueue
+    /// The sentence being read and its spoken word, from either player.
+    private let captions: LiveCaptions
     /// MenuBarController supplies the recents ring + the replay hook. Weak —
     /// it's an app-lifetime singleton the pill doesn't own. Optional so tests
     /// and previews can construct the view-model without a menu bar.
@@ -46,6 +48,14 @@ public final class PillViewModel: ObservableObject {
     @Published public private(set) var isPinned: Bool = false
     /// A pending Claude-output prompt is awaiting the user (wired in Step 8).
     @Published public private(set) var hasPrompt: Bool = false
+    /// The daemon's player is reading (Claude Code's Myna controls, the CLI).
+    @Published public private(set) var isDaemonReading: Bool = false
+    /// That read is paused.
+    @Published public private(set) var isDaemonPaused: Bool = false
+    /// The "Live captions" setting.
+    @Published public private(set) var captionsOn: Bool = false
+    /// The sentence being read, its spoken word lit. Nil when nothing is.
+    @Published public private(set) var caption: Caption?
 
     // MARK: - derived
 
@@ -95,13 +105,16 @@ public final class PillViewModel: ObservableObject {
         settings: SettingsViewModel,
         bridge: PillBridge = .shared,
         menuController: MenuBarController? = nil,
-        queue: ReadQueue = .shared
+        queue: ReadQueue = .shared,
+        captions: LiveCaptions = .shared
     ) {
         self.player = player
         self.settings = settings
         self.bridge = bridge
         self.menuController = menuController
         self.queue = queue
+        self.captions = captions
+        self.captionsOn = settings.pillLiveCaptions
 
         #if DEBUG
         // In preview-only mode skip live subscriptions so the forced state in
@@ -147,6 +160,8 @@ public final class PillViewModel: ObservableObject {
             .sink { [weak self] items in self?.queuedLabel = ReadQueue.countLabel(for: items.count) }
             .store(in: &cancellables)
 
+        observeCaptions()
+
         // Recents ring from the menu bar — drives the pinned transcript list.
         if let menuController {
             recents = menuController.recents
@@ -172,6 +187,33 @@ public final class PillViewModel: ObservableObject {
         refreshLayout()
     }
 
+    /// Live captions. The caption itself changes with every word; the
+    /// layout only cares whether there is one.
+    private func observeCaptions() {
+        captions.$caption
+            .receive(on: RunLoop.main)
+            .sink { [weak self] caption in
+                self?.caption = caption
+                self?.refreshLayout()
+            }
+            .store(in: &cancellables)
+        captions.$isDaemonReading
+            .receive(on: RunLoop.main)
+            .sink { [weak self] reading in self?.applyDaemonReading(reading) }
+            .store(in: &cancellables)
+        captions.$isDaemonPaused
+            .receive(on: RunLoop.main)
+            .sink { [weak self] paused in self?.isDaemonPaused = paused }
+            .store(in: &cancellables)
+        settings.$pillLiveCaptions
+            .receive(on: RunLoop.main)
+            .sink { [weak self] on in
+                self?.captionsOn = on
+                self?.refreshLayout()
+            }
+            .store(in: &cancellables)
+    }
+
     // MARK: - layout resolution
 
     private func refreshLayout() {
@@ -182,7 +224,10 @@ public final class PillViewModel: ObservableObject {
             isPlaying: isSpeaking,
             isHovering: isHovering,
             isPinned: isPinned,
-            hasPrompt: hasPrompt
+            hasPrompt: hasPrompt,
+            isDaemonReading: isDaemonReading,
+            captionsOn: captionsOn,
+            hasCaption: caption != nil
         ))
         if next != layout { layout = next }
     }
@@ -251,20 +296,31 @@ public final class PillViewModel: ObservableObject {
         onDismissPrompt?(item)
     }
 
-    /// Play/Pause button.
+    /// Play/Pause button. With the app's player idle, the read on screen is
+    /// the daemon's, so the daemon gets the press.
     public func togglePlayPause() {
         switch player.state {
         case .playing: player.pause()
         case .paused: player.resume()
-        case .idle: break
+        case .idle: if isDaemonReading { captions.toggleDaemonPause() }
         }
     }
 
     /// Stop button — ends the session (player goes idle, pill collapses/hides).
     /// The queue hears about it through AudioPlayer.sessionEnds and drops
-    /// every waiting read too: Stop means everything.
+    /// every waiting read too: Stop means everything. A daemon read (app
+    /// player idle) is stopped on the daemon.
     public func stop() {
-        player.stop()
+        if player.state == .idle && isDaemonReading {
+            captions.stopDaemon()
+        } else {
+            player.stop()
+        }
+    }
+
+    /// The play/pause icon: paused on whichever player holds the read.
+    public var showsPaused: Bool {
+        isSpeaking ? isPaused : isDaemonPaused
     }
 
     /// Skip button — end this read and start the next queued one.
@@ -296,6 +352,18 @@ public final class PillViewModel: ObservableObject {
     private static let speedSteps: [Double] = [1.0, 1.25, 1.5, 2.0]
 
     // MARK: - player → inputs
+
+    private func applyDaemonReading(_ reading: Bool) {
+        guard reading != isDaemonReading else { return }
+        isDaemonReading = reading
+        // As for the app's player going idle: the next read starts with the
+        // pill collapsed, not pinned open from this one.
+        if !reading && !isSpeaking && !queue.isBusy {
+            isPinned = false
+            isHovering = false
+        }
+        refreshLayout()
+    }
 
     private func applyPlayerState(_ state: AudioPlayer.State) {
         switch state {

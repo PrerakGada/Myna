@@ -14,8 +14,10 @@ extension TranscriptStore {
         didEnqueue(readID: readID, chunks: [chunk], buffers: [buffer])
     }
 
-    /// Several chunks just enqueued together (the seamless lead).
+    /// Several chunks just enqueued together (the seamless lead). The pill's
+    /// live captions take the same chunks, with their word times.
     func didEnqueue(readID: UUID, chunks: [SynthesizedChunk], buffers: [AVAudioPCMBuffer]) {
+        LiveCaptions.shared.didEnqueue(readID: readID, chunks: chunks, buffers: buffers)
         let entries = zip(chunks, buffers).map { chunk, buffer in
             // QueuedChunk computes duration exactly as the player's queue does.
             TranscriptChunk(

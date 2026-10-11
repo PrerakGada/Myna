@@ -136,6 +136,8 @@ X-Chunk-Index: 0
 X-Chunk-Total-Estimate: 8
 X-Chunk-Text: "First 200 chars of this chunk's text, URL-encoded"
 X-Chunk-Text-Full: "The whole chunk's text, URL-encoded (added Sep 2026; optional for clients)"
+X-Chunk-Timing: model | estimated            (added 6 Oct 2026; optional)
+X-Chunk-Words: [[start_ms,end_ms,at_start,at_end],...]   (UTF-16 ranges into X-Chunk-Text-Full; optional)
 
 <WAV bytes>
 ```

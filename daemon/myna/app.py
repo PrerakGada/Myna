@@ -20,6 +20,7 @@ from . import __version__, chunking, engine
 from . import engines as engine_catalog
 from . import extract as extract_mod
 from . import lang_detect
+from . import reading as reading_mod
 from . import speakable as speakable_mod
 from . import voice_library as voice_library_mod
 from . import summarize as summarize_mod
@@ -188,6 +189,12 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
     app.state.cfg = cfg
     app.state.speed = cfg["speed"]
     app.state.player = Player()
+    # Which word the v1 player is reading (GET /reading, /reading/events).
+    app.state.reading = reading_mod.ReadingTracker()
+    # True once the server is shutting down; __main__ points it at uvicorn's
+    # flag. Open /reading/events streams end on it, or a restart would wait
+    # on every subscriber.
+    app.state.shutting_down = lambda: False
     app.state.registry = Registry()
     app.state.machine = StateMachine()
     app.state.v2_registry = V2Registry()
@@ -204,6 +211,7 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
     # default True. Returns NullKaraokeEmitter if disabled.
     app.state.karaoke = make_karaoke_emitter(cfg)
     app.state.synthesize = engine.synthesize
+    app.state.word_timings = engine.word_timings
     app.state.engine_up = engine.engine_up
     app.state.loaded_models = engine.loaded_models
     app.state.summarize = summarize_mod.summarize
@@ -299,8 +307,11 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
 
     tmpdir = pathlib.Path.home() / ".cache" / "myna" / "tmp"
 
-    def _producer(text, voice, speed):
+    def _producer(text, voice, speed, reading_id):
         tmpdir.mkdir(parents=True, exist_ok=True)
+        # Only Kokoro reports word times (via the engine shim); asking any
+        # other engine is a wasted round trip.
+        timed = engine_catalog.active_spec(cfg).id == "kokoro"
         for chunk in chunking.chunk_text(text, cfg["chunk_chars"]):
             wav = app.state.synthesize(
                 chunk,
@@ -308,6 +319,12 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
                 base_url=cfg["engine_url"],
                 **app.state.engine_kwargs(voice, remember=True),
             )
+            timings = (
+                app.state.word_timings(chunk, speed=speed, base_url=cfg["engine_url"])
+                if timed
+                else None
+            )
+            app.state.reading.add_chunk(reading_id, chunk, wav, timings)
             p = tmpdir / f"{uuid.uuid4().hex}.wav"
             p.write_bytes(wav)
             yield str(p)
@@ -336,11 +353,16 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
             return {"ok": False, "reason": "empty"}
         voice = req.voice or cfg["voice"]
         speed = req.speed or app.state.speed
+        # Word ranges point into what the client sent, when it sent the text
+        # that is read; a URL's article or a summary it never saw has none.
+        sent = req.text if req.text and not req.url and req.mode != "summary" else None
+        reading_id = app.state.reading.begin(text=sent, spoken=text, voice=voice, speed=speed)
         app.state.player.play(
-            _producer(text, voice, speed),
-            meta={"source": req.source or "speak", "preview": text[:60]},
+            _producer(text, voice, speed, reading_id),
+            meta={"source": req.source or "speak", "preview": text[:60], "reading_id": reading_id},
+            listener=app.state.reading.listener(reading_id),
         )
-        return {"ok": True}
+        return {"ok": True, "id": reading_id}
 
     # ----- v1 endpoints (unchanged behaviour) -----
 
@@ -384,6 +406,43 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
     def speed(req: SpeedReq):
         app.state.speed = max(0.5, min(2.0, req.value))
         return {"ok": True, "speed": app.state.speed}
+
+    @app.get("/reading")
+    def reading():
+        return {"ok": True, "reading": app.state.reading.snapshot()}
+
+    @app.get("/reading/events")
+    async def reading_events():
+        tracker = app.state.reading
+        queue = tracker.subscribe(asyncio.get_running_loop())
+
+        async def stream():
+            try:
+                # Subscribed first, so nothing falls between the snapshot and
+                # the events after it.
+                yield "retry: 2000\n" + reading_mod.sse("snapshot", {"reading": tracker.snapshot()})
+                quiet = 0
+                while True:
+                    try:
+                        event, data = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        if app.state.shutting_down():
+                            return
+                        quiet += 1
+                        if quiet >= 15:  # a comment line keeps idle proxies and clients honest
+                            quiet = 0
+                            yield ": ping\n\n"
+                        continue
+                    quiet = 0
+                    yield reading_mod.sse(event, data)
+            finally:
+                tracker.unsubscribe(queue)
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/status")
     def status():
@@ -614,21 +673,34 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
 
         boundary = b"mynachunk"
 
-        def _part_headers(idx: int, total: int, chunk_text: str) -> bytes:
+        def _part_headers(idx: int, total: int, chunk_text: str, wav: bytes, timings) -> bytes:
             preview_encoded = urllib.parse.quote(chunk_text[:200], safe="")
             # The whole chunk, for the app's sentence transcript. The text
             # spoken is the cleaned-up text chunked here, which the app can't
             # rebuild from what it sent, and the 200-char preview cuts most
             # chunks short. Additive: older clients ignore the header.
             full_encoded = urllib.parse.quote(chunk_text, safe="")
+            # When each word is spoken, for the pill's live captions:
+            # [[start_ms, end_ms, at_start, at_end], ...] into the full text
+            # (UTF-16 units). Plain JSON of numbers, so header-safe as is.
+            timing, words = reading_mod.header_words(chunk_text, wav, timings)
             return (
                 b"--" + boundary + b"\r\n"
                 b"Content-Type: audio/wav\r\n"
                 b"X-Chunk-Index: " + str(idx).encode() + b"\r\n"
                 b"X-Chunk-Total-Estimate: " + str(total).encode() + b"\r\n"
                 b"X-Chunk-Text: " + preview_encoded.encode() + b"\r\n"
-                b"X-Chunk-Text-Full: " + full_encoded.encode() + b"\r\n\r\n"
+                b"X-Chunk-Text-Full: " + full_encoded.encode() + b"\r\n"
+                b"X-Chunk-Timing: " + timing.encode() + b"\r\n"
+                b"X-Chunk-Words: " + words.encode() + b"\r\n\r\n"
             )
+
+        timed = engine_catalog.active_spec(cfg).id == "kokoro"
+
+        def _timings(chunk: str):
+            if not timed:
+                return None
+            return app.state.word_timings(chunk, speed=speed, base_url=cfg["engine_url"])
 
         def _final_part(actual_chunks: int) -> bytes:
             body = json.dumps(
@@ -657,17 +729,19 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
             karaoke.schedule_word_events(utt_id, timings)
             return utt_id
 
-        def _synthesize_one(chunk: str) -> bytes:
+        def _synthesize_one(chunk: str):
             """Worker entrypoint for the prefetch executor. Synthesis happens
             on a background thread so the main generator can keep yielding
             bytes to the client while the next chunk is being prepared.
+            Returns (wav, word timings or None).
             """
-            return app.state.synthesize(
+            wav = app.state.synthesize(
                 chunk,
                 speed=speed,
                 base_url=cfg["engine_url"],
                 **app.state.engine_kwargs(voice, remember=True),
             )
+            return wav, _timings(chunk)
 
         def _generator():
             # First chunk (already synthesized eagerly) — this is the
@@ -677,7 +751,7 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
             try:
                 app.state.machine.transition_to("speaking", request_id=session_id)
                 last_utt_id = _emit_chunk_karaoke(0, chunks[0], first_wav)
-                yield _part_headers(0, total, chunks[0])
+                yield _part_headers(0, total, chunks[0], first_wav, _timings(chunks[0]))
                 yield first_wav
                 yield b"\r\n"
                 yielded = 1
@@ -702,7 +776,7 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
                     for idx in range(1, total):
                         # Await the chunk we previously kicked off.
                         try:
-                            wav = next_future.result()
+                            wav, wav_timings = next_future.result()
                         except Exception:
                             # Engine died mid-stream — terminate cleanly with the
                             # closing JSON part reporting the actual count.
@@ -719,7 +793,7 @@ def create_app(config: dict | None = None, *, persist_config: bool | None = None
                             next_future = None
 
                         last_utt_id = _emit_chunk_karaoke(idx, chunks[idx], wav)
-                        yield _part_headers(idx, total, chunks[idx])
+                        yield _part_headers(idx, total, chunks[idx], wav, wav_timings)
                         yield wav
                         yield b"\r\n"
                         yielded += 1

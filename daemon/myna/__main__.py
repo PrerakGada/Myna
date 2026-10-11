@@ -26,6 +26,9 @@ def main() -> None:
     # responses finish, the lifespan stops the engine and the render
     # worker), then re-exec below with the new bind address.
     access.request_restart = lambda: setattr(server, "should_exit", True)
+    # Open /reading/events streams end once this turns true; uvicorn waits on
+    # every open response before it stops.
+    app.state.shutting_down = lambda: server.should_exit
     app.state.service_port = cfg["daemon_port"]
     server.run()
     if access.restart_requested:

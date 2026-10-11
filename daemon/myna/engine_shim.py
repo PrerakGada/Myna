@@ -47,6 +47,18 @@ Chatterbox Turbo speaks in a clip's voice when a request carries
 `apply_chatterbox_voice_patch` keeps the built-in conditionals aside and
 restores them for any request without `ref_audio`, and caches the
 conditionals derived from each clip (keyed by the audio's bytes).
+
+WORD TIMINGS (Kokoro, English voices)
+-------------------------------------
+Kokoro's duration predictor already says when every word starts and ends:
+`KokoroPipeline.join_timestamps` writes `start_ts`/`end_ts` onto each token.
+`KokoroModel.generate` then drops the tokens, and `/v1/audio/speech` answers
+with the WAV alone. `apply_word_timing_patch` keeps each request's words and
+times (seconds from the start of the WAV, across the pipeline's own
+segments), and `add_word_timings_route` serves them at
+`GET /myna/word-timings/{key}`, `key` being `word_timings_key(input, speed)`.
+The daemon asks right after its synthesize call returns; the timings are
+stored before the server writes the audio, so they are always there by then.
 """
 
 from __future__ import annotations
@@ -55,6 +67,7 @@ import collections
 import hashlib
 import runpy
 import sys
+import threading
 
 
 def apply_sinegen_patch() -> bool:
@@ -162,9 +175,102 @@ def apply_chatterbox_voice_patch() -> bool:
     return True
 
 
+_TIMINGS_KEEP = 64
+_timings: "collections.OrderedDict[str, dict]" = collections.OrderedDict()
+_timings_lock = threading.Lock()
+
+
+def word_timings_key(text: str, speed) -> str:
+    """The key one request's word timings are kept under. myna.engine builds
+    the same key from what it sent (test_engine_shim checks the two agree)."""
+    return hashlib.blake2b(f"{float(speed):.3f}\n{text}".encode(), digest_size=16).hexdigest()
+
+
+def _remember_timings(key: str, entry: dict) -> None:
+    with _timings_lock:
+        _timings[key] = entry
+        _timings.move_to_end(key)
+        while len(_timings) > _TIMINGS_KEEP:
+            _timings.popitem(last=False)
+
+
+def lookup_timings(key: str) -> dict | None:
+    with _timings_lock:
+        return _timings.get(key)
+
+
+def apply_word_timing_patch() -> bool:
+    """Keep the per-word times Kokoro computes. See the module docstring.
+    Returns True if the patch took effect; never raises."""
+    try:
+        from mlx_audio.tts.models.kokoro.pipeline import KokoroPipeline
+    except Exception as exc:  # noqa: BLE001 - never block engine startup
+        print(f"[myna-shim] Kokoro pipeline not importable, word timings off: {exc}", file=sys.stderr)
+        return False
+    original = getattr(KokoroPipeline, "__call__", None)
+    if original is None or not hasattr(KokoroPipeline, "join_timestamps"):
+        print("[myna-shim] KokoroPipeline shape changed upstream — word timings off", file=sys.stderr)
+        return False
+
+    def timed_call(self, text, voice=None, speed=1, split_pattern=r"\n+"):
+        words: list[list] = []
+        offset = 0.0  # seconds of audio this call has already produced
+        exact = True  # False once a segment comes back without timed tokens
+        rate = getattr(getattr(self, "model", None), "sample_rate", None) or 24000
+        for result in original(self, text, voice=voice, speed=speed, split_pattern=split_pattern):
+            timed = [
+                t for t in (getattr(result, "tokens", None) or ())
+                if getattr(t, "start_ts", None) is not None and getattr(t, "end_ts", None) is not None
+            ]
+            if not timed:
+                exact = False  # non-English pipelines yield no tokens
+            for t in timed:
+                words.append([t.text, round(offset + t.start_ts, 3), round(offset + t.end_ts, 3)])
+            audio = getattr(result, "audio", None)
+            if audio is not None:
+                offset += int(audio.size) / rate
+            yield result
+        if isinstance(text, str) and words:
+            _remember_timings(
+                word_timings_key(text, speed),
+                {"words": words, "exact": exact, "seconds": round(offset, 3)},
+            )
+
+    KokoroPipeline.__call__ = timed_call
+    print("[myna-shim] Kokoro word-timing patch applied", file=sys.stderr)
+    return True
+
+
+def add_word_timings_route() -> bool:
+    """Serve the kept timings on the app uvicorn will run. The server starts
+    as `uvicorn.run("mlx_audio.server:app")`, which imports this same module
+    object, so a route added here is served. Never raises."""
+    try:
+        import mlx_audio.server as server
+        from fastapi.responses import JSONResponse
+    except Exception as exc:  # noqa: BLE001 - never block engine startup
+        print(f"[myna-shim] mlx-audio server not importable, no timings route: {exc}", file=sys.stderr)
+        return False
+    app = getattr(server, "app", None)
+    if app is None or not hasattr(app, "add_api_route"):
+        print("[myna-shim] mlx-audio server has no app — no timings route", file=sys.stderr)
+        return False
+
+    def word_timings(key: str):
+        entry = lookup_timings(key)
+        if entry is None:
+            return JSONResponse(status_code=404, content={"error": "no timings for that key"})
+        return entry
+
+    app.add_api_route("/myna/word-timings/{key}", word_timings, methods=["GET"])
+    return True
+
+
 def main() -> None:
     apply_sinegen_patch()
     apply_chatterbox_voice_patch()
+    if apply_word_timing_patch():
+        add_word_timings_route()
     # argv[0] must look like the module so mlx-audio's own arg parsing and any
     # usage/error output stay correct.
     sys.argv = ["mlx_audio.server", *sys.argv[1:]]
